@@ -295,7 +295,7 @@ function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }
 
 export function Sidebar() {
   const { vault } = useVaultStore();
-  const { notes, loadNotes, createNote, deleteNote, openNote, archiveNote } = useNoteStore();
+  const { notes, loadNotes, createNote, deleteNote, archiveNote, openNoteInSecondary } = useNoteStore();
   const { setSearchOpen, isSidebarCollapsed, sidebarWidth, mainViewMode, setMainViewMode, showConfirmDialog } = useUIStore();
 
   // Context menu state
@@ -412,8 +412,8 @@ export function Sidebar() {
   };
 
   const handleOpenInNewPane = (note: NoteMetadata) => {
-    // For now, just open the note (multi-pane support can be added later)
-    openNote(note.path);
+    // Open in secondary/split pane
+    openNoteInSecondary(note.path);
   };
 
   if (isSidebarCollapsed) {

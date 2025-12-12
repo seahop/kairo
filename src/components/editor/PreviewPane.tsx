@@ -24,13 +24,20 @@ function preprocessWikiLinks(content: string): string {
   );
 }
 
-export function PreviewPane() {
+interface PreviewPaneProps {
+  content?: string;
+}
+
+export function PreviewPane({ content }: PreviewPaneProps) {
   const { editorContent, openNoteByReference, resolveNoteReference } = useNoteStore();
+
+  // Use provided content or fall back to store's editorContent
+  const displayContent = content ?? editorContent;
 
   // Preprocess content to convert wiki links
   const processedContent = useMemo(
-    () => preprocessWikiLinks(editorContent),
-    [editorContent]
+    () => preprocessWikiLinks(displayContent),
+    [displayContent]
   );
 
   // Handle wiki link clicks

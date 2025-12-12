@@ -1,7 +1,9 @@
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useNoteStore } from "@/stores/noteStore";
 import { useUIStore } from "@/stores/uiStore";
 import { Editor } from "@/components/editor/Editor";
 import { BacklinksPanel } from "@/components/editor/BacklinksPanel";
+import { PreviewPane } from "@/components/editor/PreviewPane";
 import { GraphViewPanel } from "@/plugins/builtin";
 import { VaultHealthPanel } from "@/components/vault/VaultHealthPanel";
 
@@ -20,19 +22,16 @@ const EmptyState = () => (
   </div>
 );
 
-function NotesView() {
+// Primary note pane with full editor
+function PrimaryNotePane() {
   const { currentNote } = useNoteStore();
 
   if (!currentNote) {
-    return (
-      <div className="flex-1 bg-dark-950">
-        <EmptyState />
-      </div>
-    );
+    return <EmptyState />;
   }
 
   return (
-    <div className="flex-1 bg-dark-950 flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Note header */}
       <div className="px-6 py-4 border-b border-dark-800">
         <h1 className="text-xl font-semibold text-dark-100">{currentNote.title}</h1>
@@ -51,6 +50,110 @@ function NotesView() {
 
       {/* Backlinks Panel */}
       <BacklinksPanel />
+    </div>
+  );
+}
+
+// Secondary note pane (preview only, with option to swap or close)
+function SecondaryNotePane() {
+  const {
+    secondaryNote,
+    secondaryEditorContent,
+    closeSecondaryNote,
+    openNote,
+    swapPanes,
+    isSecondaryLoading,
+  } = useNoteStore();
+
+  if (!secondaryNote) {
+    return (
+      <div className="h-full flex items-center justify-center text-dark-500">
+        {isSecondaryLoading ? 'Loading...' : 'No note in secondary pane'}
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-dark-800 flex items-center justify-between">
+        <div className="flex-1 min-w-0">
+          <h2 className="font-medium text-dark-100 truncate">{secondaryNote.title}</h2>
+          <p className="text-xs text-dark-500 truncate">{secondaryNote.path}</p>
+        </div>
+        <div className="flex items-center gap-1 ml-2">
+          <button
+            className="p-1.5 rounded hover:bg-dark-800 text-dark-400 hover:text-dark-200 transition-colors"
+            onClick={swapPanes}
+            title="Swap panes"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+          </button>
+          <button
+            className="p-1.5 rounded hover:bg-dark-800 text-dark-400 hover:text-dark-200 transition-colors"
+            onClick={() => openNote(secondaryNote.path)}
+            title="Open in primary pane"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </button>
+          <button
+            className="p-1.5 rounded hover:bg-dark-800 text-dark-400 hover:text-dark-200 transition-colors"
+            onClick={closeSecondaryNote}
+            title="Close"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      {/* Preview */}
+      <div className="flex-1 overflow-auto">
+        <PreviewPane content={secondaryEditorContent} />
+      </div>
+    </div>
+  );
+}
+
+function NotesView() {
+  const { currentNote, secondaryNote } = useNoteStore();
+
+  // If neither note is open, show empty state
+  if (!currentNote && !secondaryNote) {
+    return (
+      <div className="flex-1 bg-dark-950">
+        <EmptyState />
+      </div>
+    );
+  }
+
+  // If only primary note is open, show simple view
+  if (!secondaryNote) {
+    return (
+      <div className="flex-1 bg-dark-950 flex flex-col overflow-hidden">
+        <PrimaryNotePane />
+      </div>
+    );
+  }
+
+  // Both panes - show split view
+  return (
+    <div className="flex-1 bg-dark-950 overflow-hidden">
+      <PanelGroup direction="horizontal">
+        <Panel defaultSize={50} minSize={30}>
+          <div className="h-full border-r border-dark-800">
+            <PrimaryNotePane />
+          </div>
+        </Panel>
+        <PanelResizeHandle className="w-1 bg-dark-800 hover:bg-accent-primary transition-colors cursor-col-resize" />
+        <Panel defaultSize={50} minSize={20}>
+          <SecondaryNotePane />
+        </Panel>
+      </PanelGroup>
     </div>
   );
 }

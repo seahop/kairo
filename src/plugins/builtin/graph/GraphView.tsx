@@ -1,8 +1,10 @@
 import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 import { forceCollide } from "d3-force";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useGraphStore, GraphNode, GraphData } from "./store";
 import { useNoteStore } from "@/stores/noteStore";
+import { PreviewPane } from "@/components/editor/PreviewPane";
 
 const SearchIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -51,6 +53,7 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   const {
     graphData,
@@ -76,7 +79,15 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
     performSearch,
   } = useGraphStore();
 
-  const { currentNote, openNote } = useNoteStore();
+  const {
+    currentNote,
+    openNote,
+    secondaryNote,
+    secondaryEditorContent,
+    openNoteInSecondary,
+    closeSecondaryNote,
+    isSecondaryLoading,
+  } = useNoteStore();
 
   // Update dimensions on resize
   useEffect(() => {
@@ -248,9 +259,11 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
 
   const handleNodeClick = useCallback(
     (node: GraphNode) => {
-      openNote(node.path);
+      // Single click opens in preview pane
+      openNoteInSecondary(node.path);
+      setShowPreview(true);
     },
-    [openNote]
+    [openNoteInSecondary]
   );
 
   const handleNodeRightClick = useCallback(
@@ -286,6 +299,10 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
       case 'open':
         openNote(node.path);
         break;
+      case 'preview':
+        openNoteInSecondary(node.path);
+        setShowPreview(true);
+        break;
       case 'focus':
         setFocusedNote(node.id);
         setViewMode('local');
@@ -300,7 +317,7 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
         navigator.clipboard.writeText(`[[${node.title}]]`);
         break;
     }
-  }, [openNote, setFocusedNote, setViewMode]);
+  }, [openNote, openNoteInSecondary, setFocusedNote, setViewMode]);
 
   // Fix node position after dragging so it stays in place
   const handleNodeDragEnd = useCallback((node: any) => {
@@ -406,58 +423,60 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
         </div>
       </div>
 
-      {/* Main content area */}
-      <div className="flex-1 relative overflow-hidden">
-        {isLoading ? (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-dark-400">Loading graph...</div>
-          </div>
-        ) : filteredData && filteredData.nodes.length > 0 ? (
-          <ForceGraph2D
-            ref={fgRef}
-            graphData={filteredData}
-            nodeLabel={(node: any) => node.title}
-            nodeColor={getNodeColor}
-            nodeVal={getNodeSize}
-            linkColor={() => "#334155"}
-            linkWidth={1}
-            linkDirectionalParticles={0}
-            onNodeClick={handleNodeClick}
-            onNodeRightClick={handleNodeRightClick}
-            onNodeHover={(node: any) => setHoveredNode(node?.id ?? null)}
-            onNodeDragEnd={handleNodeDragEnd}
-            cooldownTicks={100}
-            onEngineStop={() => fgRef.current?.zoomToFit(400)}
-            onNodeDrag={(node: any) => {
-              // Keep node at cursor position during drag
-              node.fx = node.x;
-              node.fy = node.y;
-            }}
-            enableNodeDrag={true}
-            d3AlphaDecay={0.02}
-            d3VelocityDecay={0.3}
-            backgroundColor="#020617"
-            width={effectiveWidth}
-            height={effectiveHeight - 57}
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center text-dark-400">
-              <GraphIcon />
-              <p className="mt-2">
-                {viewMode === "search" && searchQuery
-                  ? "No nodes match your search"
-                  : "No graph data available"}
-              </p>
-              <button
-                className="mt-4 btn-secondary"
-                onClick={() => loadGraphData()}
-              >
-                Load Graph
-              </button>
-            </div>
-          </div>
-        )}
+      {/* Main content area with optional preview pane */}
+      <PanelGroup direction="horizontal" className="flex-1">
+        <Panel defaultSize={showPreview ? 60 : 100} minSize={30}>
+          <div className="h-full relative overflow-hidden">
+            {isLoading ? (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="text-dark-400">Loading graph...</div>
+              </div>
+            ) : filteredData && filteredData.nodes.length > 0 ? (
+              <ForceGraph2D
+                ref={fgRef}
+                graphData={filteredData}
+                nodeLabel={(node: any) => node.title}
+                nodeColor={getNodeColor}
+                nodeVal={getNodeSize}
+                linkColor={() => "#334155"}
+                linkWidth={1}
+                linkDirectionalParticles={0}
+                onNodeClick={handleNodeClick}
+                onNodeRightClick={handleNodeRightClick}
+                onNodeHover={(node: any) => setHoveredNode(node?.id ?? null)}
+                onNodeDragEnd={handleNodeDragEnd}
+                cooldownTicks={100}
+                onEngineStop={() => fgRef.current?.zoomToFit(400)}
+                onNodeDrag={(node: any) => {
+                  // Keep node at cursor position during drag
+                  node.fx = node.x;
+                  node.fy = node.y;
+                }}
+                enableNodeDrag={true}
+                d3AlphaDecay={0.02}
+                d3VelocityDecay={0.3}
+                backgroundColor="#020617"
+                width={showPreview ? (effectiveWidth * 0.6) : effectiveWidth}
+                height={effectiveHeight - 57}
+              />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="text-center text-dark-400">
+                  <GraphIcon />
+                  <p className="mt-2">
+                    {viewMode === "search" && searchQuery
+                      ? "No nodes match your search"
+                      : "No graph data available"}
+                  </p>
+                  <button
+                    className="mt-4 btn-secondary"
+                    onClick={() => loadGraphData()}
+                  >
+                    Load Graph
+                  </button>
+                </div>
+              </div>
+            )}
 
         {/* Settings panel */}
         {showSettings && (
@@ -587,12 +606,21 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
             </div>
             <button
               className="w-full px-3 py-1.5 text-sm text-dark-200 hover:bg-dark-800 text-left flex items-center gap-2"
+              onClick={() => handleContextMenuAction('preview', contextMenu.node)}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Preview
+            </button>
+            <button
+              className="w-full px-3 py-1.5 text-sm text-dark-200 hover:bg-dark-800 text-left flex items-center gap-2"
               onClick={() => handleContextMenuAction('open', contextMenu.node)}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
               </svg>
-              Open Note
+              Open Note (Leave Graph)
             </button>
             <button
               className="w-full px-3 py-1.5 text-sm text-dark-200 hover:bg-dark-800 text-left flex items-center gap-2"
@@ -648,7 +676,10 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
                   <button
                     key={node.id}
                     className="w-full text-left px-2 py-1 rounded hover:bg-dark-800 text-sm text-dark-300 truncate"
-                    onClick={() => openNote(node.path)}
+                    onClick={() => {
+                      openNoteInSecondary(node.path);
+                      setShowPreview(true);
+                    }}
                   >
                     {node.title}
                   </button>
@@ -656,7 +687,70 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
             </div>
           </div>
         )}
-      </div>
+          </div>
+        </Panel>
+
+        {/* Preview pane */}
+        {showPreview && (
+          <>
+            <PanelResizeHandle className="w-1 bg-dark-800 hover:bg-accent-primary transition-colors cursor-col-resize" />
+            <Panel defaultSize={40} minSize={20}>
+              <div className="h-full flex flex-col bg-dark-900 border-l border-dark-800">
+                {/* Preview header */}
+                <div className="flex items-center justify-between px-4 py-2 border-b border-dark-800">
+                  <div className="flex-1 min-w-0">
+                    {secondaryNote ? (
+                      <>
+                        <h3 className="font-medium text-dark-100 truncate">{secondaryNote.title}</h3>
+                        <p className="text-xs text-dark-500 truncate">{secondaryNote.path}</p>
+                      </>
+                    ) : isSecondaryLoading ? (
+                      <span className="text-dark-400">Loading...</span>
+                    ) : (
+                      <span className="text-dark-500">Select a node to preview</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 ml-2">
+                    {secondaryNote && (
+                      <button
+                        className="p-1.5 rounded hover:bg-dark-800 text-dark-400 hover:text-dark-200 transition-colors"
+                        onClick={() => openNote(secondaryNote.path)}
+                        title="Open in editor"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </button>
+                    )}
+                    <button
+                      className="p-1.5 rounded hover:bg-dark-800 text-dark-400 hover:text-dark-200 transition-colors"
+                      onClick={() => {
+                        setShowPreview(false);
+                        closeSecondaryNote();
+                      }}
+                      title="Close preview"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                {/* Preview content */}
+                <div className="flex-1 overflow-auto">
+                  {secondaryNote ? (
+                    <PreviewPane content={secondaryEditorContent} />
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-dark-500">
+                      {isSecondaryLoading ? 'Loading...' : 'Click a node to preview'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Panel>
+          </>
+        )}
+      </PanelGroup>
     </div>
   );
 }

@@ -30,6 +30,12 @@ interface NoteState {
   // Local editor content (for tracking changes)
   editorContent: string;
 
+  // Secondary pane support (for preview/split view)
+  secondaryNote: Note | null;
+  secondaryEditorContent: string;
+  hasSecondaryUnsavedChanges: boolean;
+  isSecondaryLoading: boolean;
+
   // Actions
   loadNotes: () => Promise<void>;
   openNote: (path: string) => Promise<void>;
@@ -44,6 +50,13 @@ interface NoteState {
   setEditorContent: (content: string) => void;
   closeNote: () => void;
   openDailyNote: () => Promise<void>;
+
+  // Secondary pane actions
+  openNoteInSecondary: (path: string) => Promise<void>;
+  closeSecondaryNote: () => void;
+  setSecondaryEditorContent: (content: string) => void;
+  saveSecondaryNote: () => Promise<void>;
+  swapPanes: () => void;
 }
 
 export const useNoteStore = create<NoteState>((set, get) => ({
@@ -54,6 +67,12 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   error: null,
   hasUnsavedChanges: false,
   editorContent: "",
+
+  // Secondary pane state
+  secondaryNote: null,
+  secondaryEditorContent: "",
+  hasSecondaryUnsavedChanges: false,
+  isSecondaryLoading: false,
 
   loadNotes: async () => {
     set({ isLoading: true, error: null });
@@ -322,5 +341,73 @@ export const useNoteStore = create<NoteState>((set, get) => ({
 `;
       await get().createNote(dailyNotePath, content);
     }
+  },
+
+  // Secondary pane actions
+  openNoteInSecondary: async (path: string) => {
+    set({ isSecondaryLoading: true, error: null });
+    try {
+      const note = await invoke<Note>("read_note", { path });
+      set({
+        secondaryNote: note,
+        secondaryEditorContent: note.content,
+        hasSecondaryUnsavedChanges: false,
+        isSecondaryLoading: false,
+      });
+    } catch (error) {
+      set({ error: String(error), isSecondaryLoading: false });
+    }
+  },
+
+  closeSecondaryNote: () => {
+    set({
+      secondaryNote: null,
+      secondaryEditorContent: "",
+      hasSecondaryUnsavedChanges: false,
+    });
+  },
+
+  setSecondaryEditorContent: (content: string) => {
+    const { secondaryNote } = get();
+    set({
+      secondaryEditorContent: content,
+      hasSecondaryUnsavedChanges: secondaryNote ? content !== secondaryNote.content : false,
+    });
+  },
+
+  saveSecondaryNote: async () => {
+    const { secondaryNote, secondaryEditorContent } = get();
+    if (!secondaryNote) return;
+
+    set({ isSaving: true, error: null });
+    try {
+      const metadata = await invoke<NoteMetadata>("write_note", {
+        path: secondaryNote.path,
+        content: secondaryEditorContent,
+        createIfMissing: false,
+      });
+
+      set({
+        secondaryNote: { ...secondaryNote, content: secondaryEditorContent, ...metadata },
+        hasSecondaryUnsavedChanges: false,
+        isSaving: false,
+      });
+
+      get().loadNotes();
+    } catch (error) {
+      set({ error: String(error), isSaving: false });
+    }
+  },
+
+  swapPanes: () => {
+    const { currentNote, editorContent, hasUnsavedChanges, secondaryNote, secondaryEditorContent, hasSecondaryUnsavedChanges } = get();
+    set({
+      currentNote: secondaryNote,
+      editorContent: secondaryEditorContent,
+      hasUnsavedChanges: hasSecondaryUnsavedChanges,
+      secondaryNote: currentNote,
+      secondaryEditorContent: editorContent,
+      hasSecondaryUnsavedChanges: hasUnsavedChanges,
+    });
   },
 }));
