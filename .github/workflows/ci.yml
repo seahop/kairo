@@ -157,26 +157,50 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ''
 
-      - name: Upload Linux artifacts
+      - name: Upload Linux installer
         if: matrix.target == 'linux'
         uses: actions/upload-artifact@v4
         with:
-          name: kairo-${{ matrix.target }}-${{ github.sha }}
+          name: kairo-${{ matrix.target }}-deb-${{ github.sha }}
           path: src-tauri/target/release/bundle/deb/*.deb
           if-no-files-found: error
 
-      - name: Upload Windows artifacts
+      - name: Upload Linux binary
+        if: matrix.target == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kairo-${{ matrix.target }}-binary-${{ github.sha }}
+          path: src-tauri/target/release/kairo
+          if-no-files-found: error
+
+      - name: Upload Windows installer
         if: matrix.target == 'windows'
         uses: actions/upload-artifact@v4
         with:
-          name: kairo-${{ matrix.target }}-${{ github.sha }}
+          name: kairo-${{ matrix.target }}-msi-${{ github.sha }}
           path: src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: error
 
-      - name: Upload macOS artifacts
+      - name: Upload Windows binary
+        if: matrix.target == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kairo-${{ matrix.target }}-binary-${{ github.sha }}
+          path: src-tauri/target/release/kairo.exe
+          if-no-files-found: error
+
+      - name: Upload macOS installer
         if: matrix.target == 'macos'
         uses: actions/upload-artifact@v4
         with:
-          name: kairo-${{ matrix.target }}-${{ github.sha }}
+          name: kairo-${{ matrix.target }}-dmg-${{ github.sha }}
           path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+      - name: Upload macOS binary
+        if: matrix.target == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kairo-${{ matrix.target }}-binary-${{ github.sha }}
+          path: src-tauri/target/release/kairo
           if-no-files-found: error
