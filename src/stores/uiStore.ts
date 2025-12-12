@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type EditorViewMode = 'editor' | 'preview' | 'split';
-export type MainViewMode = 'notes' | 'graph';
+export type MainViewMode = 'notes' | 'graph' | 'vault-health';
 
 export interface ConfirmDialogOptions {
   title: string;

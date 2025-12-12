@@ -39,6 +39,7 @@ interface NoteState {
   createNote: (path: string, content?: string) => Promise<void>;
   deleteNote: (path: string) => Promise<void>;
   renameNote: (oldPath: string, newPath: string) => Promise<void>;
+  archiveNote: (path: string) => Promise<void>;
   createFolder: (path: string) => Promise<void>;
   setEditorContent: (content: string) => void;
   closeNote: () => void;
@@ -222,6 +223,33 @@ export const useNoteStore = create<NoteState>((set, get) => ({
             title: metadata.title,
           },
         });
+      }
+
+      // Refresh notes list
+      get().loadNotes();
+    } catch (error) {
+      set({ error: String(error) });
+    }
+  },
+
+  archiveNote: async (path: string) => {
+    try {
+      // Extract just the filename
+      const filename = path.split('/').pop() || path;
+
+      // Create archive path - preserving date for context
+      const archivePath = `notes/archive/${filename}`;
+
+      // Use rename to move to archive folder
+      await invoke<NoteMetadata>("rename_note", {
+        oldPath: path,
+        newPath: archivePath,
+      });
+
+      // If this was the current note, close it
+      const { currentNote } = get();
+      if (currentNote?.path === path) {
+        set({ currentNote: null, editorContent: "", hasUnsavedChanges: false });
       }
 
       // Refresh notes list

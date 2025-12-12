@@ -501,3 +501,473 @@ pub fn get_all_mentions(app: &AppHandle) -> Result<Vec<String>, Box<dyn std::err
         Ok(mentions)
     })
 }
+
+// =============================================================================
+// Vault Health Functions
+// =============================================================================
+
+/// Orphan note information
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrphanNote {
+    pub id: String,
+    pub path: String,
+    pub title: String,
+    pub created_at: i64,
+    pub modified_at: i64,
+}
+
+/// Broken link information
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrokenLink {
+    pub source_id: String,
+    pub source_path: String,
+    pub source_title: String,
+    pub target_reference: String,
+    pub context: Option<String>,
+}
+
+/// Vault health statistics
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultHealth {
+    pub total_notes: usize,
+    pub total_links: usize,
+    pub orphan_count: usize,
+    pub broken_link_count: usize,
+    pub avg_links_per_note: f64,
+    pub most_connected_notes: Vec<GraphNode>,
+    pub recently_modified: Vec<OrphanNote>,
+}
+
+/// Get orphan notes (notes with no incoming or outgoing links)
+pub fn get_orphan_notes(app: &AppHandle) -> Result<Vec<OrphanNote>, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT n.id, n.path, n.title, n.created_at, n.modified_at
+            FROM notes n
+            WHERE NOT EXISTS (
+                SELECT 1 FROM backlinks b WHERE b.source_id = n.id
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM backlinks b2
+                JOIN notes n2 ON b2.source_id = n2.id
+                WHERE b2.target_path = n.path
+                   OR b2.target_path LIKE '%' || replace(replace(n.path, 'notes/', ''), '.md', '') || '%'
+            )
+            ORDER BY n.modified_at DESC
+            "#,
+        )?;
+
+        let orphans: Vec<OrphanNote> = stmt
+            .query_map([], |row| {
+                Ok(OrphanNote {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    title: row.get(2)?,
+                    created_at: row.get(3)?,
+                    modified_at: row.get(4)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(orphans)
+    })
+}
+
+/// Get broken links (links pointing to non-existent notes)
+pub fn get_broken_links(app: &AppHandle) -> Result<Vec<BrokenLink>, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        // Get all note paths for comparison
+        let mut paths_stmt = conn.prepare("SELECT path FROM notes")?;
+        let note_paths: std::collections::HashSet<String> = paths_stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        // Also create a set of filenames (without extension) for fuzzy matching
+        let filenames: std::collections::HashSet<String> = note_paths
+            .iter()
+            .filter_map(|p| {
+                std::path::PathBuf::from(p)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_lowercase())
+            })
+            .collect();
+
+        // Get all backlinks
+        let mut links_stmt = conn.prepare(
+            r#"
+            SELECT n.id, n.path, n.title, b.target_path, b.context
+            FROM backlinks b
+            JOIN notes n ON b.source_id = n.id
+            "#,
+        )?;
+
+        let broken_links: Vec<BrokenLink> = links_stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .filter_map(|(source_id, source_path, source_title, target_ref, context)| {
+                // Check if target exists
+                let target_exists = note_paths.contains(&target_ref)
+                    || note_paths.contains(&format!("notes/{}.md", target_ref))
+                    || note_paths.contains(&format!("{}.md", target_ref))
+                    || note_paths.contains(&format!("notes/{}", target_ref))
+                    || filenames.contains(&target_ref.to_lowercase());
+
+                if target_exists {
+                    None
+                } else {
+                    Some(BrokenLink {
+                        source_id,
+                        source_path,
+                        source_title,
+                        target_reference: target_ref,
+                        context,
+                    })
+                }
+            })
+            .collect();
+
+        Ok(broken_links)
+    })
+}
+
+/// Get overall vault health statistics
+pub fn get_vault_health(app: &AppHandle) -> Result<VaultHealth, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        // Total notes
+        let total_notes: usize = conn
+            .query_row("SELECT COUNT(*) FROM notes", [], |row| row.get::<_, i64>(0))?
+            as usize;
+
+        // Total links
+        let total_links: usize = conn
+            .query_row("SELECT COUNT(*) FROM backlinks", [], |row| row.get::<_, i64>(0))?
+            as usize;
+
+        // Get orphan count
+        let orphan_count: usize = conn.query_row(
+            r#"
+            SELECT COUNT(*)
+            FROM notes n
+            WHERE NOT EXISTS (
+                SELECT 1 FROM backlinks b WHERE b.source_id = n.id
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM backlinks b2
+                JOIN notes n2 ON b2.source_id = n2.id
+                WHERE b2.target_path = n.path
+                   OR b2.target_path LIKE '%' || replace(replace(n.path, 'notes/', ''), '.md', '') || '%'
+            )
+            "#,
+            [],
+            |row| row.get::<_, i64>(0),
+        )? as usize;
+
+        // Average links per note
+        let avg_links_per_note = if total_notes > 0 {
+            total_links as f64 / total_notes as f64
+        } else {
+            0.0
+        };
+
+        // Most connected notes (top 5)
+        let mut connected_stmt = conn.prepare(
+            r#"
+            SELECT n.id, n.path, n.title,
+                   (SELECT COUNT(*) FROM backlinks WHERE source_id = n.id) as out_links,
+                   (SELECT COUNT(*) FROM backlinks b2
+                    JOIN notes n2 ON b2.source_id = n2.id
+                    WHERE b2.target_path = n.path
+                       OR b2.target_path LIKE '%' || replace(replace(n.path, 'notes/', ''), '.md', '') || '%'
+                   ) as in_links
+            FROM notes n
+            ORDER BY (out_links + in_links) DESC
+            LIMIT 5
+            "#,
+        )?;
+
+        let most_connected_notes: Vec<GraphNode> = connected_stmt
+            .query_map([], |row| {
+                Ok(GraphNode {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    title: row.get(2)?,
+                    link_count: row.get::<_, i64>(3)? as usize,
+                    backlink_count: row.get::<_, i64>(4)? as usize,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        // Recently modified notes
+        let mut recent_stmt = conn.prepare(
+            r#"
+            SELECT id, path, title, created_at, modified_at
+            FROM notes
+            ORDER BY modified_at DESC
+            LIMIT 10
+            "#,
+        )?;
+
+        let recently_modified: Vec<OrphanNote> = recent_stmt
+            .query_map([], |row| {
+                Ok(OrphanNote {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    title: row.get(2)?,
+                    created_at: row.get(3)?,
+                    modified_at: row.get(4)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        // Broken link count (we need to compute this)
+        drop(connected_stmt);
+        drop(recent_stmt);
+
+        let broken_links = get_broken_links_count(conn)?;
+
+        Ok(VaultHealth {
+            total_notes,
+            total_links,
+            orphan_count,
+            broken_link_count: broken_links,
+            avg_links_per_note,
+            most_connected_notes,
+            recently_modified,
+        })
+    })
+}
+
+fn get_broken_links_count(conn: &rusqlite::Connection) -> Result<usize, Box<dyn std::error::Error>> {
+    // Get all note paths for comparison
+    let mut paths_stmt = conn.prepare("SELECT path FROM notes")?;
+    let note_paths: std::collections::HashSet<String> = paths_stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let filenames: std::collections::HashSet<String> = note_paths
+        .iter()
+        .filter_map(|p| {
+            std::path::PathBuf::from(p)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_lowercase())
+        })
+        .collect();
+
+    let mut links_stmt = conn.prepare("SELECT target_path FROM backlinks")?;
+    let broken_count = links_stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .filter(|target_ref| {
+            !(note_paths.contains(target_ref)
+                || note_paths.contains(&format!("notes/{}.md", target_ref))
+                || note_paths.contains(&format!("{}.md", target_ref))
+                || note_paths.contains(&format!("notes/{}", target_ref))
+                || filenames.contains(&target_ref.to_lowercase()))
+        })
+        .count();
+
+    Ok(broken_count)
+}
+
+// =============================================================================
+// Organization Helper Functions
+// =============================================================================
+
+/// Unlinked mention - where a note title appears in content but isn't linked
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnlinkedMention {
+    pub note_id: String,
+    pub note_path: String,
+    pub note_title: String,
+    pub mentioned_in_id: String,
+    pub mentioned_in_path: String,
+    pub mentioned_in_title: String,
+    pub context: String,
+}
+
+/// Get unlinked mentions (note titles that appear in content but aren't wiki-linked)
+pub fn get_unlinked_mentions(app: &AppHandle) -> Result<Vec<UnlinkedMention>, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        // Get all notes with their titles and content
+        let mut notes_stmt = conn.prepare("SELECT id, path, title, content FROM notes")?;
+        let notes: Vec<(String, String, String, String)> = notes_stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        // Get existing backlinks to know what's already linked
+        let mut links_stmt = conn.prepare("SELECT source_id, target_path FROM backlinks")?;
+        let existing_links: std::collections::HashSet<(String, String)> = links_stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?.to_lowercase(),
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut unlinked = Vec::new();
+
+        // For each note, check if its title appears in other notes' content without being linked
+        for (note_id, note_path, note_title, _) in &notes {
+            if note_title.len() < 3 {
+                continue; // Skip very short titles
+            }
+
+            let title_lower = note_title.to_lowercase();
+            let note_filename = std::path::PathBuf::from(note_path)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
+
+            for (other_id, other_path, other_title, other_content) in &notes {
+                if note_id == other_id {
+                    continue; // Skip self
+                }
+
+                let content_lower = other_content.to_lowercase();
+
+                // Check if title appears in content (case-insensitive)
+                if !content_lower.contains(&title_lower) {
+                    continue;
+                }
+
+                // Check if already linked
+                let is_linked = existing_links.contains(&(other_id.clone(), title_lower.clone()))
+                    || existing_links.contains(&(other_id.clone(), note_filename.clone()));
+
+                if is_linked {
+                    continue;
+                }
+
+                // Find context around the mention
+                if let Some(pos) = content_lower.find(&title_lower) {
+                    let start = pos.saturating_sub(40);
+                    let end = (pos + note_title.len() + 40).min(other_content.len());
+                    let context = other_content[start..end].to_string();
+
+                    unlinked.push(UnlinkedMention {
+                        note_id: note_id.clone(),
+                        note_path: note_path.clone(),
+                        note_title: note_title.clone(),
+                        mentioned_in_id: other_id.clone(),
+                        mentioned_in_path: other_path.clone(),
+                        mentioned_in_title: other_title.clone(),
+                        context: format!("...{}...", context.replace('\n', " ")),
+                    });
+                }
+            }
+        }
+
+        Ok(unlinked)
+    })
+}
+
+/// Get a random note for review (Zettelkasten practice)
+pub fn get_random_note(app: &AppHandle) -> Result<Option<OrphanNote>, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, path, title, created_at, modified_at FROM notes ORDER BY RANDOM() LIMIT 1"
+        )?;
+
+        let note = stmt
+            .query_row([], |row| {
+                Ok(OrphanNote {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    title: row.get(2)?,
+                    created_at: row.get(3)?,
+                    modified_at: row.get(4)?,
+                })
+            })
+            .ok();
+
+        Ok(note)
+    })
+}
+
+/// Get notes that could be MOCs (Maps of Content) - notes with many outgoing links
+pub fn get_potential_mocs(app: &AppHandle, min_links: usize) -> Result<Vec<GraphNode>, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT n.id, n.path, n.title,
+                   (SELECT COUNT(*) FROM backlinks WHERE source_id = n.id) as out_links,
+                   (SELECT COUNT(*) FROM backlinks b2
+                    JOIN notes n2 ON b2.source_id = n2.id
+                    WHERE b2.target_path = n.path
+                       OR b2.target_path LIKE '%' || replace(replace(n.path, 'notes/', ''), '.md', '') || '%'
+                   ) as in_links
+            FROM notes n
+            WHERE (SELECT COUNT(*) FROM backlinks WHERE source_id = n.id) >= ?1
+            ORDER BY out_links DESC
+            "#,
+        )?;
+
+        let mocs: Vec<GraphNode> = stmt
+            .query_map([min_links as i64], |row| {
+                Ok(GraphNode {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    title: row.get(2)?,
+                    link_count: row.get::<_, i64>(3)? as usize,
+                    backlink_count: row.get::<_, i64>(4)? as usize,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(mocs)
+    })
+}
+
+/// Get notes by folder/prefix for PARA-style organization
+pub fn get_notes_by_folder(app: &AppHandle, folder_prefix: &str) -> Result<Vec<OrphanNote>, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        let pattern = format!("{}%", folder_prefix);
+        let mut stmt = conn.prepare(
+            "SELECT id, path, title, created_at, modified_at FROM notes WHERE path LIKE ?1 ORDER BY modified_at DESC"
+        )?;
+
+        let notes: Vec<OrphanNote> = stmt
+            .query_map([pattern], |row| {
+                Ok(OrphanNote {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    title: row.get(2)?,
+                    created_at: row.get(3)?,
+                    modified_at: row.get(4)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(notes)
+    })
+}

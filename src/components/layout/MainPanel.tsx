@@ -3,6 +3,7 @@ import { useUIStore } from "@/stores/uiStore";
 import { Editor } from "@/components/editor/Editor";
 import { BacklinksPanel } from "@/components/editor/BacklinksPanel";
 import { GraphViewPanel } from "@/plugins/builtin";
+import { VaultHealthPanel } from "@/components/vault/VaultHealthPanel";
 
 const EmptyState = () => (
   <div className="h-full flex items-center justify-center">
@@ -55,10 +56,18 @@ function NotesView() {
 }
 
 export function MainPanel() {
-  const { mainViewMode } = useUIStore();
+  const { mainViewMode, setMainViewMode } = useUIStore();
 
   if (mainViewMode === "graph") {
     return <GraphViewPanel />;
+  }
+
+  if (mainViewMode === "vault-health") {
+    return (
+      <div className="flex-1 bg-dark-950">
+        <VaultHealthPanel onClose={() => setMainViewMode("notes")} />
+      </div>
+    );
   }
 
   return <NotesView />;

@@ -1,8 +1,125 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNoteStore, NoteMetadata } from "@/stores/noteStore";
 import { useVaultStore } from "@/stores/vaultStore";
 import { useUIStore } from "@/stores/uiStore";
 import clsx from "clsx";
+
+// Context menu state
+interface ContextMenuState {
+  x: number;
+  y: number;
+  note: NoteMetadata | null;
+}
+
+// Context Menu Component
+function NoteContextMenu({
+  state,
+  onClose,
+  onDelete,
+  onRename,
+  onArchive,
+  onOpenInNewPane,
+}: {
+  state: ContextMenuState;
+  onClose: () => void;
+  onDelete: (note: NoteMetadata) => void;
+  onRename: (note: NoteMetadata) => void;
+  onArchive: (note: NoteMetadata) => void;
+  onOpenInNewPane: (note: NoteMetadata) => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [onClose]);
+
+  if (!state.note) return null;
+
+  return (
+    <div
+      ref={menuRef}
+      className="fixed z-50 min-w-48 bg-dark-850 border border-dark-700 rounded-lg shadow-xl py-1"
+      style={{ left: state.x, top: state.y }}
+    >
+      <button
+        className="w-full px-4 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 hover:text-dark-50 flex items-center gap-2"
+        onClick={() => {
+          onOpenInNewPane(state.note!);
+          onClose();
+        }}
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+        </svg>
+        Open
+      </button>
+      <div className="border-t border-dark-700 my-1" />
+      <button
+        className="w-full px-4 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 hover:text-dark-50 flex items-center gap-2"
+        onClick={() => {
+          onRename(state.note!);
+          onClose();
+        }}
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+        </svg>
+        Rename
+      </button>
+      <button
+        className="w-full px-4 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 hover:text-dark-50 flex items-center gap-2"
+        onClick={() => {
+          navigator.clipboard.writeText(`[[${state.note!.title}]]`);
+          onClose();
+        }}
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+        </svg>
+        Copy Link
+      </button>
+      <button
+        className="w-full px-4 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 hover:text-dark-50 flex items-center gap-2"
+        onClick={() => {
+          onArchive(state.note!);
+          onClose();
+        }}
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+        </svg>
+        Archive (PARA)
+      </button>
+      <div className="border-t border-dark-700 my-1" />
+      <button
+        className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2"
+        onClick={() => {
+          onDelete(state.note!);
+          onClose();
+        }}
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+        Delete
+        <span className="ml-auto text-xs text-dark-500">Del</span>
+      </button>
+    </div>
+  );
+}
 
 // Icons (simple SVG components)
 const FolderIcon = () => (
@@ -37,6 +154,12 @@ const GraphIcon = () => (
     <circle cx="5" cy="19" r="1.5" strokeWidth={2} />
     <circle cx="19" cy="19" r="1.5" strokeWidth={2} />
     <path strokeLinecap="round" strokeWidth={2} d="M9.5 10L6.5 6.5M14.5 10L17.5 6.5M9.5 14L6.5 17.5M14.5 14L17.5 17.5" />
+  </svg>
+);
+
+const HealthIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
   </svg>
 );
 
@@ -94,9 +217,12 @@ function buildFolderTree(notes: NoteMetadata[]): FolderNode {
 interface FolderItemProps {
   folder: FolderNode;
   level: number;
+  selectedNote: NoteMetadata | null;
+  onSelectNote: (note: NoteMetadata | null) => void;
+  onContextMenu: (e: React.MouseEvent, note: NoteMetadata) => void;
 }
 
-function FolderItem({ folder, level }: FolderItemProps) {
+function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }: FolderItemProps) {
   const [expanded, setExpanded] = useState(level < 2);
   const { currentNote, openNote } = useNoteStore();
 
@@ -123,7 +249,14 @@ function FolderItem({ folder, level }: FolderItemProps) {
         <div>
           {/* Subfolders */}
           {Array.from(folder.children.values()).map((child) => (
-            <FolderItem key={child.path} folder={child} level={level + 1} />
+            <FolderItem
+              key={child.path}
+              folder={child}
+              level={level + 1}
+              selectedNote={selectedNote}
+              onSelectNote={onSelectNote}
+              onContextMenu={onContextMenu}
+            />
           ))}
 
           {/* Notes in this folder */}
@@ -133,10 +266,20 @@ function FolderItem({ folder, level }: FolderItemProps) {
               className={clsx(
                 "flex items-center gap-2 px-2 py-1 cursor-pointer rounded",
                 "text-dark-300 hover:bg-dark-800 hover:text-dark-100",
-                currentNote?.path === note.path && "bg-dark-800 text-accent-primary"
+                currentNote?.path === note.path && "bg-dark-800 text-accent-primary",
+                selectedNote?.id === note.id && currentNote?.path !== note.path && "ring-1 ring-accent-primary/50"
               )}
               style={{ paddingLeft: `${(level + 1) * 12 + 8}px` }}
-              onClick={() => openNote(note.path)}
+              onClick={(e) => {
+                if (e.ctrlKey || e.metaKey) {
+                  // Ctrl+click to select without opening
+                  onSelectNote(selectedNote?.id === note.id ? null : note);
+                } else {
+                  openNote(note.path);
+                  onSelectNote(null);
+                }
+              }}
+              onContextMenu={(e) => onContextMenu(e, note)}
             >
               <FileIcon />
               <span className="text-sm truncate">{note.title}</span>
@@ -150,8 +293,16 @@ function FolderItem({ folder, level }: FolderItemProps) {
 
 export function Sidebar() {
   const { vault } = useVaultStore();
-  const { notes, loadNotes, createNote } = useNoteStore();
-  const { setSearchOpen, isSidebarCollapsed, sidebarWidth, mainViewMode, setMainViewMode } = useUIStore();
+  const { notes, loadNotes, createNote, deleteNote, openNote, archiveNote } = useNoteStore();
+  const { setSearchOpen, isSidebarCollapsed, sidebarWidth, mainViewMode, setMainViewMode, showConfirmDialog } = useUIStore();
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({ x: 0, y: 0, note: null });
+  const [selectedNote, setSelectedNote] = useState<NoteMetadata | null>(null);
+  const [renamingNote, setRenamingNote] = useState<NoteMetadata | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const sidebarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (vault) {
@@ -159,12 +310,108 @@ export function Sidebar() {
     }
   }, [vault, loadNotes]);
 
+  // Keyboard handler for Delete key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle if sidebar is focused or selected note exists
+      if (e.key === "Delete" && selectedNote && !renamingNote) {
+        e.preventDefault();
+        handleDeleteNote(selectedNote);
+      }
+      // Escape to deselect
+      if (e.key === "Escape") {
+        setSelectedNote(null);
+        setContextMenu({ x: 0, y: 0, note: null });
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedNote, renamingNote]);
+
+  // Focus rename input when renaming starts
+  useEffect(() => {
+    if (renamingNote && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingNote]);
+
   const folderTree = buildFolderTree(notes);
 
   const handleNewNote = () => {
     const timestamp = new Date().toISOString().split("T")[0];
     const fileName = `notes/new-note-${timestamp}.md`;
     createNote(fileName);
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, note: NoteMetadata) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, note });
+    setSelectedNote(note);
+  };
+
+  const handleDeleteNote = (note: NoteMetadata) => {
+    showConfirmDialog({
+      title: "Delete Note",
+      message: `Are you sure you want to delete "${note.title}"? This action cannot be undone.`,
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      variant: "danger",
+      onConfirm: () => {
+        deleteNote(note.path);
+        setSelectedNote(null);
+      },
+    });
+  };
+
+  const handleArchiveNote = (note: NoteMetadata) => {
+    showConfirmDialog({
+      title: "Archive Note",
+      message: `Move "${note.title}" to the archive folder? You can find it later in notes/archive/.`,
+      confirmText: "Archive",
+      cancelText: "Cancel",
+      variant: "warning",
+      onConfirm: () => {
+        archiveNote(note.path);
+        setSelectedNote(null);
+      },
+    });
+  };
+
+  const handleRenameNote = (note: NoteMetadata) => {
+    setRenamingNote(note);
+    // Extract just the filename without extension
+    const filename = note.path.split("/").pop()?.replace(/\.md$/, "") || note.title;
+    setRenameValue(filename);
+  };
+
+  const handleRenameSubmit = async () => {
+    if (!renamingNote || !renameValue.trim()) {
+      setRenamingNote(null);
+      return;
+    }
+
+    const oldPath = renamingNote.path;
+    const directory = oldPath.substring(0, oldPath.lastIndexOf("/"));
+    const newPath = `${directory}/${renameValue.trim()}.md`;
+
+    if (newPath !== oldPath) {
+      try {
+        const { renameNote } = useNoteStore.getState();
+        await renameNote(oldPath, newPath);
+      } catch (err) {
+        console.error("Failed to rename note:", err);
+      }
+    }
+
+    setRenamingNote(null);
+    setRenameValue("");
+  };
+
+  const handleOpenInNewPane = (note: NoteMetadata) => {
+    // For now, just open the note (multi-pane support can be added later)
+    openNote(note.path);
   };
 
   if (isSidebarCollapsed) {
@@ -182,6 +429,13 @@ export function Sidebar() {
           onClick={() => setMainViewMode(mainViewMode === "graph" ? "notes" : "graph")}
         >
           <GraphIcon />
+        </button>
+        <button
+          className={clsx("btn-icon", mainViewMode === "vault-health" && "text-accent-primary")}
+          title="Vault Health"
+          onClick={() => setMainViewMode(mainViewMode === "vault-health" ? "notes" : "vault-health")}
+        >
+          <HealthIcon />
         </button>
       </div>
     );
@@ -246,12 +500,32 @@ export function Sidebar() {
           <PlusIcon />
           <span>New Note</span>
         </button>
+
+        {/* Vault Health button */}
+        <button
+          className={clsx(
+            "flex items-center gap-2 text-sm mt-2",
+            mainViewMode === "vault-health"
+              ? "text-accent-primary"
+              : "text-dark-400 hover:text-dark-200"
+          )}
+          onClick={() => setMainViewMode(mainViewMode === "vault-health" ? "notes" : "vault-health")}
+        >
+          <HealthIcon />
+          <span>Vault Health</span>
+        </button>
       </div>
 
       {/* File tree */}
-      <div className="flex-1 overflow-y-auto py-2">
+      <div className="flex-1 overflow-y-auto py-2" ref={sidebarRef} tabIndex={0}>
         {folderTree.children.size > 0 || folderTree.notes.length > 0 ? (
-          <FolderItem folder={folderTree} level={0} />
+          <FolderItem
+            folder={folderTree}
+            level={0}
+            selectedNote={selectedNote}
+            onSelectNote={setSelectedNote}
+            onContextMenu={handleContextMenu}
+          />
         ) : (
           <div className="px-4 py-8 text-center text-dark-500 text-sm">
             No notes yet. Create your first note!
@@ -263,8 +537,60 @@ export function Sidebar() {
       <div className="p-4 border-t border-dark-800">
         <div className="text-xs text-dark-500">
           {vault?.note_count ?? 0} notes
+          {selectedNote && (
+            <span className="ml-2 text-accent-primary">• {selectedNote.title} selected</span>
+          )}
         </div>
       </div>
+
+      {/* Context Menu */}
+      <NoteContextMenu
+        state={contextMenu}
+        onClose={() => setContextMenu({ x: 0, y: 0, note: null })}
+        onDelete={handleDeleteNote}
+        onRename={handleRenameNote}
+        onArchive={handleArchiveNote}
+        onOpenInNewPane={handleOpenInNewPane}
+      />
+
+      {/* Inline Rename Input (modal overlay) */}
+      {renamingNote && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setRenamingNote(null)}
+          />
+          <div className="relative bg-dark-900 border border-dark-700 rounded-lg shadow-xl p-4 w-80">
+            <h3 className="text-sm font-medium text-dark-200 mb-3">Rename Note</h3>
+            <input
+              ref={renameInputRef}
+              type="text"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleRenameSubmit();
+                if (e.key === "Escape") setRenamingNote(null);
+              }}
+              className="w-full px-3 py-2 bg-dark-800 border border-dark-600 rounded-lg text-dark-100 text-sm focus:outline-none focus:border-accent-primary"
+              placeholder="Note name"
+            />
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                className="px-3 py-1.5 text-sm text-dark-400 hover:text-dark-200"
+                onClick={() => setRenamingNote(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-3 py-1.5 text-sm bg-accent-primary text-dark-950 rounded-lg hover:bg-accent-primary/90"
+                onClick={handleRenameSubmit}
+              >
+                Rename
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

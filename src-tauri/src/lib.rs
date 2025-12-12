@@ -51,6 +51,15 @@ pub fn run() {
             commands::db::get_graph_data,
             commands::db::get_all_tags,
             commands::db::get_all_mentions,
+            // Vault health commands
+            commands::db::get_orphan_notes,
+            commands::db::get_broken_links,
+            commands::db::get_vault_health,
+            // Organization helper commands
+            commands::db::get_unlinked_mentions,
+            commands::db::get_random_note,
+            commands::db::get_potential_mocs,
+            commands::db::get_notes_by_folder,
             // Git commands
             git::git_status,
             git::git_pull,

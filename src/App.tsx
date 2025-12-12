@@ -10,6 +10,7 @@ import { CommandPalette } from "./components/common/CommandPalette";
 import { PluginManager } from "./components/common/PluginManager";
 import { ConfirmDialog } from "./components/common/ConfirmDialog";
 import { DebugConsole } from "./components/common/DebugConsole";
+import { CreateNoteModal } from "./components/modals/CreateNoteModal";
 import { useVaultStore } from "./stores/vaultStore";
 import { useUIStore } from "./stores/uiStore";
 import { useNoteStore } from "./stores/noteStore";
@@ -38,6 +39,7 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
     { key: "Ctrl+P", action: "Command Palette" },
     { key: "Ctrl+Shift+F", action: "Global Search" },
     { key: "Ctrl+N", action: "New Note" },
+    { key: "Ctrl+Shift+N", action: "New Note (Templates)" },
     { key: "Ctrl+D", action: "Daily Note" },
     { key: "Ctrl+S", action: "Save Note" },
     { key: "Ctrl+B", action: "Toggle Sidebar" },
@@ -92,7 +94,7 @@ function AboutModal({ onClose }: { onClose: () => void }) {
 
 function App() {
   const { vault, isLoading, openVault } = useVaultStore();
-  const { isSearchOpen, setSearchOpen, toggleSidebar, mainViewMode, setMainViewMode } = useUIStore();
+  const { isSearchOpen, setSearchOpen, toggleSidebar, mainViewMode, setMainViewMode, openModal } = useUIStore();
   const { createNote, createFolder, openDailyNote } = useNoteStore();
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [isShortcutsOpen, setShortcutsOpen] = useState(false);
@@ -164,6 +166,7 @@ function App() {
       "kairo:about": () => setAboutOpen(true),
       "kairo:extensions": () => setPluginManagerOpen(true),
       "kairo:daily-note": () => openDailyNote(),
+      "kairo:create-note": () => openModal("create-note"),
     };
 
     const listeners = Object.entries(handlers).map(([event, handler]) => {
@@ -172,7 +175,7 @@ function App() {
     });
 
     return () => listeners.forEach((cleanup) => cleanup());
-  }, [createNote, createFolder, openVault, setSearchOpen, toggleSidebar, cycleEditorViewMode, kanbanStore, gitStore, templateStore, snippetStore, graphStore, setMainViewMode, openDailyNote]);
+  }, [createNote, createFolder, openVault, setSearchOpen, toggleSidebar, cycleEditorViewMode, kanbanStore, gitStore, templateStore, snippetStore, graphStore, setMainViewMode, openDailyNote, openModal]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -201,6 +204,12 @@ function App() {
         openDailyNote();
       }
 
+      // Ctrl/Cmd + Shift + N: Open create note modal (templates)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "N") {
+        e.preventDefault();
+        openModal("create-note");
+      }
+
       // Escape: Close modals or return to notes view
       if (e.key === "Escape") {
         if (isSearchOpen) {
@@ -215,7 +224,7 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [setSearchOpen, isSearchOpen, isCommandPaletteOpen, mainViewMode, setMainViewMode, openDailyNote]);
+  }, [setSearchOpen, isSearchOpen, isCommandPaletteOpen, mainViewMode, setMainViewMode, openDailyNote, openModal]);
 
   if (isLoading) {
     return (
@@ -264,6 +273,7 @@ function App() {
       <KanbanBoard />
       <TemplateModal />
       <SnippetModal />
+      <CreateNoteModal />
 
       {/* App modals */}
       {isShortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
