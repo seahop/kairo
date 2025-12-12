@@ -8,7 +8,6 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
 pub use indexer::*;
-pub use schema::*;
 pub use search::*;
 
 /// Database state managed by Tauri

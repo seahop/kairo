@@ -41,7 +41,7 @@ impl VaultWatcher {
     }
 
     /// Stop watching
-    pub fn stop(mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn stop(self) -> Result<(), Box<dyn std::error::Error>> {
         // The watcher will be dropped and stop watching
         drop(self.watcher);
         Ok(())

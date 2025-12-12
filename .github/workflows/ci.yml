@@ -51,6 +51,9 @@ jobs:
             libsoup-3.0-dev \
             libjavascriptcoregtk-4.1-dev
 
+      - name: Create dummy dist for Tauri context
+        run: mkdir -p dist && echo '<!DOCTYPE html><html><body></body></html>' > dist/index.html
+
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
