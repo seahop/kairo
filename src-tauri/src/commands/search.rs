@@ -15,9 +15,9 @@ pub struct SearchResult {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SearchMatch {
-    pub field: String,       // "title", "content", "code_block", "tag"
-    pub text: String,        // The matched text
-    pub context: String,     // Surrounding context
+    pub field: String,   // "title", "content", "code_block", "tag"
+    pub text: String,    // The matched text
+    pub context: String, // Surrounding context
 }
 
 #[derive(Debug, Serialize, Deserialize)]

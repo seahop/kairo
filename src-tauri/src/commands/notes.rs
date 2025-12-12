@@ -165,7 +165,11 @@ pub async fn delete_note(app: AppHandle, path: String) -> Result<(), String> {
 
 /// Rename/move a note
 #[tauri::command]
-pub async fn rename_note(app: AppHandle, old_path: String, new_path: String) -> Result<NoteMetadata, String> {
+pub async fn rename_note(
+    app: AppHandle,
+    old_path: String,
+    new_path: String,
+) -> Result<NoteMetadata, String> {
     let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
     let old_note_path = vault_path.join(&old_path);
     let new_note_path = vault_path.join(&new_path);

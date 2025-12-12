@@ -82,6 +82,9 @@ pub fn get_potential_mocs(app: AppHandle, min_links: usize) -> Result<Vec<db::Gr
 
 /// Get notes by folder prefix (for PARA-style organization)
 #[tauri::command]
-pub fn get_notes_by_folder(app: AppHandle, folder_prefix: String) -> Result<Vec<db::OrphanNote>, String> {
+pub fn get_notes_by_folder(
+    app: AppHandle,
+    folder_prefix: String,
+) -> Result<Vec<db::OrphanNote>, String> {
     db::get_notes_by_folder(&app, &folder_prefix).map_err(|e| e.to_string())
 }

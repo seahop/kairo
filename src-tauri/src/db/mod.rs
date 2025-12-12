@@ -33,7 +33,10 @@ pub fn init(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Open database for a vault
-pub fn open_vault_db(app: &AppHandle, vault_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+pub fn open_vault_db(
+    app: &AppHandle,
+    vault_path: &PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
     let db_path = vault_path.join(".kairo").join("index.db");
 
     // Ensure .kairo directory exists

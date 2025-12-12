@@ -165,7 +165,10 @@ pub async fn index_single_note(
 }
 
 /// Remove a note from the index
-pub fn remove_note_from_index(app: &AppHandle, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn remove_note_from_index(
+    app: &AppHandle,
+    path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     with_db(app, |conn| {
         conn.execute("DELETE FROM notes WHERE path = ?1", params![path])?;
         Ok(())
@@ -255,13 +258,16 @@ fn serde_yaml_to_json(yaml: &str) -> Result<String, Box<dyn std::error::Error>> 
 
             // Handle arrays
             if value.starts_with('[') && value.ends_with(']') {
-                let items: Vec<String> = value[1..value.len()-1]
+                let items: Vec<String> = value[1..value.len() - 1]
                     .split(',')
                     .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
                     .collect();
                 map.insert(key, serde_json::json!(items));
             } else {
-                map.insert(key, serde_json::json!(value.trim_matches('"').trim_matches('\'')));
+                map.insert(
+                    key,
+                    serde_json::json!(value.trim_matches('"').trim_matches('\'')),
+                );
             }
         }
     }
@@ -276,7 +282,8 @@ fn extract_entities(content: &str) -> Vec<(String, String, String, i32)> {
     let ip_re = Regex::new(r"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b").unwrap();
 
     // Domains
-    let domain_re = Regex::new(r"\b([a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})?)\b").unwrap();
+    let domain_re =
+        Regex::new(r"\b([a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})?)\b").unwrap();
 
     // CVEs
     let cve_re = Regex::new(r"\b(CVE-\d{4}-\d{4,})\b").unwrap();
@@ -292,27 +299,52 @@ fn extract_entities(content: &str) -> Vec<(String, String, String, i32)> {
         let context = line.chars().take(100).collect::<String>();
 
         for cap in ip_re.captures_iter(line) {
-            entities.push(("ip".to_string(), cap[1].to_string(), context.clone(), line_num));
+            entities.push((
+                "ip".to_string(),
+                cap[1].to_string(),
+                context.clone(),
+                line_num,
+            ));
         }
 
         for cap in domain_re.captures_iter(line) {
             let domain = &cap[1];
             // Filter out common non-domains
             if !domain.ends_with(".md") && !domain.ends_with(".rs") && !domain.ends_with(".ts") {
-                entities.push(("domain".to_string(), domain.to_string(), context.clone(), line_num));
+                entities.push((
+                    "domain".to_string(),
+                    domain.to_string(),
+                    context.clone(),
+                    line_num,
+                ));
             }
         }
 
         for cap in cve_re.captures_iter(line) {
-            entities.push(("cve".to_string(), cap[1].to_string(), context.clone(), line_num));
+            entities.push((
+                "cve".to_string(),
+                cap[1].to_string(),
+                context.clone(),
+                line_num,
+            ));
         }
 
         for cap in username_re.captures_iter(line) {
-            entities.push(("username".to_string(), cap[1].to_string(), context.clone(), line_num));
+            entities.push((
+                "username".to_string(),
+                cap[1].to_string(),
+                context.clone(),
+                line_num,
+            ));
         }
 
         for cap in mention_re.captures_iter(line) {
-            entities.push(("mention".to_string(), cap[1].to_string(), context.clone(), line_num));
+            entities.push((
+                "mention".to_string(),
+                cap[1].to_string(),
+                context.clone(),
+                line_num,
+            ));
         }
     }
 
@@ -360,7 +392,12 @@ fn extract_code_blocks(content: &str) -> Vec<(Option<String>, String, i32, i32)>
         if line.starts_with("```") {
             if in_block {
                 // End of code block
-                blocks.push((current_lang.clone(), current_content.clone(), start_line, line_num));
+                blocks.push((
+                    current_lang.clone(),
+                    current_content.clone(),
+                    start_line,
+                    line_num,
+                ));
                 current_content.clear();
                 current_lang = None;
                 in_block = false;
@@ -369,7 +406,11 @@ fn extract_code_blocks(content: &str) -> Vec<(Option<String>, String, i32, i32)>
                 in_block = true;
                 start_line = line_num;
                 let lang = line[3..].trim();
-                current_lang = if lang.is_empty() { None } else { Some(lang.to_string()) };
+                current_lang = if lang.is_empty() {
+                    None
+                } else {
+                    Some(lang.to_string())
+                };
             }
         } else if in_block {
             if !current_content.is_empty() {

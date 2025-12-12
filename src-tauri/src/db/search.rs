@@ -29,7 +29,9 @@ fn ceil_char_boundary(s: &str, index: usize) -> usize {
     }
 }
 use crate::commands::db::Backlink;
-use crate::commands::search::{EntityResult, SavedSearch, SearchFilters, SearchMatch, SearchResult};
+use crate::commands::search::{
+    EntityResult, SavedSearch, SearchFilters, SearchMatch, SearchResult,
+};
 
 /// Search notes using FTS5
 pub fn search_notes(
@@ -44,7 +46,11 @@ pub fn search_notes(
 
         let mut results = Vec::new();
 
-        if code_only || filters.as_ref().map_or(false, |f| f.code_only.unwrap_or(false)) {
+        if code_only
+            || filters
+                .as_ref()
+                .map_or(false, |f| f.code_only.unwrap_or(false))
+        {
             // Search only in code blocks
             let mut stmt = conn.prepare(
                 r#"
@@ -80,7 +86,11 @@ pub fn search_notes(
                     matches: vec![SearchMatch {
                         field: "code_block".to_string(),
                         text: fts_query.clone(),
-                        context: format!("```{}\n{}", language.unwrap_or_default(), code_content.chars().take(200).collect::<String>()),
+                        context: format!(
+                            "```{}\n{}",
+                            language.unwrap_or_default(),
+                            code_content.chars().take(200).collect::<String>()
+                        ),
                     }],
                 });
             }
@@ -88,7 +98,7 @@ pub fn search_notes(
             // Full-text search using FTS5
             // Replace wildcards with FTS5 syntax
             let fts_query = fts_query
-                .replace('*', "*")  // FTS5 uses * for prefix matching
+                .replace('*', "*") // FTS5 uses * for prefix matching
                 .split_whitespace()
                 .collect::<Vec<_>>()
                 .join(" OR ");
@@ -150,9 +160,7 @@ pub fn search_notes(
                 let tag_set: std::collections::HashSet<_> = tags.iter().collect();
 
                 results.retain(|r| {
-                    let mut stmt = conn.prepare(
-                        "SELECT tag FROM tags WHERE note_id = ?1"
-                    ).ok();
+                    let mut stmt = conn.prepare("SELECT tag FROM tags WHERE note_id = ?1").ok();
 
                     if let Some(ref mut stmt) = stmt {
                         let note_tags: Vec<String> = stmt
@@ -184,46 +192,58 @@ pub fn search_entities(
         let pattern_like = pattern.map(|p| p.replace('*', "%"));
 
         // Build query based on what filters are present
-        let (query, params_vec): (String, Vec<Box<dyn rusqlite::ToSql>>) = match (entity_type, pattern_like.as_ref()) {
-            (Some(et), Some(p)) => (
-                r#"SELECT e.entity_type, e.value, n.path, n.title, e.context
+        let (query, params_vec): (String, Vec<Box<dyn rusqlite::ToSql>>) =
+            match (entity_type, pattern_like.as_ref()) {
+                (Some(et), Some(p)) => (
+                    r#"SELECT e.entity_type, e.value, n.path, n.title, e.context
                    FROM entities e
                    JOIN notes n ON e.note_id = n.id
                    WHERE e.entity_type = ?1 AND e.value LIKE ?2
-                   ORDER BY e.value LIMIT ?3"#.to_string(),
-                vec![Box::new(et.to_string()) as Box<dyn rusqlite::ToSql>,
-                     Box::new(p.clone()) as Box<dyn rusqlite::ToSql>,
-                     Box::new(limit as i64) as Box<dyn rusqlite::ToSql>]
-            ),
-            (Some(et), None) => (
-                r#"SELECT e.entity_type, e.value, n.path, n.title, e.context
+                   ORDER BY e.value LIMIT ?3"#
+                        .to_string(),
+                    vec![
+                        Box::new(et.to_string()) as Box<dyn rusqlite::ToSql>,
+                        Box::new(p.clone()) as Box<dyn rusqlite::ToSql>,
+                        Box::new(limit as i64) as Box<dyn rusqlite::ToSql>,
+                    ],
+                ),
+                (Some(et), None) => (
+                    r#"SELECT e.entity_type, e.value, n.path, n.title, e.context
                    FROM entities e
                    JOIN notes n ON e.note_id = n.id
                    WHERE e.entity_type = ?1
-                   ORDER BY e.value LIMIT ?2"#.to_string(),
-                vec![Box::new(et.to_string()) as Box<dyn rusqlite::ToSql>,
-                     Box::new(limit as i64) as Box<dyn rusqlite::ToSql>]
-            ),
-            (None, Some(p)) => (
-                r#"SELECT e.entity_type, e.value, n.path, n.title, e.context
+                   ORDER BY e.value LIMIT ?2"#
+                        .to_string(),
+                    vec![
+                        Box::new(et.to_string()) as Box<dyn rusqlite::ToSql>,
+                        Box::new(limit as i64) as Box<dyn rusqlite::ToSql>,
+                    ],
+                ),
+                (None, Some(p)) => (
+                    r#"SELECT e.entity_type, e.value, n.path, n.title, e.context
                    FROM entities e
                    JOIN notes n ON e.note_id = n.id
                    WHERE e.value LIKE ?1
-                   ORDER BY e.value LIMIT ?2"#.to_string(),
-                vec![Box::new(p.clone()) as Box<dyn rusqlite::ToSql>,
-                     Box::new(limit as i64) as Box<dyn rusqlite::ToSql>]
-            ),
-            (None, None) => (
-                r#"SELECT e.entity_type, e.value, n.path, n.title, e.context
+                   ORDER BY e.value LIMIT ?2"#
+                        .to_string(),
+                    vec![
+                        Box::new(p.clone()) as Box<dyn rusqlite::ToSql>,
+                        Box::new(limit as i64) as Box<dyn rusqlite::ToSql>,
+                    ],
+                ),
+                (None, None) => (
+                    r#"SELECT e.entity_type, e.value, n.path, n.title, e.context
                    FROM entities e
                    JOIN notes n ON e.note_id = n.id
-                   ORDER BY e.value LIMIT ?1"#.to_string(),
-                vec![Box::new(limit as i64) as Box<dyn rusqlite::ToSql>]
-            ),
-        };
+                   ORDER BY e.value LIMIT ?1"#
+                        .to_string(),
+                    vec![Box::new(limit as i64) as Box<dyn rusqlite::ToSql>],
+                ),
+            };
 
         let mut stmt = conn.prepare(&query)?;
-        let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|b| b.as_ref()).collect();
 
         let mut results = Vec::new();
         let mut rows = stmt.query(params_refs.as_slice())?;
@@ -389,7 +409,8 @@ pub fn get_graph_data(app: &AppHandle) -> Result<GraphData, Box<dyn std::error::
             .filter_map(|r| r.ok())
             .filter_map(|(source_id, target_path, context)| {
                 // Try to resolve target path to an id
-                let target_id = path_to_id.get(&target_path)
+                let target_id = path_to_id
+                    .get(&target_path)
                     .or_else(|| path_to_id.get(&format!("notes/{}.md", target_path)))
                     .or_else(|| path_to_id.get(&format!("{}.md", target_path)))
                     .or_else(|| {
@@ -411,7 +432,10 @@ pub fn get_graph_data(app: &AppHandle) -> Result<GraphData, Box<dyn std::error::
 }
 
 /// Get backlinks to a specific note
-pub fn get_backlinks(app: &AppHandle, note_path: &str) -> Result<Vec<Backlink>, Box<dyn std::error::Error>> {
+pub fn get_backlinks(
+    app: &AppHandle,
+    note_path: &str,
+) -> Result<Vec<Backlink>, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
         let mut stmt = conn.prepare(
             r#"
@@ -479,7 +503,10 @@ fn create_snippet(content: &str, query: &str, max_len: usize) -> String {
     if let Some(pos) = content_lower.find(&query_lower) {
         // Use safe character boundary functions to avoid panics on multi-byte chars
         let start = floor_char_boundary(content, pos.saturating_sub(max_len / 2));
-        let end = ceil_char_boundary(content, (pos + query.len() + max_len / 2).min(content.len()));
+        let end = ceil_char_boundary(
+            content,
+            (pos + query.len() + max_len / 2).min(content.len()),
+        );
 
         let mut snippet = String::new();
         if start > 0 {
@@ -518,9 +545,8 @@ pub fn get_all_tags(app: &AppHandle) -> Result<Vec<String>, Box<dyn std::error::
 /// Get all unique mentions in the vault
 pub fn get_all_mentions(app: &AppHandle) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT DISTINCT value FROM entities WHERE type = 'mention' ORDER BY value"
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT value FROM entities WHERE type = 'mention' ORDER BY value")?;
         let mentions: Vec<String> = stmt
             .query_map([], |row| row.get(0))?
             .filter_map(|r| r.ok())
@@ -645,26 +671,28 @@ pub fn get_broken_links(app: &AppHandle) -> Result<Vec<BrokenLink>, Box<dyn std:
                 ))
             })?
             .filter_map(|r| r.ok())
-            .filter_map(|(source_id, source_path, source_title, target_ref, context)| {
-                // Check if target exists
-                let target_exists = note_paths.contains(&target_ref)
-                    || note_paths.contains(&format!("notes/{}.md", target_ref))
-                    || note_paths.contains(&format!("{}.md", target_ref))
-                    || note_paths.contains(&format!("notes/{}", target_ref))
-                    || filenames.contains(&target_ref.to_lowercase());
+            .filter_map(
+                |(source_id, source_path, source_title, target_ref, context)| {
+                    // Check if target exists
+                    let target_exists = note_paths.contains(&target_ref)
+                        || note_paths.contains(&format!("notes/{}.md", target_ref))
+                        || note_paths.contains(&format!("{}.md", target_ref))
+                        || note_paths.contains(&format!("notes/{}", target_ref))
+                        || filenames.contains(&target_ref.to_lowercase());
 
-                if target_exists {
-                    None
-                } else {
-                    Some(BrokenLink {
-                        source_id,
-                        source_path,
-                        source_title,
-                        target_reference: target_ref,
-                        context,
-                    })
-                }
-            })
+                    if target_exists {
+                        None
+                    } else {
+                        Some(BrokenLink {
+                            source_id,
+                            source_path,
+                            source_title,
+                            target_reference: target_ref,
+                            context,
+                        })
+                    }
+                },
+            )
             .collect();
 
         Ok(broken_links)
@@ -675,14 +703,13 @@ pub fn get_broken_links(app: &AppHandle) -> Result<Vec<BrokenLink>, Box<dyn std:
 pub fn get_vault_health(app: &AppHandle) -> Result<VaultHealth, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
         // Total notes
-        let total_notes: usize = conn
-            .query_row("SELECT COUNT(*) FROM notes", [], |row| row.get::<_, i64>(0))?
-            as usize;
+        let total_notes: usize =
+            conn.query_row("SELECT COUNT(*) FROM notes", [], |row| row.get::<_, i64>(0))? as usize;
 
         // Total links
-        let total_links: usize = conn
-            .query_row("SELECT COUNT(*) FROM backlinks", [], |row| row.get::<_, i64>(0))?
-            as usize;
+        let total_links: usize = conn.query_row("SELECT COUNT(*) FROM backlinks", [], |row| {
+            row.get::<_, i64>(0)
+        })? as usize;
 
         // Get orphan count
         let orphan_count: usize = conn.query_row(
@@ -780,7 +807,9 @@ pub fn get_vault_health(app: &AppHandle) -> Result<VaultHealth, Box<dyn std::err
     })
 }
 
-fn get_broken_links_count(conn: &rusqlite::Connection) -> Result<usize, Box<dyn std::error::Error>> {
+fn get_broken_links_count(
+    conn: &rusqlite::Connection,
+) -> Result<usize, Box<dyn std::error::Error>> {
     // Get all note paths for comparison
     let mut paths_stmt = conn.prepare("SELECT path FROM notes")?;
     let note_paths: std::collections::HashSet<String> = paths_stmt
@@ -831,7 +860,9 @@ pub struct UnlinkedMention {
 }
 
 /// Get unlinked mentions (note titles that appear in content but aren't wiki-linked)
-pub fn get_unlinked_mentions(app: &AppHandle) -> Result<Vec<UnlinkedMention>, Box<dyn std::error::Error>> {
+pub fn get_unlinked_mentions(
+    app: &AppHandle,
+) -> Result<Vec<UnlinkedMention>, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
         // Get all notes with their titles and content
         let mut notes_stmt = conn.prepare("SELECT id, path, title, content FROM notes")?;
@@ -897,7 +928,10 @@ pub fn get_unlinked_mentions(app: &AppHandle) -> Result<Vec<UnlinkedMention>, Bo
                 if let Some(pos) = content_lower.find(&title_lower) {
                     // Use safe character boundary functions to avoid panics on multi-byte chars
                     let start = floor_char_boundary(other_content, pos.saturating_sub(40));
-                    let end = ceil_char_boundary(other_content, (pos + note_title.len() + 40).min(other_content.len()));
+                    let end = ceil_char_boundary(
+                        other_content,
+                        (pos + note_title.len() + 40).min(other_content.len()),
+                    );
                     let context = other_content[start..end].to_string();
 
                     unlinked.push(UnlinkedMention {
@@ -921,7 +955,7 @@ pub fn get_unlinked_mentions(app: &AppHandle) -> Result<Vec<UnlinkedMention>, Bo
 pub fn get_random_note(app: &AppHandle) -> Result<Option<OrphanNote>, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, path, title, created_at, modified_at FROM notes ORDER BY RANDOM() LIMIT 1"
+            "SELECT id, path, title, created_at, modified_at FROM notes ORDER BY RANDOM() LIMIT 1",
         )?;
 
         let note = stmt
@@ -941,7 +975,10 @@ pub fn get_random_note(app: &AppHandle) -> Result<Option<OrphanNote>, Box<dyn st
 }
 
 /// Get notes that could be MOCs (Maps of Content) - notes with many outgoing links
-pub fn get_potential_mocs(app: &AppHandle, min_links: usize) -> Result<Vec<GraphNode>, Box<dyn std::error::Error>> {
+pub fn get_potential_mocs(
+    app: &AppHandle,
+    min_links: usize,
+) -> Result<Vec<GraphNode>, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
         let mut stmt = conn.prepare(
             r#"
@@ -976,7 +1013,10 @@ pub fn get_potential_mocs(app: &AppHandle, min_links: usize) -> Result<Vec<Graph
 }
 
 /// Get notes by folder/prefix for PARA-style organization
-pub fn get_notes_by_folder(app: &AppHandle, folder_prefix: &str) -> Result<Vec<OrphanNote>, Box<dyn std::error::Error>> {
+pub fn get_notes_by_folder(
+    app: &AppHandle,
+    folder_prefix: &str,
+) -> Result<Vec<OrphanNote>, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
         let pattern = format!("{}%", folder_prefix);
         let mut stmt = conn.prepare(

@@ -36,8 +36,18 @@ case "$BUILD_TYPE" in
         docker compose -f "${SCRIPT_DIR}/docker-compose.yml" run --rm kairo-dev bash
         exit 0
         ;;
+    fmt)
+        echo -e "${YELLOW}Formatting Rust code...${NC}"
+        docker compose -f "${SCRIPT_DIR}/docker-compose.yml" run --rm kairo-dev cargo fmt --manifest-path src-tauri/Cargo.toml
+        exit 0
+        ;;
+    check)
+        echo -e "${YELLOW}Running cargo check...${NC}"
+        docker compose -f "${SCRIPT_DIR}/docker-compose.yml" run --rm kairo-dev cargo check --manifest-path src-tauri/Cargo.toml
+        exit 0
+        ;;
     *)
-        echo -e "${RED}Usage: $0 [release|dev|shell]${NC}"
+        echo -e "${RED}Usage: $0 [release|dev|shell|fmt|check]${NC}"
         exit 1
         ;;
 esac

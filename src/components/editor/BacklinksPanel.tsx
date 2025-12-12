@@ -30,7 +30,7 @@ export function BacklinksPanel() {
   const { currentNote, openNote } = useNoteStore();
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     if (!currentNote) {

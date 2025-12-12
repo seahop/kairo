@@ -10,8 +10,7 @@ pub fn read_plugin_data(
     plugin_id: String,
     key: String,
 ) -> Result<Option<String>, String> {
-    let vault_path = db::get_current_vault_path(&app)
-        .ok_or("No vault is currently open")?;
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault is currently open")?;
 
     let plugin_dir = vault_path.join(".kairo").join("plugins").join(&plugin_id);
     let data_path = plugin_dir.join(format!("{}.json", key));
@@ -32,8 +31,7 @@ pub fn write_plugin_data(
     key: String,
     data: String,
 ) -> Result<(), String> {
-    let vault_path = db::get_current_vault_path(&app)
-        .ok_or("No vault is currently open")?;
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault is currently open")?;
 
     let plugin_dir = vault_path.join(".kairo").join("plugins").join(&plugin_id);
 
@@ -48,13 +46,8 @@ pub fn write_plugin_data(
 
 /// Delete plugin data from the vault's plugin storage
 #[tauri::command]
-pub fn delete_plugin_data(
-    app: AppHandle,
-    plugin_id: String,
-    key: String,
-) -> Result<(), String> {
-    let vault_path = db::get_current_vault_path(&app)
-        .ok_or("No vault is currently open")?;
+pub fn delete_plugin_data(app: AppHandle, plugin_id: String, key: String) -> Result<(), String> {
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault is currently open")?;
 
     let plugin_dir = vault_path.join(".kairo").join("plugins").join(&plugin_id);
     let data_path = plugin_dir.join(format!("{}.json", key));
@@ -69,8 +62,7 @@ pub fn delete_plugin_data(
 /// List all keys stored for a plugin
 #[tauri::command]
 pub fn list_plugin_data(app: AppHandle, plugin_id: String) -> Result<Vec<String>, String> {
-    let vault_path = db::get_current_vault_path(&app)
-        .ok_or("No vault is currently open")?;
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault is currently open")?;
 
     let plugin_dir = vault_path.join(".kairo").join("plugins").join(&plugin_id);
 

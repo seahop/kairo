@@ -69,9 +69,7 @@ pub fn get_extensions_path(vault_path: &str) -> String {
 /// Create the extensions directory if it doesn't exist
 #[tauri::command]
 pub fn ensure_extensions_directory(vault_path: &str) -> Result<String, String> {
-    let extensions_path = Path::new(vault_path)
-        .join(".kairo")
-        .join("extensions");
+    let extensions_path = Path::new(vault_path).join(".kairo").join("extensions");
 
     if !extensions_path.exists() {
         fs::create_dir_all(&extensions_path).map_err(|e| e.to_string())?;

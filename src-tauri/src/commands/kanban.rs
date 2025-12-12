@@ -148,7 +148,11 @@ pub fn kanban_delete_board(app: AppHandle, board_id: String) -> Result<(), Strin
 
 /// Add a column to a board
 #[tauri::command]
-pub fn kanban_add_column(app: AppHandle, board_id: String, name: String) -> Result<KanbanBoard, String> {
+pub fn kanban_add_column(
+    app: AppHandle,
+    board_id: String,
+    name: String,
+) -> Result<KanbanBoard, String> {
     with_db(&app, |conn| {
         // Get current columns
         let columns_json: String = conn
