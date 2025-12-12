@@ -6,6 +6,32 @@ use tauri::AppHandle;
 use walkdir::WalkDir;
 
 use super::with_db;
+
+/// Safely find a character boundary at or before the given byte index
+fn floor_char_boundary(s: &str, index: usize) -> usize {
+    if index >= s.len() {
+        s.len()
+    } else {
+        let mut idx = index;
+        while idx > 0 && !s.is_char_boundary(idx) {
+            idx -= 1;
+        }
+        idx
+    }
+}
+
+/// Safely find a character boundary at or after the given byte index
+fn ceil_char_boundary(s: &str, index: usize) -> usize {
+    if index >= s.len() {
+        s.len()
+    } else {
+        let mut idx = index;
+        while idx < s.len() && !s.is_char_boundary(idx) {
+            idx += 1;
+        }
+        idx
+    }
+}
 use crate::commands::notes::NoteMetadata;
 
 /// Index the entire vault
@@ -370,8 +396,9 @@ fn extract_links(content: &str) -> Vec<(String, String)> {
         let context = content
             .find(&cap[0])
             .map(|i| {
-                let start = i.saturating_sub(30);
-                let end = (i + cap[0].len() + 30).min(content.len());
+                // Use safe character boundary functions to avoid panics on multi-byte chars
+                let start = floor_char_boundary(content, i.saturating_sub(30));
+                let end = ceil_char_boundary(content, (i + cap[0].len() + 30).min(content.len()));
                 content[start..end].to_string()
             })
             .unwrap_or_default();
@@ -383,8 +410,9 @@ fn extract_links(content: &str) -> Vec<(String, String)> {
         let context = content
             .find(&cap[0])
             .map(|i| {
-                let start = i.saturating_sub(30);
-                let end = (i + cap[0].len() + 30).min(content.len());
+                // Use safe character boundary functions to avoid panics on multi-byte chars
+                let start = floor_char_boundary(content, i.saturating_sub(30));
+                let end = ceil_char_boundary(content, (i + cap[0].len() + 30).min(content.len()));
                 content[start..end].to_string()
             })
             .unwrap_or_default();

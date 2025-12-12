@@ -78,8 +78,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   viewMode: "global",
   localDepth: 2,
   showOrphans: true,
-  linkDistance: 100,
-  chargeStrength: -200,
+  linkDistance: 120,
+  chargeStrength: -300,
 
   loadGraphData: async () => {
     set({ isLoading: true, error: null });

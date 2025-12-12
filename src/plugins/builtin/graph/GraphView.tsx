@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
+import { forceCollide } from "d3-force";
 import { useGraphStore, GraphNode, GraphData } from "./store";
 import { useNoteStore } from "@/stores/noteStore";
 
@@ -38,18 +39,24 @@ interface GraphViewPanelProps {
   height?: number;
 }
 
+interface ContextMenu {
+  x: number;
+  y: number;
+  node: GraphNode;
+}
+
 export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
   const fgRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
 
   const {
     graphData,
     loadGraphData,
     isLoading,
     selectedNode,
-    setSelectedNode,
     hoveredNode,
     setHoveredNode,
     viewMode,
@@ -177,10 +184,38 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
     }
   }, [currentNote, setFocusedNote]);
 
+  // Configure d3 forces when physics settings change
+  useEffect(() => {
+    if (fgRef.current) {
+      // Configure link force distance
+      const linkForce = fgRef.current.d3Force('link');
+      if (linkForce) {
+        linkForce.distance(linkDistance);
+      }
+
+      // Configure charge (repulsion) force
+      const chargeForce = fgRef.current.d3Force('charge');
+      if (chargeForce) {
+        chargeForce.strength(chargeStrength);
+      }
+
+      // Add collision force to prevent nodes from overlapping
+      fgRef.current.d3Force('collision', forceCollide().radius((node: any) => {
+        const graphNode = node as GraphNode;
+        const connections = (graphNode.linkCount || 0) + (graphNode.backlinkCount || 0);
+        // Collision radius based on node size + padding
+        return Math.max(8, Math.min(20, 8 + connections * 0.8));
+      }));
+
+      // Reheat simulation to apply changes
+      fgRef.current.d3ReheatSimulation();
+    }
+  }, [linkDistance, chargeStrength]);
+
   // Node coloring based on state
   const getNodeColor = useCallback(
     (node: GraphNode) => {
-      // Search result highlighting
+      // Search result highlighting (highest priority)
       if (viewMode === "search" && searchResults.includes(node.id)) {
         return "#f59e0b"; // amber - search result
       }
@@ -190,10 +225,10 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
 
       // Color by connection density
       const connections = node.linkCount + node.backlinkCount;
-      if (connections > 10) return "#22c55e"; // green - hub
-      if (connections > 5) return "#f59e0b"; // amber
-      if (connections > 2) return "#94a3b8"; // slate
-      return "#475569"; // dark slate - few connections
+      if (connections > 10) return "#22c55e"; // green - hub (many connections)
+      if (connections > 5) return "#06b6d4"; // cyan - connected (medium connections)
+      if (connections > 2) return "#94a3b8"; // slate - normal (some connections)
+      return "#64748b"; // slate-500 - sparse (few connections)
     },
     [focusedNote, selectedNode, hoveredNode, viewMode, searchResults]
   );
@@ -219,11 +254,59 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
   );
 
   const handleNodeRightClick = useCallback(
-    (node: GraphNode) => {
-      setSelectedNode(node.id === selectedNode ? null : node.id);
+    (node: GraphNode, event: MouseEvent) => {
+      event.preventDefault();
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        node: node,
+      });
     },
-    [selectedNode, setSelectedNode]
+    []
   );
+
+  // Close context menu when clicking elsewhere
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    window.addEventListener('click', handleClick);
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('click', handleClick);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
+
+  // Context menu actions
+  const handleContextMenuAction = useCallback((action: string, node: GraphNode) => {
+    setContextMenu(null);
+    switch (action) {
+      case 'open':
+        openNote(node.path);
+        break;
+      case 'focus':
+        setFocusedNote(node.id);
+        setViewMode('local');
+        break;
+      case 'copyPath':
+        navigator.clipboard.writeText(node.path);
+        break;
+      case 'copyTitle':
+        navigator.clipboard.writeText(node.title);
+        break;
+      case 'copyLink':
+        navigator.clipboard.writeText(`[[${node.title}]]`);
+        break;
+    }
+  }, [openNote, setFocusedNote, setViewMode]);
+
+  // Fix node position after dragging so it stays in place
+  const handleNodeDragEnd = useCallback((node: any) => {
+    node.fx = node.x;
+    node.fy = node.y;
+  }, []);
 
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -290,16 +373,16 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
         <div className="flex items-center gap-2">
           {/* Search input */}
           <div className="relative">
-            <SearchIcon />
+            <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-dark-500 pointer-events-none">
+              <SearchIcon />
+            </div>
             <input
               type="text"
               placeholder="Search nodes..."
               value={searchQuery}
               onChange={handleSearchChange}
-              className="w-48 pl-8 pr-3 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:border-accent-primary absolute -left-1 top-1/2 -translate-y-1/2"
-              style={{ paddingLeft: "2rem" }}
+              className="w-48 pl-8 pr-3 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:border-accent-primary"
             />
-            <div className="w-48 pl-8 pr-3 py-1.5 invisible">placeholder</div>
           </div>
 
           <button
@@ -342,6 +425,15 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
             onNodeClick={handleNodeClick}
             onNodeRightClick={handleNodeRightClick}
             onNodeHover={(node: any) => setHoveredNode(node?.id ?? null)}
+            onNodeDragEnd={handleNodeDragEnd}
+            cooldownTicks={100}
+            onEngineStop={() => fgRef.current?.zoomToFit(400)}
+            onNodeDrag={(node: any) => {
+              // Keep node at cursor position during drag
+              node.fx = node.x;
+              node.fy = node.y;
+            }}
+            enableNodeDrag={true}
             d3AlphaDecay={0.02}
             d3VelocityDecay={0.3}
             backgroundColor="#020617"
@@ -434,7 +526,7 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
 
         {/* Legend */}
         <div className="absolute bottom-2 left-2 bg-dark-900/90 border border-dark-800 rounded-lg p-2 shadow-xl">
-          <div className="flex gap-4 text-xs">
+          <div className="flex gap-3 text-xs flex-wrap">
             <div className="flex items-center gap-1.5">
               <div className="w-2.5 h-2.5 rounded-full bg-accent-primary" />
               <span className="text-dark-400">Current</span>
@@ -447,11 +539,19 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
             )}
             <div className="flex items-center gap-1.5">
               <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
-              <span className="text-dark-400">Hub</span>
+              <span className="text-dark-400">Hub (10+)</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-cyan-500" />
+              <span className="text-dark-400">Connected (5+)</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-400" />
+              <span className="text-dark-400">Normal</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="w-2.5 h-2.5 rounded-full bg-slate-500" />
-              <span className="text-dark-400">Normal</span>
+              <span className="text-dark-400">Sparse</span>
             </div>
           </div>
         </div>
@@ -472,6 +572,66 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
                 </div>
               );
             })()}
+          </div>
+        )}
+
+        {/* Context menu */}
+        {contextMenu && (
+          <div
+            className="fixed bg-dark-900 border border-dark-700 rounded-lg py-1 shadow-xl z-50 min-w-[160px]"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-3 py-1.5 text-xs text-dark-500 border-b border-dark-800 truncate max-w-[200px]">
+              {contextMenu.node.title}
+            </div>
+            <button
+              className="w-full px-3 py-1.5 text-sm text-dark-200 hover:bg-dark-800 text-left flex items-center gap-2"
+              onClick={() => handleContextMenuAction('open', contextMenu.node)}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              Open Note
+            </button>
+            <button
+              className="w-full px-3 py-1.5 text-sm text-dark-200 hover:bg-dark-800 text-left flex items-center gap-2"
+              onClick={() => handleContextMenuAction('focus', contextMenu.node)}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+              Focus in Local View
+            </button>
+            <div className="border-t border-dark-800 my-1" />
+            <button
+              className="w-full px-3 py-1.5 text-sm text-dark-200 hover:bg-dark-800 text-left flex items-center gap-2"
+              onClick={() => handleContextMenuAction('copyLink', contextMenu.node)}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+              Copy Wiki Link
+            </button>
+            <button
+              className="w-full px-3 py-1.5 text-sm text-dark-200 hover:bg-dark-800 text-left flex items-center gap-2"
+              onClick={() => handleContextMenuAction('copyTitle', contextMenu.node)}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              Copy Title
+            </button>
+            <button
+              className="w-full px-3 py-1.5 text-sm text-dark-200 hover:bg-dark-800 text-left flex items-center gap-2"
+              onClick={() => handleContextMenuAction('copyPath', contextMenu.node)}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
+              Copy Path
+            </button>
           </div>
         )}
 

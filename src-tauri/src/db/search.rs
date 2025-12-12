@@ -2,6 +2,32 @@ use rusqlite::params;
 use tauri::AppHandle;
 
 use super::with_db;
+
+/// Safely find a character boundary at or before the given byte index
+fn floor_char_boundary(s: &str, index: usize) -> usize {
+    if index >= s.len() {
+        s.len()
+    } else {
+        let mut idx = index;
+        while idx > 0 && !s.is_char_boundary(idx) {
+            idx -= 1;
+        }
+        idx
+    }
+}
+
+/// Safely find a character boundary at or after the given byte index
+fn ceil_char_boundary(s: &str, index: usize) -> usize {
+    if index >= s.len() {
+        s.len()
+    } else {
+        let mut idx = index;
+        while idx < s.len() && !s.is_char_boundary(idx) {
+            idx += 1;
+        }
+        idx
+    }
+}
 use crate::commands::db::Backlink;
 use crate::commands::search::{EntityResult, SavedSearch, SearchFilters, SearchMatch, SearchResult};
 
@@ -451,8 +477,9 @@ fn create_snippet(content: &str, query: &str, max_len: usize) -> String {
 
     // Find the position of the query in the content
     if let Some(pos) = content_lower.find(&query_lower) {
-        let start = pos.saturating_sub(max_len / 2);
-        let end = (pos + query.len() + max_len / 2).min(content.len());
+        // Use safe character boundary functions to avoid panics on multi-byte chars
+        let start = floor_char_boundary(content, pos.saturating_sub(max_len / 2));
+        let end = ceil_char_boundary(content, (pos + query.len() + max_len / 2).min(content.len()));
 
         let mut snippet = String::new();
         if start > 0 {
@@ -467,7 +494,7 @@ fn create_snippet(content: &str, query: &str, max_len: usize) -> String {
         snippet.replace('\n', " ").replace("  ", " ")
     } else {
         // No match found, return the beginning of the content
-        let end = max_len.min(content.len());
+        let end = ceil_char_boundary(content, max_len.min(content.len()));
         let mut snippet = content[..end].to_string();
         if end < content.len() {
             snippet.push_str("...");
@@ -868,8 +895,9 @@ pub fn get_unlinked_mentions(app: &AppHandle) -> Result<Vec<UnlinkedMention>, Bo
 
                 // Find context around the mention
                 if let Some(pos) = content_lower.find(&title_lower) {
-                    let start = pos.saturating_sub(40);
-                    let end = (pos + note_title.len() + 40).min(other_content.len());
+                    // Use safe character boundary functions to avoid panics on multi-byte chars
+                    let start = floor_char_boundary(other_content, pos.saturating_sub(40));
+                    let end = ceil_char_boundary(other_content, (pos + note_title.len() + 40).min(other_content.len()));
                     let context = other_content[start..end].to_string();
 
                     unlinked.push(UnlinkedMention {
