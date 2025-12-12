@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useVaultStore } from "@/stores/vaultStore";
 
 const appWindow = getCurrentWindow();
@@ -101,16 +102,62 @@ function DropdownMenu({ label, items }: DropdownMenuProps) {
 }
 
 export function TitleBar() {
-  const { vault, closeVault } = useVaultStore();
+  const { vault, closeVault, recentVaults, openVault, createVault } = useVaultStore();
 
   const handleMinimize = () => appWindow.minimize();
   const handleMaximize = () => appWindow.toggleMaximize();
   const handleClose = () => appWindow.close();
 
+  const handleNewVault = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select Folder for New Vault",
+      });
+      if (selected && typeof selected === "string") {
+        const name = selected.split(/[/\\]/).pop() || "My Vault";
+        await createVault(selected, name);
+      }
+    } catch (err) {
+      console.error("Failed to create vault:", err);
+    }
+  };
+
+  const handleOpenVault = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select Vault Folder",
+      });
+      if (selected && typeof selected === "string") {
+        await openVault(selected);
+      }
+    } catch (err) {
+      console.error("Failed to open vault:", err);
+    }
+  };
+
+  // Build recent vaults submenu items
+  const recentVaultItems: DropdownItem[] = recentVaults
+    .filter(v => v.path !== vault?.path) // Don't show current vault
+    .slice(0, 5)
+    .map(v => ({
+      label: v.name,
+      onClick: () => openVault(v.path),
+    }));
+
   const fileMenuItems: DropdownItem[] = [
     { label: "New Note", shortcut: "Ctrl+N", onClick: () => window.dispatchEvent(new CustomEvent("kairo:new-note")) },
-    { label: "New Folder", onClick: () => window.dispatchEvent(new CustomEvent("kairo:new-folder")) },
-    { label: "Open Vault...", onClick: () => window.dispatchEvent(new CustomEvent("kairo:open-vault")), divider: true },
+    { label: "New Note (Templates)", shortcut: "Ctrl+Shift+N", onClick: () => window.dispatchEvent(new CustomEvent("kairo:create-note")) },
+    { label: "New Folder", onClick: () => window.dispatchEvent(new CustomEvent("kairo:new-folder")), divider: true },
+    { label: "New Vault...", onClick: handleNewVault },
+    { label: "Open Vault...", onClick: handleOpenVault },
+    ...(recentVaultItems.length > 0 ? [
+      { label: "Recent Vaults", onClick: () => {}, divider: true } as DropdownItem,
+      ...recentVaultItems,
+    ] : []),
     { label: "Close Vault", onClick: closeVault, divider: true },
     { label: "Exit", shortcut: "Alt+F4", onClick: handleClose },
   ];

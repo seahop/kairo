@@ -14,8 +14,14 @@ const PlusCircleIcon = () => (
   </svg>
 );
 
+const ClockIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
 export function WelcomeScreen() {
-  const { openVault, createVault, isLoading, error } = useVaultStore();
+  const { openVault, createVault, isLoading, error, recentVaults } = useVaultStore();
   const [isCreating, setIsCreating] = useState(false);
   const [vaultName, setVaultName] = useState("");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -117,6 +123,33 @@ export function WelcomeScreen() {
                 </div>
               </div>
             </button>
+
+            {/* Recent Vaults */}
+            {recentVaults.length > 0 && (
+              <div className="mt-8">
+                <div className="flex items-center gap-2 text-dark-400 mb-3">
+                  <ClockIcon />
+                  <span className="text-sm font-medium">Recent Vaults</span>
+                </div>
+                <div className="space-y-2">
+                  {recentVaults.slice(0, 5).map((vault) => (
+                    <button
+                      key={vault.path}
+                      className="w-full p-3 bg-dark-850 hover:bg-dark-800 border border-dark-700 hover:border-dark-600 rounded-lg transition-colors text-left group"
+                      onClick={() => openVault(vault.path)}
+                      disabled={isLoading}
+                    >
+                      <div className="font-medium text-dark-200 group-hover:text-accent-primary">
+                        {vault.name}
+                      </div>
+                      <div className="text-xs text-dark-500 truncate">
+                        {vault.path}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           /* Create vault form */

@@ -93,13 +93,14 @@ function AboutModal({ onClose }: { onClose: () => void }) {
 }
 
 function App() {
-  const { vault, isLoading, openVault } = useVaultStore();
+  const { vault, isLoading, openVault, tryOpenLastVault, loadRecentVaults } = useVaultStore();
   const { isSearchOpen, setSearchOpen, toggleSidebar, mainViewMode, setMainViewMode, openModal } = useUIStore();
   const { createNote, createFolder, openDailyNote } = useNoteStore();
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [isShortcutsOpen, setShortcutsOpen] = useState(false);
   const [isAboutOpen, setAboutOpen] = useState(false);
   const [isPluginManagerOpen, setPluginManagerOpen] = useState(false);
+  const [hasTriedAutoOpen, setHasTriedAutoOpen] = useState(false);
 
   // Plugin states (used by plugin modals)
   const gitStore = useGitStore();
@@ -109,13 +110,20 @@ function App() {
   const graphStore = useGraphStore();
   const { cycleEditorViewMode } = useUIStore();
 
-  // Initialize plugins once
+  // Initialize plugins and try to auto-open last vault
   useEffect(() => {
     if (!pluginsInitialized) {
       initBuiltinPlugins();
       pluginsInitialized = true;
     }
-  }, []);
+
+    // Load recent vaults and try to open last vault
+    loadRecentVaults();
+    if (!hasTriedAutoOpen && !vault && !isLoading) {
+      setHasTriedAutoOpen(true);
+      tryOpenLastVault();
+    }
+  }, [hasTriedAutoOpen, vault, isLoading, tryOpenLastVault, loadRecentVaults]);
 
   // Menu event handlers
   useEffect(() => {

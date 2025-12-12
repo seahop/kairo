@@ -194,7 +194,9 @@ function buildFolderTree(notes: NoteMetadata[]): FolderNode {
     let current = root;
 
     // Navigate/create folder structure
-    for (let i = 0; i < parts.length - 1; i++) {
+    // Start at index 1 to skip "notes" since root already represents it
+    const startIndex = parts[0] === "notes" ? 1 : 0;
+    for (let i = startIndex; i < parts.length - 1; i++) {
       const part = parts[i];
       if (!current.children.has(part)) {
         current.children.set(part, {
