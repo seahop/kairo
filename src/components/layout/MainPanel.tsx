@@ -125,7 +125,7 @@ function NotesView() {
   // If neither note is open, show empty state
   if (!currentNote && !secondaryNote) {
     return (
-      <div className="flex-1 bg-dark-950">
+      <div className="h-full bg-dark-950">
         <EmptyState />
       </div>
     );
@@ -134,7 +134,7 @@ function NotesView() {
   // If only primary note is open, show simple view
   if (!secondaryNote) {
     return (
-      <div className="flex-1 bg-dark-950 flex flex-col overflow-hidden">
+      <div className="h-full bg-dark-950 flex flex-col overflow-hidden">
         <PrimaryNotePane />
       </div>
     );
@@ -142,8 +142,8 @@ function NotesView() {
 
   // Both panes - show split view
   return (
-    <div className="flex-1 bg-dark-950 overflow-hidden">
-      <PanelGroup direction="horizontal">
+    <div className="h-full bg-dark-950 overflow-hidden">
+      <PanelGroup direction="horizontal" className="h-full">
         <Panel defaultSize={50} minSize={30}>
           <div className="h-full border-r border-dark-800">
             <PrimaryNotePane />
@@ -162,12 +162,16 @@ export function MainPanel() {
   const { mainViewMode, setMainViewMode } = useUIStore();
 
   if (mainViewMode === "graph") {
-    return <GraphViewPanel />;
+    return (
+      <div className="h-full">
+        <GraphViewPanel />
+      </div>
+    );
   }
 
   if (mainViewMode === "vault-health") {
     return (
-      <div className="flex-1 bg-dark-950">
+      <div className="h-full bg-dark-950">
         <VaultHealthPanel onClose={() => setMainViewMode("notes")} />
       </div>
     );

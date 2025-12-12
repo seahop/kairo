@@ -163,6 +163,18 @@ const HealthIcon = () => (
   </svg>
 );
 
+const CollapseIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+  </svg>
+);
+
+const ExpandIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+  </svg>
+);
+
 const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
   <svg
     className={clsx("w-3 h-3 transition-transform", expanded && "rotate-90")}
@@ -296,7 +308,7 @@ function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }
 export function Sidebar() {
   const { vault } = useVaultStore();
   const { notes, loadNotes, createNote, deleteNote, archiveNote, openNoteInSecondary } = useNoteStore();
-  const { setSearchOpen, isSidebarCollapsed, sidebarWidth, mainViewMode, setMainViewMode, showConfirmDialog } = useUIStore();
+  const { setSearchOpen, isSidebarCollapsed, toggleSidebar, mainViewMode, setMainViewMode, showConfirmDialog } = useUIStore();
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ x: 0, y: 0, note: null });
@@ -419,6 +431,10 @@ export function Sidebar() {
   if (isSidebarCollapsed) {
     return (
       <div className="w-12 bg-dark-900 border-r border-dark-800 flex flex-col items-center py-4 gap-4">
+        <button className="btn-icon" title="Expand Sidebar (Ctrl+B)" onClick={toggleSidebar}>
+          <ExpandIcon />
+        </button>
+        <div className="w-6 h-px bg-dark-700" />
         <button className="btn-icon" title="Search" onClick={() => setSearchOpen(true)}>
           <SearchIcon />
         </button>
@@ -444,14 +460,18 @@ export function Sidebar() {
   }
 
   return (
-    <div
-      className="bg-dark-900 border-r border-dark-800 flex flex-col h-full"
-      style={{ width: sidebarWidth }}
-    >
+    <div className="bg-dark-900 flex flex-col h-full w-full">
       {/* Header */}
       <div className="p-4 border-b border-dark-800">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-dark-100 truncate">{vault?.name}</h2>
+          <h2 className="font-semibold text-dark-100 truncate flex-1">{vault?.name}</h2>
+          <button
+            className="btn-icon ml-2 shrink-0"
+            title="Collapse Sidebar (Ctrl+B)"
+            onClick={toggleSidebar}
+          >
+            <CollapseIcon />
+          </button>
         </div>
 
         {/* Search button */}

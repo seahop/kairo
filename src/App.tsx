@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { Sidebar } from "./components/layout/Sidebar";
 import { MainPanel } from "./components/layout/MainPanel";
 import { StatusBar } from "./components/layout/StatusBar";
@@ -94,7 +95,7 @@ function AboutModal({ onClose }: { onClose: () => void }) {
 
 function App() {
   const { vault, isLoading, openVault, tryOpenLastVault, loadRecentVaults } = useVaultStore();
-  const { isSearchOpen, setSearchOpen, toggleSidebar, mainViewMode, setMainViewMode, openModal } = useUIStore();
+  const { isSearchOpen, setSearchOpen, toggleSidebar, mainViewMode, setMainViewMode, openModal, isSidebarCollapsed, setSidebarWidth } = useUIStore();
   const { createNote, createFolder, openDailyNote } = useNoteStore();
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [isShortcutsOpen, setShortcutsOpen] = useState(false);
@@ -109,6 +110,13 @@ function App() {
   const snippetStore = useSnippetStore();
   const graphStore = useGraphStore();
   const { cycleEditorViewMode } = useUIStore();
+
+  // Handle sidebar panel resize - convert percentage to pixels
+  const handleSidebarResize = useCallback((size: number) => {
+    // Size is in percentage, convert to approximate pixel width based on viewport
+    const pixelWidth = Math.round((size / 100) * window.innerWidth);
+    setSidebarWidth(pixelWidth);
+  }, [setSidebarWidth]);
 
   // Initialize plugins and try to auto-open last vault
   useEffect(() => {
@@ -260,10 +268,25 @@ function App() {
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       <TitleBar />
-      <div className="flex-1 flex overflow-hidden">
-        <Sidebar />
-        <MainPanel />
-      </div>
+      <PanelGroup direction="horizontal" className="flex-1">
+        {!isSidebarCollapsed && (
+          <>
+            <Panel
+              defaultSize={15}
+              minSize={10}
+              maxSize={40}
+              onResize={handleSidebarResize}
+            >
+              <Sidebar />
+            </Panel>
+            <PanelResizeHandle className="w-1 bg-dark-800 hover:bg-accent-primary/50 transition-colors cursor-col-resize" />
+          </>
+        )}
+        {isSidebarCollapsed && <Sidebar />}
+        <Panel defaultSize={isSidebarCollapsed ? 100 : 85}>
+          <MainPanel />
+        </Panel>
+      </PanelGroup>
       <StatusBar />
 
       {/* Modals */}

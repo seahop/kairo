@@ -12,7 +12,7 @@ services:
       - ../public:/app/public:cached
       # Mount config files
       - ../package.json:/app/package.json:ro
-      - ../pnpm-lock.yaml:/app/pnpm-lock.yaml:ro
+      # Note: pnpm-lock.yaml is generated inside container, not mounted
       - ../vite.config.ts:/app/vite.config.ts:ro
       - ../tsconfig.json:/app/tsconfig.json:ro
       - ../tsconfig.node.json:/app/tsconfig.node.json:ro

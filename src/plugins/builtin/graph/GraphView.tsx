@@ -336,7 +336,7 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
   const effectiveHeight = height || dimensions.height;
 
   return (
-    <div className="flex-1 flex flex-col bg-dark-950 overflow-hidden" ref={containerRef}>
+    <div className="h-full flex flex-col bg-dark-950 overflow-hidden" ref={containerRef}>
       {/* Header with search */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-dark-800 bg-dark-900">
         <div className="flex items-center gap-4">
@@ -424,7 +424,7 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
       </div>
 
       {/* Main content area with optional preview pane */}
-      <PanelGroup direction="horizontal" className="flex-1">
+      <PanelGroup direction="horizontal" className="flex-1 h-full">
         <Panel defaultSize={showPreview ? 60 : 100} minSize={30}>
           <div className="h-full relative overflow-hidden">
             {isLoading ? (
