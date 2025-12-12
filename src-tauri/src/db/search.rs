@@ -475,3 +475,29 @@ fn create_snippet(content: &str, query: &str, max_len: usize) -> String {
         snippet.replace('\n', " ").replace("  ", " ")
     }
 }
+
+/// Get all unique tags in the vault
+pub fn get_all_tags(app: &AppHandle) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        let mut stmt = conn.prepare("SELECT DISTINCT tag FROM tags ORDER BY tag")?;
+        let tags: Vec<String> = stmt
+            .query_map([], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(tags)
+    })
+}
+
+/// Get all unique mentions in the vault
+pub fn get_all_mentions(app: &AppHandle) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT value FROM entities WHERE type = 'mention' ORDER BY value"
+        )?;
+        let mentions: Vec<String> = stmt
+            .query_map([], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(mentions)
+    })
+}

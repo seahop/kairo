@@ -49,6 +49,8 @@ pub fn run() {
             commands::db::reindex_vault,
             commands::db::get_backlinks,
             commands::db::get_graph_data,
+            commands::db::get_all_tags,
+            commands::db::get_all_mentions,
             // Git commands
             git::git_status,
             git::git_pull,

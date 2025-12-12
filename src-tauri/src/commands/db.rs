@@ -31,3 +31,15 @@ pub fn get_backlinks(app: AppHandle, note_path: String) -> Result<Vec<Backlink>,
 pub fn get_graph_data(app: AppHandle) -> Result<db::GraphData, String> {
     db::get_graph_data(&app).map_err(|e| e.to_string())
 }
+
+/// Get all unique tags in the vault
+#[tauri::command]
+pub fn get_all_tags(app: AppHandle) -> Result<Vec<String>, String> {
+    db::get_all_tags(&app).map_err(|e| e.to_string())
+}
+
+/// Get all unique mentions in the vault
+#[tauri::command]
+pub fn get_all_mentions(app: AppHandle) -> Result<Vec<String>, String> {
+    db::get_all_mentions(&app).map_err(|e| e.to_string())
+}

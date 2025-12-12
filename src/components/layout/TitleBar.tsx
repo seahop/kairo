@@ -4,6 +4,15 @@ import { useVaultStore } from "@/stores/vaultStore";
 
 const appWindow = getCurrentWindow();
 
+// Handle window dragging for Tauri 2.0
+const handleDragStart = (e: React.MouseEvent) => {
+  // Only drag on left mouse button
+  if (e.button === 0) {
+    e.preventDefault();
+    appWindow.startDragging();
+  }
+};
+
 // Icons
 const MinimizeIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -141,19 +150,21 @@ export function TitleBar() {
   return (
     <div
       className="h-10 bg-dark-900 border-b border-dark-800 flex items-center select-none"
-      data-tauri-drag-region
     >
-      {/* App icon and name */}
-      <div className="flex items-center gap-2 px-3" data-tauri-drag-region>
+      {/* App icon and name - draggable */}
+      <div
+        className="flex items-center gap-2 px-3 cursor-default"
+        onMouseDown={handleDragStart}
+      >
         <img
           src="/icon-32.png"
           alt="Kairo"
-          className="w-5 h-5 rounded"
+          className="w-5 h-5 rounded pointer-events-none"
         />
-        <span className="text-sm font-medium text-dark-200" data-tauri-drag-region>Kairo</span>
+        <span className="text-sm font-medium text-dark-200">Kairo</span>
       </div>
 
-      {/* Menu items */}
+      {/* Menu items - not draggable */}
       <div className="flex items-center gap-1 px-2">
         <DropdownMenu label="File" items={fileMenuItems} />
         <DropdownMenu label="Edit" items={editMenuItems} />
@@ -163,9 +174,12 @@ export function TitleBar() {
       </div>
 
       {/* Draggable area - title */}
-      <div className="flex-1 text-center" data-tauri-drag-region>
+      <div
+        className="flex-1 text-center h-full flex items-center justify-center cursor-default"
+        onMouseDown={handleDragStart}
+      >
         {vault && (
-          <span className="text-xs text-dark-500" data-tauri-drag-region>
+          <span className="text-xs text-dark-500">
             {vault.name}
           </span>
         )}

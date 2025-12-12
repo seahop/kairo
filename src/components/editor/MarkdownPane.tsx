@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -6,8 +6,37 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
-import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
+import { completionKeymap } from "@codemirror/autocomplete";
 import { useNoteStore } from "@/stores/noteStore";
+import { kairoAutocompletion, autocompleteTheme } from "./autocomplete";
+
+// Extract wiki-link at a position in the document
+function getWikiLinkAtPos(doc: string, pos: number): string | null {
+  // Look backwards for [[
+  let start = pos;
+  while (start > 0 && doc.slice(start - 2, start) !== "[[") {
+    start--;
+    if (doc[start] === "\n" || doc[start] === "]") return null;
+  }
+  if (start <= 0) return null;
+  start -= 2;
+
+  // Look forwards for ]]
+  let end = pos;
+  while (end < doc.length && doc.slice(end, end + 2) !== "]]") {
+    end++;
+    if (doc[end] === "\n" || doc[end] === "[") return null;
+  }
+  if (end >= doc.length) return null;
+  end += 2;
+
+  // Extract the link content
+  const linkText = doc.slice(start + 2, end - 2);
+
+  // Handle display text syntax [[path|display]]
+  const pipeIndex = linkText.indexOf("|");
+  return pipeIndex >= 0 ? linkText.slice(0, pipeIndex) : linkText;
+}
 
 // Custom dark theme
 const darkTheme = EditorView.theme(
@@ -67,6 +96,8 @@ const darkTheme = EditorView.theme(
       borderRadius: "4px",
       fontFamily: "'JetBrains Mono', monospace",
     },
+    // Autocomplete styling
+    ...autocompleteTheme,
   },
   { dark: true }
 );
@@ -74,7 +105,27 @@ const darkTheme = EditorView.theme(
 export function MarkdownPane() {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const { currentNote, editorContent, setEditorContent } = useNoteStore();
+  const { currentNote, editorContent, setEditorContent, openNoteByReference } = useNoteStore();
+
+  // Handle Ctrl+Click to follow wiki-links
+  const handleLinkClick = useCallback((view: EditorView, event: MouseEvent) => {
+    // Check if Ctrl (or Cmd on Mac) is pressed
+    if (!event.ctrlKey && !event.metaKey) return false;
+
+    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+    if (pos === null) return false;
+
+    const doc = view.state.doc.toString();
+    const linkTarget = getWikiLinkAtPos(doc, pos);
+
+    if (linkTarget) {
+      event.preventDefault();
+      openNoteByReference(linkTarget);
+      return true;
+    }
+
+    return false;
+  }, [openNoteByReference]);
 
   // Create editor on mount
   useEffect(() => {
@@ -111,8 +162,8 @@ export function MarkdownPane() {
         // Syntax highlighting
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
 
-        // Autocompletion
-        autocompletion(),
+        // Kairo autocompletion (wiki-links, tags, mentions)
+        kairoAutocompletion,
 
         // Keymaps
         keymap.of([
@@ -137,6 +188,11 @@ export function MarkdownPane() {
           "&": { height: "100%" },
           ".cm-scroller": { overflow: "auto" },
         }),
+
+        // Ctrl+Click to follow wiki-links
+        EditorView.domEventHandlers({
+          click: (event, view) => handleLinkClick(view, event),
+        }),
       ],
     });
 
@@ -153,7 +209,7 @@ export function MarkdownPane() {
     return () => {
       view.destroy();
     };
-  }, [currentNote?.id]); // Only recreate when note changes
+  }, [currentNote?.id, handleLinkClick]); // Only recreate when note changes
 
   // Update content when it changes externally
   useEffect(() => {

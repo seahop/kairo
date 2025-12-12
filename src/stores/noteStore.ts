@@ -42,6 +42,7 @@ interface NoteState {
   createFolder: (path: string) => Promise<void>;
   setEditorContent: (content: string) => void;
   closeNote: () => void;
+  openDailyNote: () => Promise<void>;
 }
 
 export const useNoteStore = create<NoteState>((set, get) => ({
@@ -252,5 +253,46 @@ export const useNoteStore = create<NoteState>((set, get) => ({
       editorContent: "",
       hasUnsavedChanges: false,
     });
+  },
+
+  openDailyNote: async () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+    const dateStr = `${year}-${month}-${day}`;
+    const weekday = today.toLocaleDateString("en-US", { weekday: "long" });
+
+    const dailyNotePath = `notes/daily/${dateStr}.md`;
+
+    // Check if the note already exists
+    const { notes } = get();
+    const existing = notes.find((n) => n.path === dailyNotePath);
+
+    if (existing) {
+      // Open existing daily note
+      await get().openNote(dailyNotePath);
+    } else {
+      // Create new daily note with template
+      const content = `# ${weekday}, ${today.toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })}
+
+## Tasks
+- [ ]
+
+## Notes
+
+
+## Links
+- [[${year}-${month}-${String(today.getDate() - 1).padStart(2, "0")}|Yesterday]]
+
+---
+*Created: ${today.toLocaleTimeString()}*
+`;
+      await get().createNote(dailyNotePath, content);
+    }
   },
 }));
