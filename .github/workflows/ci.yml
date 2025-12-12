@@ -88,10 +88,13 @@ jobs:
       matrix:
         include:
           - platform: ubuntu-22.04
+            target: linux
             bundles: deb
           - platform: windows-latest
+            target: windows
             bundles: msi
           - platform: macos-14
+            target: macos
             bundles: dmg
 
     runs-on: ${{ matrix.platform }}
@@ -153,3 +156,27 @@ jobs:
         run: pnpm tauri build --bundles ${{ matrix.bundles }}
         env:
           TAURI_SIGNING_PRIVATE_KEY: ''
+
+      - name: Upload Linux artifacts
+        if: matrix.target == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kairo-${{ matrix.target }}-${{ github.sha }}
+          path: src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+
+      - name: Upload Windows artifacts
+        if: matrix.target == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kairo-${{ matrix.target }}-${{ github.sha }}
+          path: src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+
+      - name: Upload macOS artifacts
+        if: matrix.target == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kairo-${{ matrix.target }}-${{ github.sha }}
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
