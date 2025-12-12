@@ -25,6 +25,7 @@ pub struct Note {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct FolderEntry {
     pub name: String,
     pub path: String,
@@ -247,8 +248,8 @@ fn extract_title(content: &str, path: &str) -> String {
     // Try to extract title from first H1 heading
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("# ") {
-            return trimmed[2..].trim().to_string();
+        if let Some(stripped) = trimmed.strip_prefix("# ") {
+            return stripped.trim().to_string();
         }
     }
 

@@ -1,5 +1,7 @@
+#![allow(dead_code)]
+
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -77,8 +79,7 @@ fn handle_fs_event(app: &AppHandle, event: Event) {
     }
 }
 
-fn is_markdown_file(path: &PathBuf) -> bool {
+fn is_markdown_file(path: &Path) -> bool {
     path.extension()
-        .map(|ext| ext == "md" || ext == "markdown")
-        .unwrap_or(false)
+        .is_some_and(|ext| ext == "md" || ext == "markdown")
 }

@@ -1,7 +1,7 @@
 use regex::Regex;
 use rusqlite::params;
 use sha2::{Digest, Sha256};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 use walkdir::WalkDir;
 
@@ -50,7 +50,7 @@ pub async fn index_vault(
     {
         let path = entry.path();
 
-        if path.is_file() && path.extension().map_or(false, |ext| ext == "md") {
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
             // Get relative path from vault root
             let relative_path = path
                 .strip_prefix(vault_path)
@@ -69,8 +69,8 @@ pub async fn index_vault(
 /// Index a single note
 pub async fn index_single_note(
     app: &AppHandle,
-    vault_path: &PathBuf,
-    relative_path: &PathBuf,
+    vault_path: &Path,
+    relative_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let full_path = vault_path.join(relative_path);
     let content = std::fs::read_to_string(&full_path)?;
@@ -219,8 +219,8 @@ fn extract_title(content: &str, path: &str) -> String {
     // Try to extract title from first H1 heading
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("# ") {
-            return trimmed[2..].trim().to_string();
+        if let Some(stripped) = trimmed.strip_prefix("# ") {
+            return stripped.trim().to_string();
         }
     }
 
@@ -389,7 +389,7 @@ fn extract_code_blocks(content: &str) -> Vec<(Option<String>, String, i32, i32)>
     for (line_num, line) in content.lines().enumerate() {
         let line_num = (line_num + 1) as i32;
 
-        if line.starts_with("```") {
+        if let Some(after_backticks) = line.strip_prefix("```") {
             if in_block {
                 // End of code block
                 blocks.push((
@@ -405,7 +405,7 @@ fn extract_code_blocks(content: &str) -> Vec<(Option<String>, String, i32, i32)>
                 // Start of code block
                 in_block = true;
                 start_line = line_num;
-                let lang = line[3..].trim();
+                let lang = after_backticks.trim();
                 current_lang = if lang.is_empty() {
                     None
                 } else {

@@ -84,19 +84,13 @@ pub fn git_status(app: AppHandle) -> Result<GitStatus, String> {
         // Fetch latest (silently)
         let _ = run_git_command(&vault_path, &["fetch", "--quiet"]);
 
-        let ahead = run_git_command(
-            &vault_path,
-            &["rev-list", "--count", &format!("@{{u}}..HEAD")],
-        )
-        .and_then(|s| s.parse().map_err(|_| "Parse error".to_string()))
-        .unwrap_or(0);
+        let ahead = run_git_command(&vault_path, &["rev-list", "--count", "@{u}..HEAD"])
+            .and_then(|s| s.parse().map_err(|_| "Parse error".to_string()))
+            .unwrap_or(0);
 
-        let behind = run_git_command(
-            &vault_path,
-            &["rev-list", "--count", &format!("HEAD..@{{u}}")],
-        )
-        .and_then(|s| s.parse().map_err(|_| "Parse error".to_string()))
-        .unwrap_or(0);
+        let behind = run_git_command(&vault_path, &["rev-list", "--count", "HEAD..@{u}"])
+            .and_then(|s| s.parse().map_err(|_| "Parse error".to_string()))
+            .unwrap_or(0);
 
         (ahead, behind)
     } else {

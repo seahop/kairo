@@ -30,6 +30,7 @@ pub struct EntityResult {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct SearchQuery {
     pub text: String,
     pub filters: Option<SearchFilters>,

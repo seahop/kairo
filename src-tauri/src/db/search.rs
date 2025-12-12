@@ -49,7 +49,7 @@ pub fn search_notes(
         if code_only
             || filters
                 .as_ref()
-                .map_or(false, |f| f.code_only.unwrap_or(false))
+                .is_some_and(|f| f.code_only.unwrap_or(false))
         {
             // Search only in code blocks
             let mut stmt = conn.prepare(
@@ -96,9 +96,7 @@ pub fn search_notes(
             }
         } else {
             // Full-text search using FTS5
-            // Replace wildcards with FTS5 syntax
             let fts_query = fts_query
-                .replace('*', "*") // FTS5 uses * for prefix matching
                 .split_whitespace()
                 .collect::<Vec<_>>()
                 .join(" OR ");
@@ -272,7 +270,7 @@ pub fn save_search(
     with_db(app, |conn| {
         let id = uuid::Uuid::new_v4().to_string();
         let created_at = chrono::Utc::now().timestamp();
-        let filters_json = filters.map(|f| serde_json::to_string(f).ok()).flatten();
+        let filters_json = filters.and_then(|f| serde_json::to_string(f).ok());
 
         conn.execute(
             "INSERT INTO saved_searches (id, name, query, filters, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -475,9 +473,9 @@ fn parse_search_query(query: &str) -> (String, bool) {
     let mut clean_query = query.to_string();
 
     // Check for code: prefix
-    if query.starts_with("code:") {
+    if let Some(stripped) = query.strip_prefix("code:") {
         code_only = true;
-        clean_query = query[5..].to_string();
+        clean_query = stripped.to_string();
     }
 
     // Check for type: prefixes and remove them (handled separately)

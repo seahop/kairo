@@ -3,7 +3,7 @@ mod schema;
 mod search;
 
 use rusqlite::Connection;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
@@ -11,18 +11,10 @@ pub use indexer::*;
 pub use search::*;
 
 /// Database state managed by Tauri
+#[derive(Default)]
 pub struct DatabaseState {
     pub conn: Option<Connection>,
     pub vault_path: Option<PathBuf>,
-}
-
-impl Default for DatabaseState {
-    fn default() -> Self {
-        Self {
-            conn: None,
-            vault_path: None,
-        }
-    }
 }
 
 /// Initialize database state
@@ -32,10 +24,7 @@ pub fn init(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Open database for a vault
-pub fn open_vault_db(
-    app: &AppHandle,
-    vault_path: &PathBuf,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn open_vault_db(app: &AppHandle, vault_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let db_path = vault_path.join(".kairo").join("index.db");
 
     // Ensure .kairo directory exists
@@ -52,7 +41,7 @@ pub fn open_vault_db(
     let state = app.state::<Mutex<DatabaseState>>();
     let mut state = state.lock().map_err(|e| e.to_string())?;
     state.conn = Some(conn);
-    state.vault_path = Some(vault_path.clone());
+    state.vault_path = Some(vault_path.to_path_buf());
 
     Ok(())
 }
