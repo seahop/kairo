@@ -145,9 +145,11 @@ export function TitleBar() {
     >
       {/* App icon and name */}
       <div className="flex items-center gap-2 px-3" data-tauri-drag-region>
-        <div className="w-5 h-5 bg-accent-primary rounded flex items-center justify-center text-xs font-bold text-white">
-          K
-        </div>
+        <img
+          src="/icon-32.png"
+          alt="Kairo"
+          className="w-5 h-5 rounded"
+        />
         <span className="text-sm font-medium text-dark-200" data-tauri-drag-region>Kairo</span>
       </div>
 

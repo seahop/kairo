@@ -25,3 +25,9 @@ pub async fn reindex_vault(app: AppHandle) -> Result<usize, String> {
 pub fn get_backlinks(app: AppHandle, note_path: String) -> Result<Vec<Backlink>, String> {
     db::get_backlinks(&app, &note_path).map_err(|e| e.to_string())
 }
+
+/// Get graph data for visualization
+#[tauri::command]
+pub fn get_graph_data(app: AppHandle) -> Result<db::GraphData, String> {
+    db::get_graph_data(&app).map_err(|e| e.to_string())
+}

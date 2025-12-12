@@ -1,6 +1,17 @@
 import { create } from "zustand";
 
 export type EditorViewMode = 'editor' | 'preview' | 'split';
+export type MainViewMode = 'notes' | 'graph';
+
+export interface ConfirmDialogOptions {
+  title: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  variant?: 'danger' | 'warning' | 'info';
+  onConfirm: () => void;
+  onCancel?: () => void;
+}
 
 interface UIState {
   // Sidebar
@@ -14,10 +25,16 @@ interface UIState {
   activeModal: string | null;
   modalData: unknown;
 
+  // Confirm dialog
+  confirmDialog: ConfirmDialogOptions | null;
+
   // Editor
   editorSplitRatio: number;
   showPreview: boolean;
   editorViewMode: EditorViewMode;
+
+  // Main view mode (notes vs graph)
+  mainViewMode: MainViewMode;
 
   // Actions
   setSidebarWidth: (width: number) => void;
@@ -25,10 +42,13 @@ interface UIState {
   setSearchOpen: (open: boolean) => void;
   openModal: (modalId: string, data?: unknown) => void;
   closeModal: () => void;
+  showConfirmDialog: (options: ConfirmDialogOptions) => void;
+  closeConfirmDialog: () => void;
   setEditorSplitRatio: (ratio: number) => void;
   togglePreview: () => void;
   setEditorViewMode: (mode: EditorViewMode) => void;
   cycleEditorViewMode: () => void;
+  setMainViewMode: (mode: MainViewMode) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -38,9 +58,11 @@ export const useUIStore = create<UIState>((set) => ({
   isSearchOpen: false,
   activeModal: null,
   modalData: null,
+  confirmDialog: null,
   editorSplitRatio: 50,
   showPreview: true,
   editorViewMode: 'split',
+  mainViewMode: 'notes',
 
   // Actions
   setSidebarWidth: (width: number) => set({ sidebarWidth: width }),
@@ -55,6 +77,11 @@ export const useUIStore = create<UIState>((set) => ({
 
   closeModal: () => set({ activeModal: null, modalData: null }),
 
+  showConfirmDialog: (options: ConfirmDialogOptions) =>
+    set({ confirmDialog: options }),
+
+  closeConfirmDialog: () => set({ confirmDialog: null }),
+
   setEditorSplitRatio: (ratio: number) => set({ editorSplitRatio: ratio }),
 
   togglePreview: () => set((state) => ({ showPreview: !state.showPreview })),
@@ -68,4 +95,6 @@ export const useUIStore = create<UIState>((set) => ({
       const nextIndex = (currentIndex + 1) % modes.length;
       return { editorViewMode: modes[nextIndex] };
     }),
+
+  setMainViewMode: (mode: MainViewMode) => set({ mainViewMode: mode }),
 }));

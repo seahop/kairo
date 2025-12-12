@@ -68,6 +68,11 @@ export function WelcomeScreen() {
       <div className="max-w-lg w-full px-8">
         {/* Logo / Title */}
         <div className="text-center mb-12">
+          <img
+            src="/icon.png"
+            alt="Kairo"
+            className="w-20 h-20 mx-auto mb-4 rounded-2xl"
+          />
           <h1 className="text-4xl font-bold text-dark-50 mb-2">Kairo</h1>
           <p className="text-dark-400">Team note-taking, reimagined</p>
         </div>

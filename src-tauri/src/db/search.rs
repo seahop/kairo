@@ -272,6 +272,118 @@ pub fn get_saved_searches(app: &AppHandle) -> Result<Vec<SavedSearch>, Box<dyn s
     })
 }
 
+/// Graph node for visualization
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphNode {
+    pub id: String,
+    pub path: String,
+    pub title: String,
+    pub link_count: usize,
+    pub backlink_count: usize,
+}
+
+/// Graph link for visualization
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct GraphLink {
+    pub source: String,
+    pub target: String,
+    pub context: Option<String>,
+}
+
+/// Complete graph data for visualization
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct GraphData {
+    pub nodes: Vec<GraphNode>,
+    pub links: Vec<GraphLink>,
+}
+
+/// Get graph data for visualization
+pub fn get_graph_data(app: &AppHandle) -> Result<GraphData, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        // Get all notes as nodes
+        let mut nodes_stmt = conn.prepare(
+            r#"
+            SELECT n.id, n.path, n.title,
+                   (SELECT COUNT(*) FROM backlinks WHERE source_id = n.id) as link_count,
+                   (SELECT COUNT(*) FROM backlinks b2
+                    JOIN notes n2 ON b2.source_id = n2.id
+                    WHERE b2.target_path = n.path
+                       OR b2.target_path LIKE '%' || replace(n.path, 'notes/', '') || '%'
+                   ) as backlink_count
+            FROM notes n
+            "#,
+        )?;
+
+        let nodes: Vec<GraphNode> = nodes_stmt
+            .query_map([], |row| {
+                Ok(GraphNode {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    title: row.get(2)?,
+                    link_count: row.get::<_, i64>(3)? as usize,
+                    backlink_count: row.get::<_, i64>(4)? as usize,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        // Build a map of paths to ids for link resolution
+        let path_to_id: std::collections::HashMap<String, String> = nodes
+            .iter()
+            .map(|n| (n.path.clone(), n.id.clone()))
+            .collect();
+
+        // Also map by filename for fuzzy matching
+        let filename_to_id: std::collections::HashMap<String, String> = nodes
+            .iter()
+            .filter_map(|n| {
+                std::path::PathBuf::from(&n.path)
+                    .file_stem()
+                    .map(|s| (s.to_string_lossy().to_lowercase(), n.id.clone()))
+            })
+            .collect();
+
+        // Get all links
+        let mut links_stmt = conn.prepare(
+            r#"
+            SELECT b.source_id, b.target_path, b.context
+            FROM backlinks b
+            "#,
+        )?;
+
+        let links: Vec<GraphLink> = links_stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .filter_map(|(source_id, target_path, context)| {
+                // Try to resolve target path to an id
+                let target_id = path_to_id.get(&target_path)
+                    .or_else(|| path_to_id.get(&format!("notes/{}.md", target_path)))
+                    .or_else(|| path_to_id.get(&format!("{}.md", target_path)))
+                    .or_else(|| {
+                        // Try filename matching
+                        let target_lower = target_path.to_lowercase();
+                        filename_to_id.get(&target_lower)
+                    })?;
+
+                Some(GraphLink {
+                    source: source_id,
+                    target: target_id.clone(),
+                    context,
+                })
+            })
+            .collect();
+
+        Ok(GraphData { nodes, links })
+    })
+}
+
 /// Get backlinks to a specific note
 pub fn get_backlinks(app: &AppHandle, note_path: &str) -> Result<Vec<Backlink>, Box<dyn std::error::Error>> {
     with_db(app, |conn| {

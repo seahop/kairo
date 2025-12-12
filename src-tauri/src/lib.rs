@@ -48,6 +48,7 @@ pub fn run() {
             // Database commands
             commands::db::reindex_vault,
             commands::db::get_backlinks,
+            commands::db::get_graph_data,
             // Git commands
             git::git_status,
             git::git_pull,
@@ -72,6 +73,12 @@ pub fn run() {
             commands::plugin::write_plugin_data,
             commands::plugin::delete_plugin_data,
             commands::plugin::list_plugin_data,
+            // Extension commands
+            commands::extensions::list_extension_folders,
+            commands::extensions::read_extension_manifest,
+            commands::extensions::read_file_text,
+            commands::extensions::get_extensions_path,
+            commands::extensions::ensure_extensions_directory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

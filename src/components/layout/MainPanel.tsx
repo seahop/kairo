@@ -1,5 +1,8 @@
 import { useNoteStore } from "@/stores/noteStore";
+import { useUIStore } from "@/stores/uiStore";
 import { Editor } from "@/components/editor/Editor";
+import { BacklinksPanel } from "@/components/editor/BacklinksPanel";
+import { GraphViewPanel } from "@/plugins/builtin";
 
 const EmptyState = () => (
   <div className="h-full flex items-center justify-center">
@@ -16,7 +19,7 @@ const EmptyState = () => (
   </div>
 );
 
-export function MainPanel() {
+function NotesView() {
   const { currentNote } = useNoteStore();
 
   if (!currentNote) {
@@ -44,6 +47,19 @@ export function MainPanel() {
       <div className="flex-1 overflow-hidden">
         <Editor />
       </div>
+
+      {/* Backlinks Panel */}
+      <BacklinksPanel />
     </div>
   );
+}
+
+export function MainPanel() {
+  const { mainViewMode } = useUIStore();
+
+  if (mainViewMode === "graph") {
+    return <GraphViewPanel />;
+  }
+
+  return <NotesView />;
 }

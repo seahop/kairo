@@ -1,0 +1,536 @@
+import { useEffect, useRef, useCallback, useMemo, useState } from "react";
+import ForceGraph2D from "react-force-graph-2d";
+import { useGraphStore, GraphNode, GraphData } from "./store";
+import { useNoteStore } from "@/stores/noteStore";
+
+const SearchIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+  </svg>
+);
+
+const RefreshIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+  </svg>
+);
+
+const GraphIcon = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="3" strokeWidth={2} />
+    <circle cx="5" cy="5" r="2" strokeWidth={2} />
+    <circle cx="19" cy="5" r="2" strokeWidth={2} />
+    <circle cx="5" cy="19" r="2" strokeWidth={2} />
+    <circle cx="19" cy="19" r="2" strokeWidth={2} />
+    <path strokeLinecap="round" strokeWidth={2} d="M9.5 10L6.5 6.5M14.5 10L17.5 6.5M9.5 14L6.5 17.5M14.5 14L17.5 17.5" />
+  </svg>
+);
+
+const SettingsIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+  </svg>
+);
+
+interface GraphViewPanelProps {
+  width?: number;
+  height?: number;
+}
+
+export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
+  const fgRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+
+  const {
+    graphData,
+    loadGraphData,
+    isLoading,
+    selectedNode,
+    setSelectedNode,
+    hoveredNode,
+    setHoveredNode,
+    viewMode,
+    setViewMode,
+    showOrphans,
+    setShowOrphans,
+    linkDistance,
+    setLinkDistance,
+    chargeStrength,
+    setChargeStrength,
+    focusedNote,
+    setFocusedNote,
+    localDepth,
+    setLocalDepth,
+    searchQuery,
+    searchResults,
+    performSearch,
+  } = useGraphStore();
+
+  const { currentNote, openNote } = useNoteStore();
+
+  // Update dimensions on resize
+  useEffect(() => {
+    const updateDimensions = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setDimensions({ width: rect.width, height: rect.height });
+      }
+    };
+
+    updateDimensions();
+    window.addEventListener("resize", updateDimensions);
+    return () => window.removeEventListener("resize", updateDimensions);
+  }, []);
+
+  // Load graph data on mount
+  useEffect(() => {
+    if (!graphData) {
+      loadGraphData();
+    }
+  }, [graphData, loadGraphData]);
+
+  // Filter graph data based on view mode and settings
+  const filteredData = useMemo((): GraphData | null => {
+    if (!graphData) return null;
+
+    let nodes = [...graphData.nodes];
+    let links = [...graphData.links];
+
+    // Filter orphans if needed
+    if (!showOrphans) {
+      const connectedIds = new Set<string>();
+      links.forEach((l) => {
+        connectedIds.add(l.source as string);
+        connectedIds.add(l.target as string);
+      });
+      nodes = nodes.filter((n) => connectedIds.has(n.id));
+    }
+
+    // For search view, show nodes matching search and their connections
+    if (viewMode === "search" && searchResults.length > 0) {
+      const connectedIds = new Set<string>(searchResults);
+
+      // Add nodes connected to search results (within depth)
+      for (let depth = 0; depth < localDepth; depth++) {
+        const currentLevel = new Set(connectedIds);
+        links.forEach((l) => {
+          const source = l.source as string;
+          const target = l.target as string;
+          if (currentLevel.has(source) && !connectedIds.has(target)) {
+            connectedIds.add(target);
+          }
+          if (currentLevel.has(target) && !connectedIds.has(source)) {
+            connectedIds.add(source);
+          }
+        });
+      }
+
+      nodes = nodes.filter((n) => connectedIds.has(n.id));
+      links = links.filter(
+        (l) =>
+          connectedIds.has(l.source as string) &&
+          connectedIds.has(l.target as string)
+      );
+    }
+
+    // For local view, filter to only show nodes connected to the focused note
+    if (viewMode === "local" && focusedNote) {
+      const focusedId = focusedNote;
+      const connectedIds = new Set<string>([focusedId]);
+
+      let currentLevel = new Set<string>([focusedId]);
+      for (let depth = 0; depth < localDepth; depth++) {
+        const nextLevel = new Set<string>();
+        links.forEach((l) => {
+          const source = l.source as string;
+          const target = l.target as string;
+          if (currentLevel.has(source) && !connectedIds.has(target)) {
+            nextLevel.add(target);
+            connectedIds.add(target);
+          }
+          if (currentLevel.has(target) && !connectedIds.has(source)) {
+            nextLevel.add(source);
+            connectedIds.add(source);
+          }
+        });
+        currentLevel = nextLevel;
+      }
+
+      nodes = nodes.filter((n) => connectedIds.has(n.id));
+      links = links.filter(
+        (l) =>
+          connectedIds.has(l.source as string) &&
+          connectedIds.has(l.target as string)
+      );
+    }
+
+    return { nodes, links };
+  }, [graphData, showOrphans, viewMode, focusedNote, localDepth, searchResults]);
+
+  // Update focused note when current note changes
+  useEffect(() => {
+    if (currentNote) {
+      setFocusedNote(currentNote.id);
+    }
+  }, [currentNote, setFocusedNote]);
+
+  // Node coloring based on state
+  const getNodeColor = useCallback(
+    (node: GraphNode) => {
+      // Search result highlighting
+      if (viewMode === "search" && searchResults.includes(node.id)) {
+        return "#f59e0b"; // amber - search result
+      }
+      if (node.id === focusedNote) return "#6366f1"; // accent-primary - current note
+      if (node.id === selectedNode) return "#8b5cf6"; // purple - selected
+      if (node.id === hoveredNode) return "#3b82f6"; // blue - hovered
+
+      // Color by connection density
+      const connections = node.linkCount + node.backlinkCount;
+      if (connections > 10) return "#22c55e"; // green - hub
+      if (connections > 5) return "#f59e0b"; // amber
+      if (connections > 2) return "#94a3b8"; // slate
+      return "#475569"; // dark slate - few connections
+    },
+    [focusedNote, selectedNode, hoveredNode, viewMode, searchResults]
+  );
+
+  // Node size based on connections
+  const getNodeSize = useCallback(
+    (node: GraphNode) => {
+      // Make search results bigger
+      if (viewMode === "search" && searchResults.includes(node.id)) {
+        return 10;
+      }
+      const connections = node.linkCount + node.backlinkCount;
+      return Math.max(4, Math.min(12, 4 + connections * 0.5));
+    },
+    [viewMode, searchResults]
+  );
+
+  const handleNodeClick = useCallback(
+    (node: GraphNode) => {
+      openNote(node.path);
+    },
+    [openNote]
+  );
+
+  const handleNodeRightClick = useCallback(
+    (node: GraphNode) => {
+      setSelectedNode(node.id === selectedNode ? null : node.id);
+    },
+    [selectedNode, setSelectedNode]
+  );
+
+  const handleSearchChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      performSearch(e.target.value);
+    },
+    [performSearch]
+  );
+
+  const effectiveWidth = width || dimensions.width;
+  const effectiveHeight = height || dimensions.height;
+
+  return (
+    <div className="flex-1 flex flex-col bg-dark-950 overflow-hidden" ref={containerRef}>
+      {/* Header with search */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-dark-800 bg-dark-900">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 text-dark-100">
+            <GraphIcon />
+            <h2 className="font-semibold">Graph View</h2>
+          </div>
+
+          {/* View mode toggle */}
+          <div className="flex bg-dark-800 rounded-lg p-0.5">
+            <button
+              className={`px-3 py-1 text-xs rounded transition-colors ${
+                viewMode === "global"
+                  ? "bg-accent-primary text-white"
+                  : "text-dark-400 hover:text-dark-200"
+              }`}
+              onClick={() => setViewMode("global")}
+            >
+              Global
+            </button>
+            <button
+              className={`px-3 py-1 text-xs rounded transition-colors ${
+                viewMode === "local"
+                  ? "bg-accent-primary text-white"
+                  : "text-dark-400 hover:text-dark-200"
+              }`}
+              onClick={() => setViewMode("local")}
+            >
+              Local
+            </button>
+            <button
+              className={`px-3 py-1 text-xs rounded transition-colors ${
+                viewMode === "search"
+                  ? "bg-accent-primary text-white"
+                  : "text-dark-400 hover:text-dark-200"
+              }`}
+              onClick={() => setViewMode("search")}
+            >
+              Search
+            </button>
+          </div>
+
+          {/* Stats */}
+          {filteredData && (
+            <span className="text-xs text-dark-500">
+              {filteredData.nodes.length} notes, {filteredData.links.length} links
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Search input */}
+          <div className="relative">
+            <SearchIcon />
+            <input
+              type="text"
+              placeholder="Search nodes..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+              className="w-48 pl-8 pr-3 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:border-accent-primary absolute -left-1 top-1/2 -translate-y-1/2"
+              style={{ paddingLeft: "2rem" }}
+            />
+            <div className="w-48 pl-8 pr-3 py-1.5 invisible">placeholder</div>
+          </div>
+
+          <button
+            className="p-1.5 rounded hover:bg-dark-800 text-dark-400 hover:text-dark-200 transition-colors"
+            onClick={() => loadGraphData()}
+            title="Refresh graph"
+          >
+            <RefreshIcon />
+          </button>
+          <button
+            className={`p-1.5 rounded transition-colors ${
+              showSettings
+                ? "bg-dark-800 text-accent-primary"
+                : "hover:bg-dark-800 text-dark-400 hover:text-dark-200"
+            }`}
+            onClick={() => setShowSettings(!showSettings)}
+            title="Settings"
+          >
+            <SettingsIcon />
+          </button>
+        </div>
+      </div>
+
+      {/* Main content area */}
+      <div className="flex-1 relative overflow-hidden">
+        {isLoading ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-dark-400">Loading graph...</div>
+          </div>
+        ) : filteredData && filteredData.nodes.length > 0 ? (
+          <ForceGraph2D
+            ref={fgRef}
+            graphData={filteredData}
+            nodeLabel={(node: any) => node.title}
+            nodeColor={getNodeColor}
+            nodeVal={getNodeSize}
+            linkColor={() => "#334155"}
+            linkWidth={1}
+            linkDirectionalParticles={0}
+            onNodeClick={handleNodeClick}
+            onNodeRightClick={handleNodeRightClick}
+            onNodeHover={(node: any) => setHoveredNode(node?.id ?? null)}
+            d3AlphaDecay={0.02}
+            d3VelocityDecay={0.3}
+            backgroundColor="#020617"
+            width={effectiveWidth}
+            height={effectiveHeight - 57}
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center text-dark-400">
+              <GraphIcon />
+              <p className="mt-2">
+                {viewMode === "search" && searchQuery
+                  ? "No nodes match your search"
+                  : "No graph data available"}
+              </p>
+              <button
+                className="mt-4 btn-secondary"
+                onClick={() => loadGraphData()}
+              >
+                Load Graph
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Settings panel */}
+        {showSettings && (
+          <div className="absolute top-2 right-2 bg-dark-900 border border-dark-800 rounded-lg p-4 w-64 shadow-xl">
+            <h3 className="text-sm font-medium text-dark-200 mb-3">Display</h3>
+
+            <label className="flex items-center gap-2 text-sm text-dark-400 mb-3">
+              <input
+                type="checkbox"
+                checked={showOrphans}
+                onChange={(e) => setShowOrphans(e.target.checked)}
+                className="accent-accent-primary"
+              />
+              Show orphan notes
+            </label>
+
+            {(viewMode === "local" || viewMode === "search") && (
+              <div className="mb-4">
+                <label className="text-sm text-dark-400 block mb-1">
+                  Depth: {localDepth}
+                </label>
+                <input
+                  type="range"
+                  min={1}
+                  max={5}
+                  value={localDepth}
+                  onChange={(e) => setLocalDepth(Number(e.target.value))}
+                  className="w-full accent-accent-primary"
+                />
+              </div>
+            )}
+
+            <h3 className="text-sm font-medium text-dark-200 mb-3 mt-4">
+              Physics
+            </h3>
+
+            <div className="mb-3">
+              <label className="text-sm text-dark-400 block mb-1">
+                Link distance: {linkDistance}
+              </label>
+              <input
+                type="range"
+                min={30}
+                max={200}
+                value={linkDistance}
+                onChange={(e) => setLinkDistance(Number(e.target.value))}
+                className="w-full accent-accent-primary"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm text-dark-400 block mb-1">
+                Repulsion: {Math.abs(chargeStrength)}
+              </label>
+              <input
+                type="range"
+                min={50}
+                max={500}
+                value={Math.abs(chargeStrength)}
+                onChange={(e) => setChargeStrength(-Number(e.target.value))}
+                className="w-full accent-accent-primary"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Legend */}
+        <div className="absolute bottom-2 left-2 bg-dark-900/90 border border-dark-800 rounded-lg p-2 shadow-xl">
+          <div className="flex gap-4 text-xs">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-accent-primary" />
+              <span className="text-dark-400">Current</span>
+            </div>
+            {viewMode === "search" && (
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                <span className="text-dark-400">Match</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
+              <span className="text-dark-400">Hub</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-500" />
+              <span className="text-dark-400">Normal</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Hovered node info */}
+        {hoveredNode && filteredData && (
+          <div className="absolute top-2 left-2 bg-dark-900 border border-dark-800 rounded-lg p-3 shadow-xl">
+            {(() => {
+              const node = filteredData.nodes.find((n) => n.id === hoveredNode);
+              if (!node) return null;
+              return (
+                <div>
+                  <div className="font-medium text-dark-100">{node.title}</div>
+                  <div className="text-xs text-dark-500 mt-1">{node.path}</div>
+                  <div className="text-xs text-dark-400 mt-2">
+                    {node.linkCount} outgoing, {node.backlinkCount} incoming
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Search results list */}
+        {viewMode === "search" && searchResults.length > 0 && filteredData && (
+          <div className="absolute bottom-2 right-2 bg-dark-900 border border-dark-800 rounded-lg p-2 shadow-xl max-h-48 overflow-y-auto w-56">
+            <div className="text-xs text-dark-500 mb-2">
+              {searchResults.length} result{searchResults.length !== 1 ? "s" : ""}
+            </div>
+            <div className="space-y-1">
+              {filteredData.nodes
+                .filter((n) => searchResults.includes(n.id))
+                .map((node) => (
+                  <button
+                    key={node.id}
+                    className="w-full text-left px-2 py-1 rounded hover:bg-dark-800 text-sm text-dark-300 truncate"
+                    onClick={() => openNote(node.path)}
+                  >
+                    {node.title}
+                  </button>
+                ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Legacy modal version - keeping for backwards compatibility
+export function GraphView() {
+  const { showView, toggleView } = useGraphStore();
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && showView) {
+        toggleView();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showView, toggleView]);
+
+  if (!showView) return null;
+
+  return (
+    <div className="fixed inset-0 bg-dark-950 z-40 flex flex-col">
+      <div className="absolute top-4 right-4 z-50">
+        <button
+          className="p-2 rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-300"
+          onClick={toggleView}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <GraphViewPanel />
+    </div>
+  );
+}

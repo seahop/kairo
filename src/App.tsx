@@ -8,6 +8,8 @@ import { SearchModal } from "./components/search/SearchModal";
 import { WelcomeScreen } from "./components/layout/WelcomeScreen";
 import { CommandPalette } from "./components/common/CommandPalette";
 import { PluginManager } from "./components/common/PluginManager";
+import { ConfirmDialog } from "./components/common/ConfirmDialog";
+import { DebugConsole } from "./components/common/DebugConsole";
 import { useVaultStore } from "./stores/vaultStore";
 import { useUIStore } from "./stores/uiStore";
 import { useNoteStore } from "./stores/noteStore";
@@ -23,6 +25,7 @@ import {
   useKanbanStore,
   useTemplateStore,
   useSnippetStore,
+  useGraphStore,
 } from "./plugins/builtin";
 
 // Initialize plugins on app load
@@ -38,6 +41,9 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
     { key: "Ctrl+S", action: "Save Note" },
     { key: "Ctrl+B", action: "Toggle Sidebar" },
     { key: "Ctrl+Shift+V", action: "Cycle View Mode" },
+    { key: "Ctrl+Shift+G", action: "Graph View" },
+    { key: "Ctrl+G", action: "Local Graph" },
+    { key: "Ctrl+Shift+K", action: "Kanban Board" },
     { key: "Ctrl+Shift+P", action: "Git Pull" },
     { key: "Ctrl+Shift+C", action: "Git Commit" },
     { key: "Ctrl+Shift+U", action: "Git Push" },
@@ -67,9 +73,11 @@ function AboutModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={onClose}>
       <div className="bg-dark-900 rounded-lg p-6 w-full max-w-sm border border-dark-700 text-center" onClick={e => e.stopPropagation()}>
-        <div className="w-16 h-16 bg-accent-primary rounded-xl flex items-center justify-center text-2xl font-bold text-white mx-auto mb-4">
-          K
-        </div>
+        <img
+          src="/icon.png"
+          alt="Kairo"
+          className="w-16 h-16 rounded-xl mx-auto mb-4"
+        />
         <h2 className="text-xl font-semibold text-dark-100">Kairo</h2>
         <p className="text-dark-400 text-sm mt-1">Version 0.1.0</p>
         <p className="text-dark-500 text-xs mt-4">Team note-taking, reimagined.</p>
@@ -82,7 +90,7 @@ function AboutModal({ onClose }: { onClose: () => void }) {
 
 function App() {
   const { vault, isLoading, openVault } = useVaultStore();
-  const { isSearchOpen, setSearchOpen, toggleSidebar } = useUIStore();
+  const { isSearchOpen, setSearchOpen, toggleSidebar, mainViewMode, setMainViewMode } = useUIStore();
   const { createNote, createFolder } = useNoteStore();
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [isShortcutsOpen, setShortcutsOpen] = useState(false);
@@ -94,6 +102,7 @@ function App() {
   const kanbanStore = useKanbanStore();
   const templateStore = useTemplateStore();
   const snippetStore = useSnippetStore();
+  const graphStore = useGraphStore();
   const { cycleEditorViewMode } = useUIStore();
 
   // Initialize plugins once
@@ -145,6 +154,10 @@ function App() {
       "kairo:git-push": () => gitStore.push(),
       "kairo:templates": () => templateStore.openModal(),
       "kairo:snippets": () => snippetStore.openModal(),
+      "kairo:graph": () => {
+        graphStore.setViewMode("global");
+        setMainViewMode("graph");
+      },
       "kairo:shortcuts": () => setShortcutsOpen(true),
       "kairo:about": () => setAboutOpen(true),
       "kairo:extensions": () => setPluginManagerOpen(true),
@@ -156,7 +169,7 @@ function App() {
     });
 
     return () => listeners.forEach((cleanup) => cleanup());
-  }, [createNote, createFolder, openVault, setSearchOpen, toggleSidebar, cycleEditorViewMode, kanbanStore, gitStore, templateStore, snippetStore]);
+  }, [createNote, createFolder, openVault, setSearchOpen, toggleSidebar, cycleEditorViewMode, kanbanStore, gitStore, templateStore, snippetStore, graphStore, setMainViewMode]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -179,16 +192,21 @@ function App() {
         setCommandPaletteOpen(true);
       }
 
-      // Escape: Close modals
+      // Escape: Close modals or return to notes view
       if (e.key === "Escape") {
-        setSearchOpen(false);
-        setCommandPaletteOpen(false);
+        if (isSearchOpen) {
+          setSearchOpen(false);
+        } else if (isCommandPaletteOpen) {
+          setCommandPaletteOpen(false);
+        } else if (mainViewMode === "graph") {
+          setMainViewMode("notes");
+        }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [setSearchOpen]);
+  }, [setSearchOpen, isSearchOpen, isCommandPaletteOpen, mainViewMode, setMainViewMode]);
 
   if (isLoading) {
     return (
@@ -242,6 +260,12 @@ function App() {
       {isShortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
       {isAboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
       <PluginManager isOpen={isPluginManagerOpen} onClose={() => setPluginManagerOpen(false)} />
+
+      {/* Confirm dialog */}
+      <ConfirmDialog />
+
+      {/* Debug console */}
+      <DebugConsole />
     </div>
   );
 }

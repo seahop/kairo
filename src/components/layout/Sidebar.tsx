@@ -29,6 +29,17 @@ const SearchIcon = () => (
   </svg>
 );
 
+const GraphIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="2.5" strokeWidth={2} />
+    <circle cx="5" cy="5" r="1.5" strokeWidth={2} />
+    <circle cx="19" cy="5" r="1.5" strokeWidth={2} />
+    <circle cx="5" cy="19" r="1.5" strokeWidth={2} />
+    <circle cx="19" cy="19" r="1.5" strokeWidth={2} />
+    <path strokeLinecap="round" strokeWidth={2} d="M9.5 10L6.5 6.5M14.5 10L17.5 6.5M9.5 14L6.5 17.5M14.5 14L17.5 17.5" />
+  </svg>
+);
+
 const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
   <svg
     className={clsx("w-3 h-3 transition-transform", expanded && "rotate-90")}
@@ -140,7 +151,7 @@ function FolderItem({ folder, level }: FolderItemProps) {
 export function Sidebar() {
   const { vault } = useVaultStore();
   const { notes, loadNotes, createNote } = useNoteStore();
-  const { setSearchOpen, isSidebarCollapsed, sidebarWidth } = useUIStore();
+  const { setSearchOpen, isSidebarCollapsed, sidebarWidth, mainViewMode, setMainViewMode } = useUIStore();
 
   useEffect(() => {
     if (vault) {
@@ -164,6 +175,13 @@ export function Sidebar() {
         </button>
         <button className="btn-icon" title="New Note" onClick={handleNewNote}>
           <PlusIcon />
+        </button>
+        <button
+          className={clsx("btn-icon", mainViewMode === "graph" && "text-accent-primary")}
+          title="Graph View"
+          onClick={() => setMainViewMode(mainViewMode === "graph" ? "notes" : "graph")}
+        >
+          <GraphIcon />
         </button>
       </div>
     );
@@ -191,8 +209,36 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Actions */}
+      {/* View Switcher */}
       <div className="px-4 py-2 border-b border-dark-800">
+        <div className="flex bg-dark-800 rounded-lg p-1 mb-3">
+          <button
+            className={clsx(
+              "flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-colors",
+              mainViewMode === "notes"
+                ? "bg-dark-700 text-dark-100"
+                : "text-dark-400 hover:text-dark-200"
+            )}
+            onClick={() => setMainViewMode("notes")}
+          >
+            <FileIcon />
+            <span>Notes</span>
+          </button>
+          <button
+            className={clsx(
+              "flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-colors",
+              mainViewMode === "graph"
+                ? "bg-accent-primary text-white"
+                : "text-dark-400 hover:text-dark-200"
+            )}
+            onClick={() => setMainViewMode("graph")}
+          >
+            <GraphIcon />
+            <span>Graph</span>
+          </button>
+        </div>
+
+        {/* New Note button */}
         <button
           className="flex items-center gap-2 text-sm text-dark-400 hover:text-dark-200"
           onClick={handleNewNote}

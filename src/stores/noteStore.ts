@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { useUIStore } from "./uiStore";
 
 export interface NoteMetadata {
   id: string;
@@ -32,6 +33,8 @@ interface NoteState {
   // Actions
   loadNotes: () => Promise<void>;
   openNote: (path: string) => Promise<void>;
+  openNoteByReference: (reference: string) => Promise<boolean>;
+  resolveNoteReference: (reference: string) => NoteMetadata | null;
   saveNote: () => Promise<void>;
   createNote: (path: string, content?: string) => Promise<void>;
   deleteNote: (path: string) => Promise<void>;
@@ -61,25 +64,84 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   },
 
   openNote: async (path: string) => {
+    // Internal function to actually open the note
+    const doOpenNote = async () => {
+      set({ isLoading: true, error: null });
+      try {
+        const note = await invoke<Note>("read_note", { path });
+        set({
+          currentNote: note,
+          editorContent: note.content,
+          hasUnsavedChanges: false,
+          isLoading: false,
+        });
+      } catch (error) {
+        set({ error: String(error), isLoading: false });
+      }
+    };
+
     // Check for unsaved changes
     const { hasUnsavedChanges, currentNote } = get();
-    if (hasUnsavedChanges && currentNote) {
-      // TODO: Show confirmation dialog
-      console.warn("Unsaved changes will be lost");
+    if (hasUnsavedChanges && currentNote && currentNote.path !== path) {
+      // Show confirmation dialog
+      useUIStore.getState().showConfirmDialog({
+        title: "Unsaved Changes",
+        message: `You have unsaved changes in "${currentNote.title}". Do you want to discard them and open the new note?`,
+        confirmText: "Discard",
+        cancelText: "Cancel",
+        variant: "warning",
+        onConfirm: () => {
+          doOpenNote();
+        },
+      });
+      return;
     }
 
-    set({ isLoading: true, error: null });
-    try {
-      const note = await invoke<Note>("read_note", { path });
-      set({
-        currentNote: note,
-        editorContent: note.content,
-        hasUnsavedChanges: false,
-        isLoading: false,
+    await doOpenNote();
+  },
+
+  // Resolve a wiki-style reference [[note]] to a note
+  resolveNoteReference: (reference: string): NoteMetadata | null => {
+    const { notes } = get();
+    const ref = reference.trim();
+
+    // 1. Exact path match (with or without .md extension)
+    const exactPath = notes.find(
+      n => n.path === ref ||
+           n.path === `${ref}.md` ||
+           n.path === `notes/${ref}` ||
+           n.path === `notes/${ref}.md`
+    );
+    if (exactPath) return exactPath;
+
+    // 2. Title match (case-insensitive)
+    const titleMatch = notes.find(
+      n => n.title.toLowerCase() === ref.toLowerCase()
+    );
+    if (titleMatch) return titleMatch;
+
+    // 3. Partial path match (filename without extension)
+    const filename = ref.split('/').pop()?.replace(/\.md$/, '').toLowerCase();
+    if (filename) {
+      const partialMatch = notes.find(n => {
+        const noteFilename = n.path.split('/').pop()?.replace(/\.md$/, '').toLowerCase();
+        return noteFilename === filename;
       });
-    } catch (error) {
-      set({ error: String(error), isLoading: false });
+      if (partialMatch) return partialMatch;
     }
+
+    return null;
+  },
+
+  // Open a note by wiki-style reference
+  openNoteByReference: async (reference: string): Promise<boolean> => {
+    const resolved = get().resolveNoteReference(reference);
+    if (resolved) {
+      await get().openNote(resolved.path);
+      return true;
+    }
+    console.warn(`Could not resolve note reference: ${reference}`);
+    return false;
   },
 
   saveNote: async () => {
