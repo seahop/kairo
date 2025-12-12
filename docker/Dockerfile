@@ -92,8 +92,8 @@ RUN mkdir -p src-tauri/src && \
 # Copy all source files
 COPY . .
 
-# Build the application
-RUN pnpm tauri build
+# Build the application (deb only - AppImage requires FUSE which doesn't work in Docker)
+RUN pnpm tauri build --bundles deb
 
 # =============================================================================
 # Stage 4: Export artifacts

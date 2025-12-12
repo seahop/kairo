@@ -22,12 +22,16 @@ jobs:
         include:
           - platform: ubuntu-22.04
             target: linux
+            bundles: deb,appimage
           - platform: windows-latest
             target: windows
+            bundles: msi,nsis
           - platform: macos-13
             target: macos-intel
+            bundles: dmg
           - platform: macos-14
             target: macos-arm
+            bundles: dmg
 
     runs-on: ${{ matrix.platform }}
 
@@ -38,6 +42,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -46,7 +55,20 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v2
         with:
-          version: 8
+          version: 9
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
 
       - name: Install Linux dependencies
         if: matrix.target == 'linux'
@@ -73,19 +95,50 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Kairo v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
+          releaseBody: |
+            ## Downloads
+
+            | Platform | Download |
+            |----------|----------|
+            | Linux (Debian/Ubuntu) | `.deb` |
+            | Linux (Portable) | `.AppImage` |
+            | Windows | `.msi` or `.exe` |
+            | macOS (Apple Silicon) | `.dmg` (arm64) |
+            | macOS (Intel) | `.dmg` (x64) |
+
+            ### Installation Notes
+            - **AppImage**: Make executable with `chmod +x` and run directly
+            - **Windows**: The `.exe` is an NSIS installer, `.msi` is for enterprise deployment
+            - **macOS**: Open the `.dmg` and drag Kairo to Applications
           releaseDraft: true
           prerelease: false
+          args: --bundles ${{ matrix.bundles }}
 
-      - name: Upload artifacts
+      - name: Upload Linux artifacts
+        if: matrix.target == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: kairo-${{ matrix.target }}
           path: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: warn
+
+      - name: Upload Windows artifacts
+        if: matrix.target == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kairo-${{ matrix.target }}
+          path: |
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: warn
+
+      - name: Upload macOS artifacts
+        if: startsWith(matrix.target, 'macos')
+        uses: actions/upload-artifact@v4
+        with:
+          name: kairo-${{ matrix.target }}
+          path: |
             src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/*.app
-          if-no-files-found: ignore
+          if-no-files-found: warn
