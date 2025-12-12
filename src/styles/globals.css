@@ -1,0 +1,280 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar for dark mode */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Selection color */
+::selection {
+  background-color: rgba(99, 102, 241, 0.3);
+}
+
+/* Base styles */
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  body {
+    @apply bg-dark-950 text-dark-100 antialiased;
+    overflow: hidden;
+  }
+
+  /* Headings */
+  h1 {
+    @apply text-2xl font-bold text-dark-50;
+  }
+
+  h2 {
+    @apply text-xl font-semibold text-dark-50;
+  }
+
+  h3 {
+    @apply text-lg font-semibold text-dark-100;
+  }
+
+  /* Links */
+  a {
+    @apply text-accent-primary hover:text-accent-secondary transition-colors;
+  }
+
+  /* Code */
+  code {
+    @apply font-mono text-sm bg-dark-800 px-1.5 py-0.5 rounded;
+  }
+
+  pre {
+    @apply font-mono text-sm bg-dark-900 p-4 rounded-lg overflow-x-auto;
+  }
+
+  pre code {
+    @apply bg-transparent p-0;
+  }
+}
+
+/* Component styles */
+@layer components {
+  /* Buttons */
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-dark-950;
+  }
+
+  .btn-primary {
+    @apply btn bg-accent-primary text-white hover:bg-accent-secondary focus:ring-accent-primary;
+  }
+
+  .btn-secondary {
+    @apply btn bg-dark-800 text-dark-100 hover:bg-dark-700 focus:ring-dark-600;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-dark-300 hover:bg-dark-800 hover:text-dark-100 focus:ring-dark-600;
+  }
+
+  .btn-icon {
+    @apply p-2 rounded-lg transition-colors hover:bg-dark-800;
+  }
+
+  /* Inputs */
+  .input {
+    @apply w-full px-3 py-2 bg-dark-900 border border-dark-700 rounded-lg;
+    @apply text-dark-100 placeholder-dark-500;
+    @apply focus:outline-none focus:border-accent-primary focus:ring-1 focus:ring-accent-primary;
+    @apply transition-colors;
+  }
+
+  /* Select inputs */
+  select.input {
+    @apply appearance-none cursor-pointer pr-8;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+  }
+
+  select.input option {
+    @apply bg-dark-900 text-dark-100 py-2;
+  }
+
+  /* Cards */
+  .card {
+    @apply bg-dark-900 border border-dark-800 rounded-lg p-4;
+  }
+
+  /* Sidebar item */
+  .sidebar-item {
+    @apply flex items-center gap-2 px-3 py-2 rounded-lg text-dark-300;
+    @apply hover:bg-dark-800 hover:text-dark-100 transition-colors cursor-pointer;
+  }
+
+  .sidebar-item.active {
+    @apply bg-dark-800 text-accent-primary;
+  }
+
+  /* Note list item */
+  .note-item {
+    @apply flex flex-col gap-1 px-3 py-2 rounded-lg cursor-pointer;
+    @apply hover:bg-dark-800 transition-colors;
+  }
+
+  .note-item.active {
+    @apply bg-dark-800 border-l-2 border-accent-primary;
+  }
+
+  /* Tag */
+  .tag {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+    @apply bg-dark-800 text-dark-300;
+  }
+
+  /* Tooltip */
+  .tooltip {
+    @apply absolute z-50 px-2 py-1 text-xs bg-dark-800 text-dark-100 rounded shadow-lg;
+    @apply animate-fade-in;
+  }
+
+  /* Modal overlay */
+  .modal-overlay {
+    @apply fixed inset-0 bg-black/50 backdrop-blur-sm z-40;
+    @apply flex items-center justify-center;
+  }
+
+  .modal-content {
+    @apply bg-dark-900 border border-dark-800 rounded-xl shadow-2xl;
+    @apply animate-slide-in;
+  }
+
+  /* Search highlight */
+  .search-highlight {
+    @apply bg-accent-primary/30 text-accent-primary rounded px-0.5;
+  }
+}
+
+/* CodeMirror theme overrides */
+.cm-editor {
+  @apply h-full bg-transparent !important;
+}
+
+.cm-editor .cm-scroller {
+  @apply font-mono text-sm;
+}
+
+.cm-editor .cm-content {
+  @apply text-dark-100;
+}
+
+.cm-editor .cm-cursor {
+  @apply border-l-2 border-accent-primary;
+}
+
+.cm-editor .cm-selectionBackground {
+  @apply bg-accent-primary/20 !important;
+}
+
+.cm-editor .cm-activeLine {
+  @apply bg-dark-900/50;
+}
+
+.cm-editor .cm-gutters {
+  @apply bg-dark-950 border-r border-dark-800 text-dark-500;
+}
+
+.cm-editor .cm-lineNumbers .cm-gutterElement {
+  @apply text-dark-500 text-xs px-2;
+}
+
+/* Markdown preview styles */
+.markdown-preview {
+  @apply max-w-none;
+}
+
+.markdown-preview h1 {
+  @apply text-2xl font-bold text-dark-50 border-b border-dark-800 pb-2 mb-4;
+}
+
+.markdown-preview h2 {
+  @apply text-xl font-semibold text-dark-50 mt-6 mb-3;
+}
+
+.markdown-preview h3 {
+  @apply text-lg font-semibold text-dark-100 mt-4 mb-2;
+}
+
+.markdown-preview p {
+  @apply text-dark-200 leading-relaxed mb-4;
+}
+
+.markdown-preview ul, .markdown-preview ol {
+  @apply text-dark-200 mb-4 pl-6;
+}
+
+.markdown-preview li {
+  @apply mb-1;
+}
+
+.markdown-preview blockquote {
+  @apply border-l-4 border-accent-primary pl-4 italic text-dark-400 my-4;
+}
+
+.markdown-preview code {
+  @apply font-mono text-sm bg-dark-800 px-1.5 py-0.5 rounded text-accent-primary;
+}
+
+.markdown-preview pre {
+  @apply bg-dark-900 p-4 rounded-lg overflow-x-auto my-4;
+}
+
+.markdown-preview pre code {
+  @apply bg-transparent p-0 text-dark-100;
+}
+
+.markdown-preview a {
+  @apply text-accent-primary hover:text-accent-secondary underline;
+}
+
+.markdown-preview table {
+  @apply w-full border-collapse my-4;
+}
+
+.markdown-preview th, .markdown-preview td {
+  @apply border border-dark-700 px-3 py-2 text-left;
+}
+
+.markdown-preview th {
+  @apply bg-dark-800 font-semibold;
+}
+
+.markdown-preview img {
+  @apply rounded-lg max-w-full my-4;
+}
+
+.markdown-preview hr {
+  @apply border-dark-700 my-6;
+}
+
+/* Resizable panel handle */
+[data-panel-group-direction="horizontal"] > [data-panel-resize-handle-id] {
+  @apply w-1 bg-dark-800 hover:bg-accent-primary transition-colors;
+}
+
+[data-panel-group-direction="vertical"] > [data-panel-resize-handle-id] {
+  @apply h-1 bg-dark-800 hover:bg-accent-primary transition-colors;
+}

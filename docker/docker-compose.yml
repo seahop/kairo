@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  kairo-dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: dev
+    container_name: kairo-dev
+    volumes:
+      # Mount source code for hot-reload
+      - ../src:/app/src:cached
+      - ../src-tauri:/app/src-tauri:cached
+      - ../public:/app/public:cached
+      # Mount config files
+      - ../package.json:/app/package.json:ro
+      - ../pnpm-lock.yaml:/app/pnpm-lock.yaml:ro
+      - ../vite.config.ts:/app/vite.config.ts:ro
+      - ../tsconfig.json:/app/tsconfig.json:ro
+      - ../tsconfig.node.json:/app/tsconfig.node.json:ro
+      - ../tailwind.config.js:/app/tailwind.config.js:ro
+      - ../postcss.config.js:/app/postcss.config.js:ro
+      - ../index.html:/app/index.html:ro
+      # Persist node_modules and cargo cache
+      - node_modules:/app/node_modules
+      - cargo_cache:/usr/local/cargo/registry
+      - cargo_git:/usr/local/cargo/git
+      - target_cache:/app/src-tauri/target
+      # Output directory
+      - ../dist:/app/dist
+    ports:
+      - "1420:1420"  # Vite dev server
+      - "1421:1421"  # Tauri dev
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}
+      - XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp}
+      - RUST_BACKTRACE=1
+    # For GUI apps, need access to X11/Wayland
+    # Uncomment these for running the GUI in dev mode:
+    # network_mode: host
+    # volumes:
+    #   - /tmp/.X11-unix:/tmp/.X11-unix
+    #   - ${XDG_RUNTIME_DIR:-/run/user/1000}:${XDG_RUNTIME_DIR:-/run/user/1000}
+    working_dir: /app
+    stdin_open: true
+    tty: true
+
+volumes:
+  node_modules:
+  cargo_cache:
+  cargo_git:
+  target_cache:
