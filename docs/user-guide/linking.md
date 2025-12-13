@@ -171,6 +171,92 @@ Right-click on any link for additional options:
 
 ---
 
+## Images & Attachments
+
+Kairo supports images in both notes and kanban card descriptions. Images can be stored in your vault for git sync.
+
+### Adding Images
+
+**Using the Upload Button:**
+1. Click the "Upload Image" button in the editor toolbar (or the image icon in kanban cards)
+2. Select one or more image files
+3. The images are saved to the `attachments/` folder
+4. Copy one of the provided markdown formats:
+   - **Basic**: `![alt](attachments/image.png)`
+   - **Width 300px**: `![alt](attachments/image.png?w=300)`
+   - **Width 500px**: `![alt](attachments/image.png?w=500)`
+   - **HTML**: `<img src="attachments/image.png" width="300" alt="..." />`
+5. Paste the markdown into your document where you want the image
+
+### Storage Location
+
+All attachments are stored in the `attachments/` folder at the root of your vault:
+
+```
+vault/
+├── notes/
+│   └── my-note.md
+├── attachments/
+│   ├── screenshot.png
+│   ├── diagram.jpg
+│   └── photo_1.png
+```
+
+This folder syncs with git, so all team members can see the same images.
+
+### Handling Name Conflicts
+
+If you upload a file with the same name as an existing file:
+- Kairo automatically appends `_1`, `_2`, etc. to the filename
+- Example: `photo.png` becomes `photo_1.png`
+- The upload panel shows "Renamed from: original-name.png" when this happens
+
+### Basic Syntax
+
+Standard markdown image syntax:
+
+```markdown
+![Alt text](attachments/photo.png)
+```
+
+### External Images
+
+Link to images hosted online:
+
+```markdown
+![Logo](https://example.com/logo.png)
+```
+
+### Image Sizing
+
+Control image dimensions using query parameters:
+
+```markdown
+![Photo](attachments/image.jpg?width=300)
+![Photo](attachments/image.jpg?w=300&h=200)
+```
+
+Or use HTML syntax for more control:
+
+```html
+<img src="attachments/image.jpg" width="300" height="200" />
+```
+
+### Supported Size Parameters
+
+- `width` or `w` - Set maximum width in pixels
+- `height` or `h` - Set maximum height in pixels
+
+### Tips
+
+- Images are lazy-loaded for better performance
+- Alt text appears below the image as a caption
+- Large images are automatically scaled to fit the container
+- Images have rounded corners and a subtle border for consistency
+- Attachments sync via git - all team members see the same images
+
+---
+
 ## Best Practices
 
 ### Naming Conventions

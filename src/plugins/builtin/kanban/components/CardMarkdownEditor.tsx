@@ -4,7 +4,8 @@ import { EditorView, keymap, placeholder as placeholderExt } from "@codemirror/v
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
-import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language";
+import { syntaxHighlighting, HighlightStyle, bracketMatching } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { completionKeymap } from "@codemirror/autocomplete";
 import { kairoAutocompletion, autocompleteTheme } from "@/components/editor/autocomplete";
@@ -66,8 +67,12 @@ const cardEditorTheme = EditorView.theme(
     ".cm-header-1": { fontSize: "1.4em", fontWeight: "bold", color: "#f8fafc" },
     ".cm-header-2": { fontSize: "1.2em", fontWeight: "bold", color: "#f1f5f9" },
     ".cm-header-3": { fontSize: "1.1em", fontWeight: "bold", color: "#e2e8f0" },
-    ".cm-link": { color: "#6366f1", textDecoration: "underline" },
-    ".cm-url": { color: "#64748b" },
+    ".cm-link": { color: "#818cf8", textDecoration: "underline" },
+    ".cm-url": { color: "#cbd5e1" },
+    ".cm-string": { color: "#cbd5e1" },
+    ".cmt-string": { color: "#cbd5e1" },
+    ".cmt-url": { color: "#cbd5e1" },
+    ".tok-string": { color: "#cbd5e1" },
     ".cm-strong": { fontWeight: "bold", color: "#f8fafc" },
     ".cm-emphasis": { fontStyle: "italic" },
     ".cm-strikethrough": { textDecoration: "line-through" },
@@ -82,6 +87,24 @@ const cardEditorTheme = EditorView.theme(
   },
   { dark: true }
 );
+
+// Custom highlight style for dark theme with readable colors
+const darkHighlightStyle = HighlightStyle.define([
+  { tag: tags.link, color: "#818cf8", textDecoration: "underline" },
+  { tag: tags.url, color: "#e2e8f0" },
+  { tag: tags.string, color: "#e2e8f0" },
+  { tag: tags.heading1, color: "#f8fafc", fontWeight: "bold", fontSize: "1.4em" },
+  { tag: tags.heading2, color: "#f1f5f9", fontWeight: "bold", fontSize: "1.2em" },
+  { tag: tags.heading3, color: "#e2e8f0", fontWeight: "bold", fontSize: "1.1em" },
+  { tag: tags.strong, color: "#f8fafc", fontWeight: "bold" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: tags.strikethrough, textDecoration: "line-through" },
+  { tag: tags.keyword, color: "#c084fc" },
+  { tag: tags.comment, color: "#64748b", fontStyle: "italic" },
+  { tag: tags.monospace, color: "#e2e8f0" },
+  { tag: tags.labelName, color: "#f472b6" },
+  { tag: tags.processingInstruction, color: "#94a3b8" },
+]);
 
 interface CardMarkdownEditorProps {
   content: string;
@@ -163,7 +186,7 @@ export function CardMarkdownEditor({
         }),
 
         // Syntax highlighting
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        syntaxHighlighting(darkHighlightStyle),
 
         // Kairo autocompletion (wiki-links, tags, mentions)
         kairoAutocompletion,
@@ -194,7 +217,7 @@ export function CardMarkdownEditor({
           }
         }),
 
-        // Blur handler
+        // DOM event handlers for blur and links
         EditorView.domEventHandlers({
           blur: () => {
             onBlur?.();
@@ -215,7 +238,7 @@ export function CardMarkdownEditor({
     return () => {
       view.destroy();
     };
-  }, [placeholder, minHeight]); // Only recreate when config changes
+  }, [placeholder, minHeight, handleLinkClick]); // Only recreate when config changes
 
   // Update content when it changes externally
   useEffect(() => {
@@ -235,8 +258,9 @@ export function CardMarkdownEditor({
 
   return (
     <div
-      ref={editorRef}
-      className={`overflow-hidden rounded-lg border border-dark-700 bg-dark-900 ${className}`}
-    />
+      className={`relative overflow-hidden rounded-lg border border-dark-700 bg-dark-900 ${className}`}
+    >
+      <div ref={editorRef} className="h-full" style={{ minHeight }} />
+    </div>
   );
 }

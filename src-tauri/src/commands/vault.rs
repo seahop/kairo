@@ -162,3 +162,75 @@ pub fn get_vault_info(app: AppHandle) -> Result<Option<VaultInfo>, String> {
 pub fn close_vault(app: AppHandle) -> Result<(), String> {
     db::close_vault_db(&app).map_err(|e| e.to_string())
 }
+
+/// Get the current vault path
+#[tauri::command]
+pub fn get_vault_path(app: AppHandle) -> Result<Option<String>, String> {
+    Ok(db::get_current_vault_path(&app).map(|p| p.to_string_lossy().to_string()))
+}
+
+/// Result of saving an attachment
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AttachmentResult {
+    /// Relative path from vault root (e.g., "attachments/image.png")
+    pub relative_path: String,
+    /// Whether the file was renamed due to conflict
+    pub renamed: bool,
+    /// Original filename if renamed
+    pub original_name: Option<String>,
+}
+
+/// Save an attachment to the vault's attachments folder
+/// Returns the relative path to use in markdown
+#[tauri::command]
+pub fn save_attachment(
+    app: AppHandle,
+    filename: String,
+    data: Vec<u8>,
+) -> Result<AttachmentResult, String> {
+    let vault_path =
+        db::get_current_vault_path(&app).ok_or_else(|| "No vault is currently open".to_string())?;
+
+    let attachments_dir = vault_path.join("attachments");
+
+    // Create attachments directory if it doesn't exist
+    if !attachments_dir.exists() {
+        fs::create_dir_all(&attachments_dir).map_err(|e| e.to_string())?;
+    }
+
+    // Parse filename into name and extension
+    let path = PathBuf::from(&filename);
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("attachment");
+    let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+
+    // Find a unique filename
+    let mut final_name = filename.clone();
+    let mut target_path = attachments_dir.join(&final_name);
+    let mut counter = 1;
+    let mut renamed = false;
+
+    while target_path.exists() {
+        renamed = true;
+        if extension.is_empty() {
+            final_name = format!("{}_{}", stem, counter);
+        } else {
+            final_name = format!("{}_{}.{}", stem, counter, extension);
+        }
+        target_path = attachments_dir.join(&final_name);
+        counter += 1;
+    }
+
+    // Write the file
+    fs::write(&target_path, &data).map_err(|e| e.to_string())?;
+
+    let relative_path = format!("attachments/{}", final_name);
+
+    Ok(AttachmentResult {
+        relative_path,
+        renamed,
+        original_name: if renamed { Some(filename) } else { None },
+    })
+}

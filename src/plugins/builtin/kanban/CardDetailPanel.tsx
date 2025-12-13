@@ -1,10 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useKanbanStore, Priority } from "./store";
 import { DatePicker } from "../../../components/common/DatePicker";
 import { CardMarkdownEditor } from "./components/CardMarkdownEditor";
 import { CardPreviewPane } from "./components/CardPreviewPane";
+import { ImageUpload } from "../../../components/editor/ImageUpload";
 
 type ViewMode = "edit" | "preview" | "split";
+
+// Min/max widths for the resizable panel
+const MIN_WIDTH = 400;
+const MAX_WIDTH = 900;
+const DEFAULT_WIDTH = 520;
 
 const CloseIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -41,6 +47,12 @@ const PreviewIcon = () => (
 const SplitIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+  </svg>
+);
+
+const ImageIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
   </svg>
 );
 
@@ -150,6 +162,44 @@ export function CardDetailPanel() {
   const [newLabelName, setNewLabelName] = useState("");
   const [newLabelColor, setNewLabelColor] = useState(labelColors[0]);
   const [viewMode, setViewMode] = useState<ViewMode>("edit");
+  const [showImageUpload, setShowImageUpload] = useState(false);
+
+  // Resizable panel state
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  // Handle resize drag
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+    resizeRef.current = { startX: e.clientX, startWidth: panelWidth };
+  }, [panelWidth]);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeRef.current) return;
+      // Dragging left increases width, dragging right decreases
+      const delta = resizeRef.current.startX - e.clientX;
+      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, resizeRef.current.startWidth + delta));
+      setPanelWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      resizeRef.current = null;
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing]);
 
   // Sync local state when selectedCard changes
   useEffect(() => {
@@ -229,36 +279,50 @@ export function CardDetailPanel() {
   );
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[480px] bg-dark-900 border-l border-dark-700 shadow-xl z-40 flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-dark-800">
-        <input
-          className="text-lg font-semibold bg-transparent border-none outline-none text-dark-100 flex-1"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={handleSave}
-          onKeyDown={(e) => e.key === "Enter" && handleSave()}
-          placeholder="Card title..."
-        />
-        <div className="flex items-center gap-2">
-          <button
-            className="p-2 text-dark-500 hover:text-red-400 rounded"
-            onClick={handleDelete}
-            title="Delete card"
-          >
-            <TrashIcon />
-          </button>
-          <button
-            className="p-2 text-dark-500 hover:text-dark-200 rounded"
-            onClick={closeCardDetail}
-          >
-            <CloseIcon />
-          </button>
-        </div>
-      </div>
+    <div
+      className="fixed inset-y-0 right-0 bg-dark-900 border-l border-dark-700 shadow-xl z-40 flex"
+      style={{ width: panelWidth }}
+    >
+      {/* Resize handle */}
+      <div
+        className={`w-1 cursor-col-resize hover:bg-accent-primary/50 transition-colors flex-shrink-0 ${
+          isResizing ? "bg-accent-primary" : "bg-transparent hover:bg-dark-600"
+        }`}
+        onMouseDown={handleResizeStart}
+        title="Drag to resize"
+      />
 
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      {/* Main panel content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-dark-800">
+          <input
+            className="text-lg font-semibold bg-transparent border-none outline-none text-dark-100 flex-1"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={handleSave}
+            onKeyDown={(e) => e.key === "Enter" && handleSave()}
+            placeholder="Card title..."
+          />
+          <div className="flex items-center gap-2">
+            <button
+              className="p-2 text-dark-500 hover:text-red-400 rounded"
+              onClick={handleDelete}
+              title="Delete card"
+            >
+              <TrashIcon />
+            </button>
+            <button
+              className="p-2 text-dark-500 hover:text-dark-200 rounded"
+              onClick={closeCardDetail}
+            >
+              <CloseIcon />
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {/* Status (Column) */}
         <div>
           <label className="text-sm font-medium text-dark-400 mb-2 block">Status</label>
@@ -446,9 +510,31 @@ export function CardDetailPanel() {
         {/* Description */}
         <div className="flex-1 flex flex-col min-h-0">
           <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-dark-400">Description</label>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-dark-400">Description</label>
+              <button
+                className={`p-1 rounded text-xs flex items-center gap-1 ${
+                  showImageUpload
+                    ? "bg-accent-primary/20 text-accent-primary"
+                    : "text-dark-500 hover:text-dark-300 hover:bg-dark-800"
+                }`}
+                onClick={() => setShowImageUpload(!showImageUpload)}
+                title="Upload image"
+              >
+                <ImageIcon />
+              </button>
+            </div>
             <ViewModeToggle mode={viewMode} onChange={setViewMode} />
           </div>
+
+          {/* Image upload panel */}
+          {showImageUpload && (
+            <div className="mb-3">
+              <ImageUpload
+                onClose={() => setShowImageUpload(false)}
+              />
+            </div>
+          )}
 
           {/* Editor/Preview based on view mode */}
           {viewMode === "edit" && (
@@ -496,13 +582,14 @@ export function CardDetailPanel() {
             <span className="text-sm text-accent-primary">{selectedCard.notePath}</span>
           </div>
         )}
-      </div>
+        </div>
 
-      {/* Footer - timestamps */}
-      <div className="px-6 py-3 border-t border-dark-800 text-xs text-dark-500 space-y-1">
-        <div>Created: {formatDateTime(selectedCard.createdAt)}</div>
-        <div>Updated: {formatDateTime(selectedCard.updatedAt)}</div>
-        {selectedCard.closedAt && <div>Closed: {formatDateTime(selectedCard.closedAt)}</div>}
+        {/* Footer - timestamps */}
+        <div className="px-6 py-3 border-t border-dark-800 text-xs text-dark-500 space-y-1">
+          <div>Created: {formatDateTime(selectedCard.createdAt)}</div>
+          <div>Updated: {formatDateTime(selectedCard.updatedAt)}</div>
+          {selectedCard.closedAt && <div>Closed: {formatDateTime(selectedCard.closedAt)}</div>}
+        </div>
       </div>
     </div>
   );

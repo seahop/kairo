@@ -1,8 +1,9 @@
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { useNoteStore } from "@/stores/noteStore";
 import { useUIStore } from "@/stores/uiStore";
 import { useKanbanStore } from "@/plugins/builtin/kanban/store";
@@ -58,6 +59,30 @@ export function PreviewPane({ content }: PreviewPaneProps) {
   const { loadBoard } = useKanbanStore();
   const { openSidePane } = useUIStore();
   const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
+  const [vaultPath, setVaultPath] = useState<string | null>(null);
+
+  // Fetch vault path for resolving relative image paths
+  useEffect(() => {
+    invoke<string | null>("get_vault_path").then(setVaultPath).catch(console.error);
+  }, []);
+
+  // Resolve relative paths to absolute file URLs
+  const resolveImagePath = useCallback(
+    (src: string | undefined): string | undefined => {
+      if (!src) return src;
+      // Already absolute URL or external
+      if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("file://") || src.startsWith("asset://")) {
+        return src;
+      }
+      // Relative path - resolve against vault
+      if (vaultPath) {
+        const fullPath = `${vaultPath}/${src}`;
+        return convertFileSrc(fullPath);
+      }
+      return src;
+    },
+    [vaultPath]
+  );
 
   // Use provided content or fall back to store's editorContent
   const displayContent = content ?? editorContent;
@@ -363,6 +388,53 @@ export function PreviewPane({ content }: PreviewPaneProps) {
                   className="mr-2 accent-accent-primary"
                   {...props}
                 />
+              );
+            },
+            // Images with size support and path resolution
+            img: ({ src, alt, width, height, ...props }) => {
+              // Support for sizing via HTML attributes or query params
+              // e.g., <img src="path.jpg" width="300" /> or ![alt](path.jpg?width=300)
+              let imgWidth = width;
+              let imgHeight = height;
+              let imgSrc = src;
+
+              // Parse size from URL query params if present
+              if (imgSrc && imgSrc.includes('?')) {
+                try {
+                  const url = new URL(imgSrc, 'http://localhost');
+                  const wParam = url.searchParams.get('width') || url.searchParams.get('w');
+                  const hParam = url.searchParams.get('height') || url.searchParams.get('h');
+                  if (wParam) imgWidth = wParam;
+                  if (hParam) imgHeight = hParam;
+                  // Remove query params from src for actual image loading
+                  imgSrc = imgSrc.split('?')[0];
+                } catch {
+                  // If URL parsing fails, just use the original src
+                }
+              }
+
+              // Resolve relative paths to absolute file URLs
+              const resolvedSrc = resolveImagePath(imgSrc);
+
+              return (
+                <span className="block my-3">
+                  <img
+                    src={resolvedSrc}
+                    alt={alt || ''}
+                    width={imgWidth}
+                    height={imgHeight}
+                    className="max-w-full h-auto rounded-lg border border-dark-700"
+                    style={{
+                      maxWidth: imgWidth ? `${imgWidth}px` : '100%',
+                      maxHeight: imgHeight ? `${imgHeight}px` : undefined,
+                    }}
+                    loading="lazy"
+                    {...props}
+                  />
+                  {alt && (
+                    <span className="block text-xs text-dark-500 mt-1 italic">{alt}</span>
+                  )}
+                </span>
               );
             },
           }}

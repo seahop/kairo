@@ -4,7 +4,8 @@ import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLi
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
-import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language";
+import { syntaxHighlighting, HighlightStyle, bracketMatching } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { completionKeymap } from "@codemirror/autocomplete";
 import { useNoteStore } from "@/stores/noteStore";
@@ -85,8 +86,12 @@ const darkTheme = EditorView.theme(
     ".cm-header-1": { fontSize: "1.5em", fontWeight: "bold", color: "#f8fafc" },
     ".cm-header-2": { fontSize: "1.3em", fontWeight: "bold", color: "#f1f5f9" },
     ".cm-header-3": { fontSize: "1.1em", fontWeight: "bold", color: "#e2e8f0" },
-    ".cm-link": { color: "#6366f1", textDecoration: "underline" },
-    ".cm-url": { color: "#64748b" },
+    ".cm-link": { color: "#818cf8", textDecoration: "underline" },
+    ".cm-url": { color: "#cbd5e1" },
+    ".cm-string": { color: "#cbd5e1" },
+    ".cmt-string": { color: "#cbd5e1" },
+    ".cmt-url": { color: "#cbd5e1" },
+    ".tok-string": { color: "#cbd5e1" },
     ".cm-strong": { fontWeight: "bold", color: "#f8fafc" },
     ".cm-emphasis": { fontStyle: "italic" },
     ".cm-strikethrough": { textDecoration: "line-through" },
@@ -101,6 +106,24 @@ const darkTheme = EditorView.theme(
   },
   { dark: true }
 );
+
+// Custom highlight style for dark theme with readable colors
+const darkHighlightStyle = HighlightStyle.define([
+  { tag: tags.link, color: "#818cf8", textDecoration: "underline" },
+  { tag: tags.url, color: "#e2e8f0" },
+  { tag: tags.string, color: "#e2e8f0" },
+  { tag: tags.heading1, color: "#f8fafc", fontWeight: "bold", fontSize: "1.5em" },
+  { tag: tags.heading2, color: "#f1f5f9", fontWeight: "bold", fontSize: "1.3em" },
+  { tag: tags.heading3, color: "#e2e8f0", fontWeight: "bold", fontSize: "1.1em" },
+  { tag: tags.strong, color: "#f8fafc", fontWeight: "bold" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: tags.strikethrough, textDecoration: "line-through" },
+  { tag: tags.keyword, color: "#c084fc" },
+  { tag: tags.comment, color: "#64748b", fontStyle: "italic" },
+  { tag: tags.monospace, color: "#e2e8f0" },
+  { tag: tags.labelName, color: "#f472b6" },
+  { tag: tags.processingInstruction, color: "#94a3b8" },
+]);
 
 export function MarkdownPane() {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -159,8 +182,8 @@ export function MarkdownPane() {
           codeLanguages: languages,
         }),
 
-        // Syntax highlighting
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        // Syntax highlighting with custom dark theme colors
+        syntaxHighlighting(darkHighlightStyle),
 
         // Kairo autocompletion (wiki-links, tags, mentions)
         kairoAutocompletion,
@@ -189,7 +212,7 @@ export function MarkdownPane() {
           ".cm-scroller": { overflow: "auto" },
         }),
 
-        // Ctrl+Click to follow wiki-links
+        // DOM event handlers for links
         EditorView.domEventHandlers({
           click: (event, view) => handleLinkClick(view, event),
         }),
@@ -227,5 +250,9 @@ export function MarkdownPane() {
     }
   }, [currentNote?.content]);
 
-  return <div ref={editorRef} className="h-full overflow-hidden" />;
+  return (
+    <div className="h-full overflow-hidden">
+      <div ref={editorRef} className="h-full" />
+    </div>
+  );
 }
