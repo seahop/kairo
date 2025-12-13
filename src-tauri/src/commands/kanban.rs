@@ -544,6 +544,7 @@ pub fn kanban_get_card(app: AppHandle, card_id: String) -> Result<KanbanCard, St
 
 /// Update card details
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn kanban_update_card(
     app: AppHandle,
     card_id: String,

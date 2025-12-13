@@ -537,37 +537,3 @@ fn extract_card_links(content: &str) -> Vec<(String, Option<String>, String)> {
 
     card_links
 }
-
-/// Find card ID by title (and optionally board name)
-pub fn find_card_id_by_title(
-    app: &AppHandle,
-    title: &str,
-    board_name: Option<&str>,
-) -> Result<Option<String>, Box<dyn std::error::Error>> {
-    with_db(app, |conn| {
-        let result = if let Some(bn) = board_name {
-            conn.query_row(
-                r#"
-                SELECT c.id FROM kanban_cards c
-                JOIN kanban_boards b ON c.board_id = b.id
-                WHERE LOWER(c.title) = LOWER(?1) AND LOWER(b.name) = LOWER(?2)
-                LIMIT 1
-                "#,
-                params![title, bn],
-                |row| row.get::<_, String>(0),
-            )
-        } else {
-            conn.query_row(
-                "SELECT id FROM kanban_cards WHERE LOWER(title) = LOWER(?1) LIMIT 1",
-                params![title],
-                |row| row.get::<_, String>(0),
-            )
-        };
-
-        match result {
-            Ok(id) => Ok(Some(id)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Box::new(e) as Box<dyn std::error::Error>),
-        }
-    })
-}
