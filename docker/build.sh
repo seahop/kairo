@@ -68,28 +68,26 @@ DOCKER_BUILDKIT=1 docker build \
 echo -e "${YELLOW}Extracting build artifacts...${NC}"
 CONTAINER_ID=$(docker create kairo-builder:latest)
 
-# Create release output directory (separate from frontend dist)
-RELEASE_DIR="${PROJECT_ROOT}/release-output"
-rm -rf "$RELEASE_DIR"
-mkdir -p "$RELEASE_DIR"
+# Copy artifacts to dist directory
+mkdir -p "$DIST_DIR"
 
 # Copy the self-contained binary
-docker cp "$CONTAINER_ID:/app/src-tauri/target/release/kairo" "$RELEASE_DIR/" 2>/dev/null || true
+docker cp "$CONTAINER_ID:/app/src-tauri/target/release/kairo" "$DIST_DIR/" 2>/dev/null || true
 
 # Copy the deb package if it exists
-docker cp "$CONTAINER_ID:/app/src-tauri/target/release/bundle/deb/." "$RELEASE_DIR/" 2>/dev/null || true
+docker cp "$CONTAINER_ID:/app/src-tauri/target/release/bundle/deb/." "$DIST_DIR/" 2>/dev/null || true
 
 # Copy the AppImage if it exists (most portable option)
-docker cp "$CONTAINER_ID:/app/src-tauri/target/release/bundle/appimage/." "$RELEASE_DIR/" 2>/dev/null || true
+docker cp "$CONTAINER_ID:/app/src-tauri/target/release/bundle/appimage/." "$DIST_DIR/" 2>/dev/null || true
 
 # Clean up container
 docker rm "$CONTAINER_ID"
 
 echo -e "${GREEN}=== Build Complete ===${NC}"
-echo -e "Release artifacts saved to: ${RELEASE_DIR}"
+echo -e "Release artifacts saved to: ${DIST_DIR}"
 echo ""
 echo "Contents:"
-ls -la "$RELEASE_DIR"
+ls -la "$DIST_DIR"
 echo ""
 echo -e "${GREEN}Distribution options:${NC}"
 echo "  • kairo           - Binary (requires system GTK/WebKit libs)"

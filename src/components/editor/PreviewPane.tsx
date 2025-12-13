@@ -2,7 +2,11 @@ import { useMemo, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
+import { invoke } from "@tauri-apps/api/core";
 import { useNoteStore } from "@/stores/noteStore";
+import { useUIStore } from "@/stores/uiStore";
+import { useKanbanStore } from "@/plugins/builtin/kanban/store";
+import { LinkContextMenu, useContextMenu } from "@/components/common/LinkContextMenu";
 
 // Icon for external links
 const ExternalLinkIcon = () => (
@@ -12,33 +16,56 @@ const ExternalLinkIcon = () => (
 );
 
 // Transform wiki-style links [[note]] and [[note|display]] to markdown links
+// Also transforms card links [[card:title]] and [[card:title|display]]
 function preprocessWikiLinks(content: string): string {
-  // Match [[path]] or [[path|display text]]
-  return content.replace(
+  // First, handle card links: [[card:title]] or [[card:board/title]] or [[card:title|display]]
+  let processed = content.replace(
+    /\[\[card:([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+    (_, cardRef, display) => {
+      const displayText = display || cardRef;
+      // Use hash-based URL to avoid protocol sanitization in react-markdown v9
+      return `[${displayText}](#cardlink:${encodeURIComponent(cardRef)})`;
+    }
+  );
+
+  // Then handle regular wiki links: [[path]] or [[path|display text]]
+  processed = processed.replace(
     /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
     (_, path, display) => {
       const displayText = display || path;
-      // Use a special protocol to identify wiki links
-      return `[${displayText}](wikilink:${encodeURIComponent(path)})`;
+      // Use hash-based URL to avoid protocol sanitization in react-markdown v9
+      return `[${displayText}](#wikilink:${encodeURIComponent(path)})`;
     }
   );
+
+  return processed;
 }
 
 interface PreviewPaneProps {
   content?: string;
 }
 
+// Type for card lookup result
+interface KanbanCardResult {
+  id: string;
+  boardId: string;
+  columnId: string;
+  title: string;
+}
+
 export function PreviewPane({ content }: PreviewPaneProps) {
   const { editorContent, openNoteByReference, resolveNoteReference } = useNoteStore();
+  const { loadBoard } = useKanbanStore();
+  const { openSidePane } = useUIStore();
+  const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
 
   // Use provided content or fall back to store's editorContent
   const displayContent = content ?? editorContent;
 
   // Preprocess content to convert wiki links
-  const processedContent = useMemo(
-    () => preprocessWikiLinks(displayContent),
-    [displayContent]
-  );
+  const processedContent = useMemo(() => {
+    return preprocessWikiLinks(displayContent);
+  }, [displayContent]);
 
   // Handle wiki link clicks
   const handleWikiLinkClick = useCallback(
@@ -53,15 +80,194 @@ export function PreviewPane({ content }: PreviewPaneProps) {
     [openNoteByReference]
   );
 
+  // Handle card link clicks
+  const handleCardLinkClick = useCallback(
+    async (e: React.MouseEvent, reference: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Parse board/title or just title
+      let boardName: string | undefined;
+      let cardTitle: string;
+
+      if (reference.includes("/")) {
+        const parts = reference.split("/");
+        boardName = parts[0];
+        cardTitle = parts.slice(1).join("/");
+      } else {
+        cardTitle = reference;
+      }
+
+      try {
+        // Find the card
+        const card = await invoke<KanbanCardResult | null>("kanban_find_card_by_title", {
+          title: cardTitle,
+          boardName: boardName || null,
+        });
+
+        if (card) {
+          // Load the board first
+          await loadBoard(card.boardId);
+
+          // Small delay to ensure state is updated
+          await new Promise(resolve => setTimeout(resolve, 50));
+
+          // Get fresh state after loading
+          const state = useKanbanStore.getState();
+          const fullCard = state.cards.find(c => c.id === card.id);
+
+          if (fullCard) {
+            // Open the kanban view and show the card detail
+            useKanbanStore.setState({ showView: true });
+            state.openCardDetail(fullCard);
+          }
+        }
+      } catch (err) {
+        console.error(`Error navigating to card:`, err);
+      }
+    },
+    [loadBoard]
+  );
+
+  // Open card in side pane without navigating to kanban view
+  const openCardInPane = useCallback(
+    async (reference: string) => {
+      let boardName: string | undefined;
+      let cardTitle: string;
+
+      if (reference.includes("/")) {
+        const parts = reference.split("/");
+        boardName = parts[0];
+        cardTitle = parts.slice(1).join("/");
+      } else {
+        cardTitle = reference;
+      }
+
+      try {
+        const card = await invoke<KanbanCardResult | null>("kanban_find_card_by_title", {
+          title: cardTitle,
+          boardName: boardName || null,
+        });
+
+        if (card) {
+          // Open the card in the side pane
+          openSidePane({
+            type: 'card',
+            cardId: card.id,
+            boardId: card.boardId,
+          });
+        }
+      } catch (err) {
+        console.error(`Error opening card in pane:`, err);
+      }
+    },
+    [openSidePane]
+  );
+
+  // Copy link to clipboard
+  const copyLink = useCallback((linkType: string, reference: string) => {
+    const linkText = linkType === "card" ? `[[card:${reference}]]` : `[[${reference}]]`;
+    navigator.clipboard.writeText(linkText);
+  }, []);
+
+  // Context menu for card links
+  const handleCardContextMenu = useCallback(
+    (e: React.MouseEvent, reference: string) => {
+      showContextMenu(e, [
+        {
+          label: "Open in Kanban",
+          icon: "📋",
+          onClick: () => handleCardLinkClick(e, reference),
+        },
+        {
+          label: "Open in Side Pane",
+          icon: "📄",
+          onClick: () => openCardInPane(reference),
+        },
+        {
+          label: "Copy Link",
+          icon: "📋",
+          onClick: () => copyLink("card", reference),
+          divider: true,
+        },
+      ]);
+    },
+    [showContextMenu, handleCardLinkClick, openCardInPane, copyLink]
+  );
+
+  // Context menu for wiki links
+  const handleWikiContextMenu = useCallback(
+    (e: React.MouseEvent, reference: string) => {
+      showContextMenu(e, [
+        {
+          label: "Open Note",
+          icon: "📝",
+          onClick: () => handleWikiLinkClick(e, reference),
+        },
+        {
+          label: "Copy Link",
+          icon: "📋",
+          onClick: () => copyLink("wiki", reference),
+          divider: true,
+        },
+      ]);
+    },
+    [showContextMenu, handleWikiLinkClick, copyLink]
+  );
+
+  // Context menu for external links
+  const handleExternalContextMenu = useCallback(
+    (e: React.MouseEvent, url: string) => {
+      showContextMenu(e, [
+        {
+          label: "Open in Browser",
+          icon: "🌐",
+          onClick: () => window.open(url, "_blank"),
+        },
+        {
+          label: "Copy URL",
+          icon: "📋",
+          onClick: () => navigator.clipboard.writeText(url),
+          divider: true,
+        },
+      ]);
+    },
+    [showContextMenu]
+  );
+
+  // Debug mode - set to true to show debug UI
+  const debugMode = false;
+
   return (
     <div className="h-full overflow-auto bg-dark-950 p-6">
+      {debugMode && (
+        <>
+          <div className="fixed top-16 right-4 bg-green-600 text-white px-2 py-1 text-xs rounded z-50">
+            PreviewPane v2 - Card links: {displayContent?.includes("[[card:") ? "YES" : "NO"}
+          </div>
+          <details className="mb-4 p-2 bg-dark-800 rounded text-xs">
+            <summary className="cursor-pointer text-yellow-400">Debug: Processed Content</summary>
+            <pre className="mt-2 p-2 bg-dark-900 rounded overflow-auto max-h-40 text-green-400">
+              {processedContent?.substring(0, 500)}
+            </pre>
+          </details>
+        </>
+      )}
       <div className="max-w-3xl mx-auto markdown-preview">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[rehypeRaw]}
+          urlTransform={(url) => {
+            // Keep our hash-based custom links unchanged
+            if (url.startsWith("#cardlink:") || url.startsWith("#wikilink:")) {
+              return url;
+            }
+            return url;
+          }}
           components={{
             // Custom rendering for code blocks
-            code({ node, className, children, ...props }) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            code({ className, children, ...props }) {
               const match = /language-(\w+)/.exec(className || "");
               const isInline = !match;
 
@@ -86,9 +292,29 @@ export function PreviewPane({ content }: PreviewPaneProps) {
             },
             // Custom rendering for links
             a({ href, children, ...props }) {
-              // Check if it's a wiki link (our custom protocol)
-              if (href?.startsWith("wikilink:")) {
-                const reference = decodeURIComponent(href.slice(9));
+              // Check if it's a card link (hash-based URL)
+              if (href?.startsWith("#cardlink:")) {
+                const reference = decodeURIComponent(href.slice(10));
+                return (
+                  <a
+                    href="#"
+                    data-card-link={reference}
+                    onClick={(e) => handleCardLinkClick(e, reference)}
+                    onContextMenu={(e) => handleCardContextMenu(e, reference)}
+                    className="cursor-pointer transition-colors text-orange-400 hover:text-orange-300 underline decoration-dotted"
+                    style={{ backgroundColor: 'rgba(251, 146, 60, 0.1)', padding: '0 4px', borderRadius: '4px' }}
+                    title={`Go to card: ${reference} (right-click for options)`}
+                    {...props}
+                  >
+                    <span className="mr-1">🎯</span>
+                    {children}
+                  </a>
+                );
+              }
+
+              // Check if it's a wiki link (hash-based URL)
+              if (href?.startsWith("#wikilink:")) {
+                const reference = decodeURIComponent(href.slice(10));
                 const resolved = resolveNoteReference(reference);
                 const exists = resolved !== null;
 
@@ -96,6 +322,7 @@ export function PreviewPane({ content }: PreviewPaneProps) {
                   <a
                     href="#"
                     onClick={(e) => handleWikiLinkClick(e, reference)}
+                    onContextMenu={(e) => handleWikiContextMenu(e, reference)}
                     className={`
                       cursor-pointer transition-colors
                       ${exists
@@ -103,7 +330,7 @@ export function PreviewPane({ content }: PreviewPaneProps) {
                         : "text-red-400 hover:text-red-300 line-through opacity-70"
                       }
                     `}
-                    title={exists ? `Go to: ${resolved.path}` : `Note not found: ${reference}`}
+                    title={exists ? `Go to: ${resolved.path} (right-click for options)` : `Note not found: ${reference}`}
                     {...props}
                   >
                     {children}
@@ -117,6 +344,7 @@ export function PreviewPane({ content }: PreviewPaneProps) {
                   href={href}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onContextMenu={(e) => href && handleExternalContextMenu(e, href)}
                   className="text-blue-400 hover:text-blue-300 underline"
                   {...props}
                 >
@@ -142,6 +370,16 @@ export function PreviewPane({ content }: PreviewPaneProps) {
           {processedContent}
         </ReactMarkdown>
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <LinkContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.items}
+          onClose={hideContextMenu}
+        />
+      )}
     </div>
   );
 }

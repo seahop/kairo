@@ -118,11 +118,12 @@ pub async fn index_single_note(
             params![id, path_str, title, content, content_hash, created_at, modified_at, frontmatter],
         )?;
 
-        // Clear existing entities, tags, code blocks, and backlinks for this note
+        // Clear existing entities, tags, code blocks, backlinks, and card backlinks for this note
         conn.execute("DELETE FROM entities WHERE note_id = ?1", params![id])?;
         conn.execute("DELETE FROM tags WHERE note_id = ?1", params![id])?;
         conn.execute("DELETE FROM code_blocks WHERE note_id = ?1", params![id])?;
         conn.execute("DELETE FROM backlinks WHERE source_id = ?1", params![id])?;
+        conn.execute("DELETE FROM card_backlinks WHERE source_id = ?1", params![id])?;
 
         // Extract and insert entities
         let entities = extract_entities(&content);
@@ -158,6 +159,37 @@ pub async fn index_single_note(
                 "INSERT OR IGNORE INTO backlinks (source_id, target_path, context) VALUES (?1, ?2, ?3)",
                 params![id, target_path, context],
             )?;
+        }
+
+        // Extract and insert card backlinks
+        let card_links = extract_card_links(&content);
+        for (card_title, board_name, context) in card_links {
+            // Find the card by title (and optionally board name)
+            let card_result = if let Some(bn) = &board_name {
+                conn.query_row(
+                    r#"
+                    SELECT c.id FROM kanban_cards c
+                    JOIN kanban_boards b ON c.board_id = b.id
+                    WHERE LOWER(c.title) = LOWER(?1) AND LOWER(b.name) = LOWER(?2)
+                    LIMIT 1
+                    "#,
+                    params![card_title, bn],
+                    |row| row.get::<_, String>(0),
+                )
+            } else {
+                conn.query_row(
+                    "SELECT id FROM kanban_cards WHERE LOWER(title) = LOWER(?1) LIMIT 1",
+                    params![card_title],
+                    |row| row.get::<_, String>(0),
+                )
+            };
+
+            if let Ok(card_id) = card_result {
+                conn.execute(
+                    "INSERT OR IGNORE INTO card_backlinks (source_id, card_id, context) VALUES (?1, ?2, ?3)",
+                    params![id, card_id, context],
+                )?;
+            }
         }
 
         Ok(())
@@ -434,6 +466,12 @@ fn extract_links(content: &str) -> Vec<(String, String)> {
 
     for cap in wiki_re.captures_iter(content) {
         let path = cap[1].trim().to_string();
+
+        // Skip card links (those starting with "card:")
+        if path.starts_with("card:") {
+            continue;
+        }
+
         let context = content
             .find(&cap[0])
             .map(|i| {
@@ -461,4 +499,72 @@ fn extract_links(content: &str) -> Vec<(String, String)> {
     }
 
     links
+}
+
+/// Extract card links from content: [[card:Card Title]] or [[card:Board Name/Card Title]]
+fn extract_card_links(content: &str) -> Vec<(String, Option<String>, String)> {
+    let mut card_links = Vec::new();
+
+    // Card links: [[card:title]] or [[card:board/title]] or [[card:title|display]]
+    let card_re = Regex::new(r"\[\[card:([^\]|]+)(?:\|[^\]]+)?\]\]").unwrap();
+
+    for cap in card_re.captures_iter(content) {
+        let reference = cap[1].trim().to_string();
+
+        // Parse board/title or just title
+        let (board_name, card_title) = if reference.contains('/') {
+            let parts: Vec<&str> = reference.splitn(2, '/').collect();
+            (Some(parts[0].to_string()), parts[1].to_string())
+        } else {
+            (None, reference)
+        };
+
+        // Extract context
+        let context = content
+            .find(&cap[0])
+            .map(|i| {
+                let start = floor_char_boundary(content, i.saturating_sub(30));
+                let end = ceil_char_boundary(content, (i + cap[0].len() + 30).min(content.len()));
+                content[start..end].to_string()
+            })
+            .unwrap_or_default();
+
+        card_links.push((card_title, board_name, context));
+    }
+
+    card_links
+}
+
+/// Find card ID by title (and optionally board name)
+pub fn find_card_id_by_title(
+    app: &AppHandle,
+    title: &str,
+    board_name: Option<&str>,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        let result = if let Some(bn) = board_name {
+            conn.query_row(
+                r#"
+                SELECT c.id FROM kanban_cards c
+                JOIN kanban_boards b ON c.board_id = b.id
+                WHERE LOWER(c.title) = LOWER(?1) AND LOWER(b.name) = LOWER(?2)
+                LIMIT 1
+                "#,
+                params![title, bn],
+                |row| row.get::<_, String>(0),
+            )
+        } else {
+            conn.query_row(
+                "SELECT id FROM kanban_cards WHERE LOWER(title) = LOWER(?1) LIMIT 1",
+                params![title],
+                |row| row.get::<_, String>(0),
+            )
+        };
+
+        match result {
+            Ok(id) => Ok(Some(id)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(Box::new(e) as Box<dyn std::error::Error>),
+        }
+    })
 }

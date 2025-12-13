@@ -108,7 +108,7 @@ pub fn init_schema(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> 
         CREATE TABLE IF NOT EXISTS kanban_boards (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
-            columns TEXT NOT NULL,  -- JSON array
+            columns TEXT NOT NULL,  -- JSON array with { id, name, color?, isDone }
             created_at INTEGER NOT NULL,
             modified_at INTEGER NOT NULL
         );
@@ -119,14 +119,89 @@ pub fn init_schema(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> 
             column_id TEXT NOT NULL,
             note_id TEXT REFERENCES notes(id) ON DELETE SET NULL,
             title TEXT NOT NULL,
+            description TEXT,
             position INTEGER NOT NULL,
-            metadata TEXT  -- JSON
+            created_at INTEGER,
+            updated_at INTEGER,
+            closed_at INTEGER,
+            due_date INTEGER,
+            priority TEXT,  -- 'low', 'medium', 'high', 'urgent'
+            metadata TEXT  -- JSON: { assignees: string[], labels: string[] }
         );
 
         CREATE INDEX IF NOT EXISTS idx_kanban_cards_board ON kanban_cards(board_id);
         CREATE INDEX IF NOT EXISTS idx_kanban_cards_column ON kanban_cards(column_id);
+
+        -- Kanban labels (board-level reusable labels)
+        CREATE TABLE IF NOT EXISTS kanban_labels (
+            id TEXT PRIMARY KEY,
+            board_id TEXT REFERENCES kanban_boards(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            color TEXT NOT NULL DEFAULT '#6b7280',
+            UNIQUE(board_id, name)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_kanban_labels_board ON kanban_labels(board_id);
+
+        -- Kanban board members (people who can be assigned to tasks)
+        CREATE TABLE IF NOT EXISTS kanban_board_members (
+            id TEXT PRIMARY KEY,
+            board_id TEXT REFERENCES kanban_boards(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            added_at INTEGER NOT NULL,
+            UNIQUE(board_id, name)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_kanban_members_board ON kanban_board_members(board_id);
+
+        -- Card backlinks (note-to-card references via [[card:title]] syntax)
+        CREATE TABLE IF NOT EXISTS card_backlinks (
+            source_id TEXT REFERENCES notes(id) ON DELETE CASCADE,
+            card_id TEXT REFERENCES kanban_cards(id) ON DELETE CASCADE,
+            context TEXT,  -- The text surrounding the link
+            PRIMARY KEY (source_id, card_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_card_backlinks_card ON card_backlinks(card_id);
+        CREATE INDEX IF NOT EXISTS idx_card_backlinks_source ON card_backlinks(source_id);
         "#,
     )?;
+
+    // Run migrations for existing databases
+    run_migrations(conn)?;
+
+    Ok(())
+}
+
+/// Run database migrations for schema updates
+fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
+    // Check if kanban_cards has the new columns by trying to select them
+    // If they don't exist, add them via ALTER TABLE
+
+    let has_description = conn
+        .prepare("SELECT description FROM kanban_cards LIMIT 0")
+        .is_ok();
+
+    if !has_description {
+        // Add new columns to kanban_cards for existing databases
+        conn.execute_batch(
+            r#"
+            ALTER TABLE kanban_cards ADD COLUMN description TEXT;
+            ALTER TABLE kanban_cards ADD COLUMN created_at INTEGER;
+            ALTER TABLE kanban_cards ADD COLUMN updated_at INTEGER;
+            ALTER TABLE kanban_cards ADD COLUMN closed_at INTEGER;
+            ALTER TABLE kanban_cards ADD COLUMN due_date INTEGER;
+            ALTER TABLE kanban_cards ADD COLUMN priority TEXT;
+            "#,
+        )?;
+
+        // Backfill existing cards with current timestamp
+        let now = chrono::Utc::now().timestamp();
+        conn.execute(
+            "UPDATE kanban_cards SET created_at = ?1, updated_at = ?1 WHERE created_at IS NULL",
+            rusqlite::params![now],
+        )?;
+    }
 
     Ok(())
 }

@@ -6,6 +6,7 @@ import { BacklinksPanel } from "@/components/editor/BacklinksPanel";
 import { PreviewPane } from "@/components/editor/PreviewPane";
 import { GraphViewPanel } from "@/plugins/builtin";
 import { VaultHealthPanel } from "@/components/vault/VaultHealthPanel";
+import { SidePane } from "./SidePane";
 
 const EmptyState = () => (
   <div className="h-full flex items-center justify-center">
@@ -119,41 +120,60 @@ function SecondaryNotePane() {
   );
 }
 
-function NotesView() {
+// Main content area (notes with optional secondary pane)
+function NotesContentArea() {
   const { currentNote, secondaryNote } = useNoteStore();
 
   // If neither note is open, show empty state
   if (!currentNote && !secondaryNote) {
-    return (
-      <div className="h-full bg-dark-950">
-        <EmptyState />
-      </div>
-    );
+    return <EmptyState />;
   }
 
   // If only primary note is open, show simple view
   if (!secondaryNote) {
-    return (
-      <div className="h-full bg-dark-950 flex flex-col overflow-hidden">
-        <PrimaryNotePane />
-      </div>
-    );
+    return <PrimaryNotePane />;
   }
 
   // Both panes - show split view
   return (
+    <PanelGroup direction="horizontal" className="h-full">
+      <Panel defaultSize={50} minSize={30}>
+        <div className="h-full border-r border-dark-800">
+          <PrimaryNotePane />
+        </div>
+      </Panel>
+      <PanelResizeHandle className="w-1 bg-dark-800 hover:bg-accent-primary transition-colors cursor-col-resize" />
+      <Panel defaultSize={50} minSize={20}>
+        <SecondaryNotePane />
+      </Panel>
+    </PanelGroup>
+  );
+}
+
+function NotesView() {
+  const { sidePaneContent } = useUIStore();
+
+  // If side pane is open, show with resizable panel
+  if (sidePaneContent) {
+    return (
+      <div className="h-full bg-dark-950 overflow-hidden">
+        <PanelGroup direction="horizontal" className="h-full">
+          <Panel defaultSize={70} minSize={40}>
+            <NotesContentArea />
+          </Panel>
+          <PanelResizeHandle className="w-1 bg-dark-700 hover:bg-accent-primary transition-colors cursor-col-resize" />
+          <Panel defaultSize={30} minSize={15} maxSize={50}>
+            <SidePane />
+          </Panel>
+        </PanelGroup>
+      </div>
+    );
+  }
+
+  // No side pane
+  return (
     <div className="h-full bg-dark-950 overflow-hidden">
-      <PanelGroup direction="horizontal" className="h-full">
-        <Panel defaultSize={50} minSize={30}>
-          <div className="h-full border-r border-dark-800">
-            <PrimaryNotePane />
-          </div>
-        </Panel>
-        <PanelResizeHandle className="w-1 bg-dark-800 hover:bg-accent-primary transition-colors cursor-col-resize" />
-        <Panel defaultSize={50} minSize={20}>
-          <SecondaryNotePane />
-        </Panel>
-      </PanelGroup>
+      <NotesContentArea />
     </div>
   );
 }

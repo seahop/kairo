@@ -13,6 +13,13 @@ export interface ConfirmDialogOptions {
   onCancel?: () => void;
 }
 
+// Side pane content types
+export type SidePaneContent =
+  | { type: 'card'; cardId: string; boardId: string }
+  | { type: 'backlinks'; noteId: string }
+  | { type: 'outline'; noteId: string }
+  | null;
+
 interface UIState {
   // Sidebar
   sidebarWidth: number;
@@ -36,6 +43,10 @@ interface UIState {
   // Main view mode (notes vs graph)
   mainViewMode: MainViewMode;
 
+  // Side pane (right panel)
+  sidePaneContent: SidePaneContent;
+  sidePaneWidth: number;
+
   // Actions
   setSidebarWidth: (width: number) => void;
   toggleSidebar: () => void;
@@ -49,6 +60,9 @@ interface UIState {
   setEditorViewMode: (mode: EditorViewMode) => void;
   cycleEditorViewMode: () => void;
   setMainViewMode: (mode: MainViewMode) => void;
+  openSidePane: (content: SidePaneContent) => void;
+  closeSidePane: () => void;
+  setSidePaneWidth: (width: number) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -63,6 +77,8 @@ export const useUIStore = create<UIState>((set) => ({
   showPreview: true,
   editorViewMode: 'split',
   mainViewMode: 'notes',
+  sidePaneContent: null,
+  sidePaneWidth: 350,
 
   // Actions
   setSidebarWidth: (width: number) => set({ sidebarWidth: width }),
@@ -97,4 +113,10 @@ export const useUIStore = create<UIState>((set) => ({
     }),
 
   setMainViewMode: (mode: MainViewMode) => set({ mainViewMode: mode }),
+
+  openSidePane: (content: SidePaneContent) => set({ sidePaneContent: content }),
+
+  closeSidePane: () => set({ sidePaneContent: null }),
+
+  setSidePaneWidth: (width: number) => set({ sidePaneWidth: width }),
 }));

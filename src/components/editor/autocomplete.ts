@@ -2,29 +2,43 @@ import { CompletionContext, CompletionResult, Completion, autocompletion } from 
 import { invoke } from "@tauri-apps/api/core";
 import { useNoteStore, NoteMetadata } from "@/stores/noteStore";
 
+// Card summary type for autocomplete
+interface KanbanCardSummary {
+  id: string;
+  title: string;
+  boardId: string;
+  boardName: string;
+  columnName: string | null;
+}
+
 // Cache for autocomplete data
 let noteCache: NoteMetadata[] = [];
 let tagCache: string[] = [];
 let mentionCache: string[] = [];
+let cardCache: KanbanCardSummary[] = [];
 let lastCacheUpdate = 0;
 const CACHE_TTL = 5000; // 5 seconds
 
 async function refreshCache() {
   const now = Date.now();
-  if (now - lastCacheUpdate < CACHE_TTL) return;
+  if (now - lastCacheUpdate < CACHE_TTL) {
+    return;
+  }
 
   try {
     // Get notes from store
     noteCache = useNoteStore.getState().notes;
 
-    // Fetch tags and mentions from backend
-    const [tags, mentions] = await Promise.all([
+    // Fetch tags, mentions, and cards from backend
+    const [tags, mentions, cards] = await Promise.all([
       invoke<string[]>("get_all_tags").catch(() => []),
       invoke<string[]>("get_all_mentions").catch(() => []),
+      invoke<KanbanCardSummary[]>("kanban_get_all_cards").catch(() => []),
     ]);
 
     tagCache = tags;
     mentionCache = mentions;
+    cardCache = cards;
     lastCacheUpdate = now;
   } catch (err) {
     console.error("Failed to refresh autocomplete cache:", err);
@@ -39,6 +53,9 @@ function wikiLinkCompletion(context: CompletionContext): CompletionResult | null
 
   // Extract the query (text after [[)
   const query = before.text.slice(2).toLowerCase();
+
+  // Don't trigger for card links - those are handled separately
+  if (query.startsWith("card:")) return null;
 
   // Filter and sort notes
   const matches = noteCache
@@ -66,6 +83,56 @@ function wikiLinkCompletion(context: CompletionContext): CompletionResult | null
     apply: (view, _completion, _from, to) => {
       // Replace from [[ to cursor with [[title]]
       const insertText = `[[${note.title}]]`;
+      view.dispatch({
+        changes: { from: before.from, to, insert: insertText },
+        selection: { anchor: before.from + insertText.length },
+      });
+    },
+  }));
+
+  return {
+    from: before.from,
+    options,
+    validFor: /^[^\]]*$/,
+  };
+}
+
+// Card link completion: triggered by [[card:
+function cardLinkCompletion(context: CompletionContext): CompletionResult | null {
+  // Look for [[card: before the cursor
+  const before = context.matchBefore(/\[\[card:[^\]]*$/);
+  if (!before) return null;
+
+  // Extract the query (text after [[card:)
+  const query = before.text.slice(7).toLowerCase(); // "[[card:" is 7 chars
+
+  // Filter and sort cards
+  const matches = cardCache
+    .filter(card => {
+      const title = card.title.toLowerCase();
+      const boardName = card.boardName.toLowerCase();
+      // Support "board/title" search format
+      const fullRef = `${boardName}/${title}`;
+      return title.includes(query) || fullRef.includes(query);
+    })
+    .sort((a, b) => {
+      const aTitle = a.title.toLowerCase();
+      const bTitle = b.title.toLowerCase();
+      const aStartsWith = aTitle.startsWith(query);
+      const bStartsWith = bTitle.startsWith(query);
+      if (aStartsWith && !bStartsWith) return -1;
+      if (!aStartsWith && bStartsWith) return 1;
+      return a.title.localeCompare(b.title);
+    })
+    .slice(0, 20);
+
+  const options: Completion[] = matches.map(card => ({
+    label: `${card.boardName}/${card.title}`,
+    detail: card.columnName || "",
+    type: "class", // Using "class" type for distinct styling
+    apply: (view, _completion, _from, to) => {
+      // Always include board name for unambiguous links: [[card:Board/Title]]
+      const insertText = `[[card:${card.boardName}/${card.title}]]`;
       view.dispatch({
         changes: { from: before.from, to, insert: insertText },
         selection: { anchor: before.from + insertText.length },
@@ -176,7 +243,10 @@ async function kairoCompletions(context: CompletionContext): Promise<CompletionR
   // Refresh cache before completing
   await refreshCache();
 
-  // Try each completion source
+  // Try each completion source (card links first as they're more specific)
+  const cardResult = cardLinkCompletion(context);
+  if (cardResult) return cardResult;
+
   const wikiResult = wikiLinkCompletion(context);
   if (wikiResult) return wikiResult;
 
@@ -197,6 +267,7 @@ export const kairoAutocompletion = autocompletion({
   icons: true,
   optionClass: (completion) => {
     if (completion.type === "text") return "cm-completion-note";
+    if (completion.type === "class") return "cm-completion-card";
     if (completion.type === "keyword") return "cm-completion-tag";
     if (completion.type === "variable") return "cm-completion-mention";
     return "";
@@ -243,6 +314,9 @@ export const autocompleteTheme = {
   },
   ".cm-completion-note .cm-completionIcon::after": {
     content: "'📄'",
+  },
+  ".cm-completion-card .cm-completionIcon::after": {
+    content: "'🎯'",
   },
   ".cm-completion-tag .cm-completionIcon::after": {
     content: "'#'",
