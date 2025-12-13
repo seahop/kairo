@@ -833,7 +833,10 @@ pub struct BoardMember {
 
 /// Get all members for a board
 #[tauri::command]
-pub fn kanban_get_board_members(app: AppHandle, board_id: String) -> Result<Vec<BoardMember>, String> {
+pub fn kanban_get_board_members(
+    app: AppHandle,
+    board_id: String,
+) -> Result<Vec<BoardMember>, String> {
     with_db(&app, |conn| {
         let mut stmt = conn
             .prepare("SELECT id, board_id, name, added_at FROM kanban_board_members WHERE board_id = ?1 ORDER BY name")
@@ -900,7 +903,10 @@ pub fn kanban_remove_board_member(app: AppHandle, member_id: String) -> Result<(
 
 /// Get assignee suggestions - returns ALL unique members across all boards (global)
 #[tauri::command]
-pub fn kanban_get_assignee_suggestions(app: AppHandle, _board_id: Option<String>) -> Result<Vec<String>, String> {
+pub fn kanban_get_assignee_suggestions(
+    app: AppHandle,
+    _board_id: Option<String>,
+) -> Result<Vec<String>, String> {
     with_db(&app, |conn| {
         // Return all unique member names across all boards
         let mut stmt = conn
@@ -934,7 +940,10 @@ pub struct CardBacklink {
 
 /// Get all notes that link to a specific card
 #[tauri::command]
-pub fn kanban_get_card_backlinks(app: AppHandle, card_id: String) -> Result<Vec<CardBacklink>, String> {
+pub fn kanban_get_card_backlinks(
+    app: AppHandle,
+    card_id: String,
+) -> Result<Vec<CardBacklink>, String> {
     with_db(&app, |conn| {
         let mut stmt = conn
             .prepare(
@@ -1000,7 +1009,10 @@ pub fn kanban_get_all_cards(app: AppHandle) -> Result<Vec<KanbanCardSummary>, St
                 let column_id: String = row.get(5)?;
                 let columns: Vec<KanbanColumn> =
                     serde_json::from_str(&columns_json).unwrap_or_default();
-                let column_name = columns.iter().find(|c| c.id == column_id).map(|c| c.name.clone());
+                let column_name = columns
+                    .iter()
+                    .find(|c| c.id == column_id)
+                    .map(|c| c.name.clone());
 
                 Ok(KanbanCardSummary {
                     id: row.get(0)?,

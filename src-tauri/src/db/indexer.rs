@@ -123,7 +123,10 @@ pub async fn index_single_note(
         conn.execute("DELETE FROM tags WHERE note_id = ?1", params![id])?;
         conn.execute("DELETE FROM code_blocks WHERE note_id = ?1", params![id])?;
         conn.execute("DELETE FROM backlinks WHERE source_id = ?1", params![id])?;
-        conn.execute("DELETE FROM card_backlinks WHERE source_id = ?1", params![id])?;
+        conn.execute(
+            "DELETE FROM card_backlinks WHERE source_id = ?1",
+            params![id],
+        )?;
 
         // Extract and insert entities
         let entities = extract_entities(&content);

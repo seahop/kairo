@@ -15,9 +15,11 @@
 ## Features
 
 - **Wiki-Style Linking** - Create connections between notes using `[[wiki links]]`
+- **Card Linking** - Link notes to kanban cards with `[[card:Board/Title]]` syntax
 - **Graph Visualization** - Interactive graph view showing relationships between notes
 - **Full-Text Search** - Powerful FTS5-based search with code block filtering
 - **Backlinks Panel** - See all notes that reference the current note
+- **Resizable Side Pane** - View card details without leaving your notes
 - **Git Integration** - Built-in pull, commit, and push functionality
 - **Kanban Boards** - Organize tasks visually with drag-and-drop boards
 - **Templates & Snippets** - Quickly insert boilerplate content
