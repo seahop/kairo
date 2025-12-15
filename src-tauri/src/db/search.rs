@@ -152,26 +152,54 @@ pub fn search_notes(
             }
         }
 
-        // Apply tag filters if specified
+        // Apply tag filters if specified - batch fetch tags to avoid N+1 query
         if let Some(f) = filters {
             if let Some(ref tags) = f.tags {
                 let tag_set: std::collections::HashSet<_> = tags.iter().collect();
 
-                results.retain(|r| {
-                    let mut stmt = conn.prepare("SELECT tag FROM tags WHERE note_id = ?1").ok();
+                // Batch fetch all tags for the result note IDs in a single query
+                if !results.is_empty() {
+                    let note_ids: Vec<&str> = results.iter().map(|r| r.id.as_str()).collect();
 
-                    if let Some(ref mut stmt) = stmt {
-                        let note_tags: Vec<String> = stmt
-                            .query_map(params![r.id], |row| row.get(0))
-                            .ok()
-                            .map(|rows| rows.filter_map(|r| r.ok()).collect())
-                            .unwrap_or_default();
+                    // Build a single query with placeholders
+                    let placeholders: Vec<String> = (1..=note_ids.len())
+                        .map(|i| format!("?{}", i))
+                        .collect();
+                    let batch_query = format!(
+                        "SELECT note_id, tag FROM tags WHERE note_id IN ({})",
+                        placeholders.join(", ")
+                    );
 
-                        note_tags.iter().any(|t| tag_set.contains(t))
-                    } else {
-                        true
+                    let mut batch_stmt = conn.prepare(&batch_query)?;
+
+                    // Build params vector
+                    let params: Vec<&dyn rusqlite::ToSql> = note_ids
+                        .iter()
+                        .map(|id| id as &dyn rusqlite::ToSql)
+                        .collect();
+
+                    // Build a map of note_id -> tags
+                    let mut note_tags_map: std::collections::HashMap<String, Vec<String>> =
+                        std::collections::HashMap::new();
+
+                    let tag_rows = batch_stmt.query_map(params.as_slice(), |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })?;
+
+                    for row in tag_rows.filter_map(|r| r.ok()) {
+                        let (note_id, tag) = row;
+                        note_tags_map.entry(note_id).or_default().push(tag);
                     }
-                });
+
+                    // Filter results based on the batch-fetched tags
+                    results.retain(|r| {
+                        if let Some(note_tags) = note_tags_map.get(&r.id) {
+                            note_tags.iter().any(|t| tag_set.contains(t))
+                        } else {
+                            false
+                        }
+                    });
+                }
             }
         }
 
@@ -345,17 +373,30 @@ pub struct GraphData {
 /// Get graph data for visualization
 pub fn get_graph_data(app: &AppHandle) -> Result<GraphData, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
-        // Get all notes as nodes
+        // Use CTEs to pre-compute link counts efficiently instead of correlated subqueries
         let mut nodes_stmt = conn.prepare(
             r#"
+            WITH outgoing_links AS (
+                SELECT source_id, COUNT(*) as cnt
+                FROM backlinks
+                GROUP BY source_id
+            ),
+            incoming_links AS (
+                SELECT n.id, COUNT(DISTINCT b.source_id) as cnt
+                FROM notes n
+                LEFT JOIN backlinks b ON (
+                    b.target_path = n.path
+                    OR b.target_path = replace(n.path, 'notes/', '')
+                    OR b.target_path = replace(replace(n.path, 'notes/', ''), '.md', '')
+                )
+                GROUP BY n.id
+            )
             SELECT n.id, n.path, n.title,
-                   (SELECT COUNT(*) FROM backlinks WHERE source_id = n.id) as link_count,
-                   (SELECT COUNT(*) FROM backlinks b2
-                    JOIN notes n2 ON b2.source_id = n2.id
-                    WHERE b2.target_path = n.path
-                       OR b2.target_path LIKE '%' || replace(n.path, 'notes/', '') || '%'
-                   ) as backlink_count
+                   COALESCE(ol.cnt, 0) as link_count,
+                   COALESCE(il.cnt, 0) as backlink_count
             FROM notes n
+            LEFT JOIN outgoing_links ol ON ol.source_id = n.id
+            LEFT JOIN incoming_links il ON il.id = n.id
             "#,
         )?;
 
@@ -858,19 +899,19 @@ pub struct UnlinkedMention {
 }
 
 /// Get unlinked mentions (note titles that appear in content but aren't wiki-linked)
+/// Optimized to use FTS5 for O(n) instead of O(n²) performance
 pub fn get_unlinked_mentions(
     app: &AppHandle,
 ) -> Result<Vec<UnlinkedMention>, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
-        // Get all notes with their titles and content
-        let mut notes_stmt = conn.prepare("SELECT id, path, title, content FROM notes")?;
-        let notes: Vec<(String, String, String, String)> = notes_stmt
+        // Get all notes with their titles (we'll use FTS5 to search content)
+        let mut notes_stmt = conn.prepare("SELECT id, path, title FROM notes")?;
+        let notes: Vec<(String, String, String)> = notes_stmt
             .query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
                 ))
             })?
             .filter_map(|r| r.ok())
@@ -890,8 +931,9 @@ pub fn get_unlinked_mentions(
 
         let mut unlinked = Vec::new();
 
-        // For each note, check if its title appears in other notes' content without being linked
-        for (note_id, note_path, note_title, _) in &notes {
+        // For each note, use FTS5 to find other notes containing the title
+        // This is O(n * log(m)) instead of O(n * m) where m is total content size
+        for (note_id, note_path, note_title) in &notes {
             if note_title.len() < 3 {
                 continue; // Skip very short titles
             }
@@ -902,32 +944,49 @@ pub fn get_unlinked_mentions(
                 .map(|s| s.to_string_lossy().to_lowercase())
                 .unwrap_or_default();
 
-            for (other_id, other_path, other_title, other_content) in &notes {
-                if note_id == other_id {
-                    continue; // Skip self
-                }
+            // Use FTS5 to search for notes containing this title
+            // Quote the title to search for exact phrase
+            let fts_query = format!("\"{}\"", note_title.replace('"', ""));
 
-                let content_lower = other_content.to_lowercase();
+            let mut search_stmt = conn.prepare(
+                r#"
+                SELECT n.id, n.path, n.title, n.content
+                FROM notes_fts
+                JOIN notes n ON notes_fts.rowid = n.rowid
+                WHERE notes_fts MATCH ?1
+                AND n.id != ?2
+                LIMIT 50
+                "#,
+            )?;
 
-                // Check if title appears in content (case-insensitive)
-                if !content_lower.contains(&title_lower) {
-                    continue;
-                }
+            let matches = search_stmt
+                .query_map(params![fts_query, note_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                })?
+                .filter_map(|r| r.ok());
 
+            for (other_id, other_path, other_title, other_content) in matches {
                 // Check if already linked
                 let is_linked = existing_links.contains(&(other_id.clone(), title_lower.clone()))
-                    || existing_links.contains(&(other_id.clone(), note_filename.clone()));
+                    || existing_links.contains(&(other_id.clone(), note_filename.clone()))
+                    || existing_links.contains(&(other_id.clone(), note_path.to_lowercase()));
 
                 if is_linked {
                     continue;
                 }
 
                 // Find context around the mention
+                let content_lower = other_content.to_lowercase();
                 if let Some(pos) = content_lower.find(&title_lower) {
                     // Use safe character boundary functions to avoid panics on multi-byte chars
-                    let start = floor_char_boundary(other_content, pos.saturating_sub(40));
+                    let start = floor_char_boundary(&other_content, pos.saturating_sub(40));
                     let end = ceil_char_boundary(
-                        other_content,
+                        &other_content,
                         (pos + note_title.len() + 40).min(other_content.len()),
                     );
                     let context = other_content[start..end].to_string();
@@ -936,9 +995,9 @@ pub fn get_unlinked_mentions(
                         note_id: note_id.clone(),
                         note_path: note_path.clone(),
                         note_title: note_title.clone(),
-                        mentioned_in_id: other_id.clone(),
-                        mentioned_in_path: other_path.clone(),
-                        mentioned_in_title: other_title.clone(),
+                        mentioned_in_id: other_id,
+                        mentioned_in_path: other_path,
+                        mentioned_in_title: other_title,
                         context: format!("...{}...", context.replace('\n', " ")),
                     });
                 }

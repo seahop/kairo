@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useCommands, Command } from "@/plugins/api/commands";
 import clsx from "clsx";
 
@@ -67,15 +67,17 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
     onClose();
   };
 
-  if (!isOpen) return null;
+  // Memoize grouped commands to avoid recomputation on every render
+  const grouped = useMemo(() => {
+    return commands.reduce((acc, cmd) => {
+      const category = cmd.category || "General";
+      if (!acc[category]) acc[category] = [];
+      acc[category].push(cmd);
+      return acc;
+    }, {} as Record<string, Command[]>);
+  }, [commands]);
 
-  // Group commands by category
-  const grouped = commands.reduce((acc, cmd) => {
-    const category = cmd.category || "General";
-    if (!acc[category]) acc[category] = [];
-    acc[category].push(cmd);
-    return acc;
-  }, {} as Record<string, Command[]>);
+  if (!isOpen) return null;
 
   let globalIndex = -1;
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useNoteStore, NoteMetadata } from "@/stores/noteStore";
 import { useVaultStore } from "@/stores/vaultStore";
 import { useUIStore } from "@/stores/uiStore";
@@ -306,9 +306,20 @@ function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }
 }
 
 export function Sidebar() {
-  const { vault } = useVaultStore();
-  const { notes, loadNotes, createNote, deleteNote, archiveNote, openNoteInSecondary } = useNoteStore();
-  const { setSearchOpen, isSidebarCollapsed, toggleSidebar, mainViewMode, setMainViewMode, showConfirmDialog } = useUIStore();
+  // Use selective Zustand subscriptions to prevent unnecessary re-renders
+  const vault = useVaultStore((state) => state.vault);
+  const notes = useNoteStore((state) => state.notes);
+  const loadNotes = useNoteStore((state) => state.loadNotes);
+  const createNote = useNoteStore((state) => state.createNote);
+  const deleteNote = useNoteStore((state) => state.deleteNote);
+  const archiveNote = useNoteStore((state) => state.archiveNote);
+  const openNoteInSecondary = useNoteStore((state) => state.openNoteInSecondary);
+  const setSearchOpen = useUIStore((state) => state.setSearchOpen);
+  const isSidebarCollapsed = useUIStore((state) => state.isSidebarCollapsed);
+  const toggleSidebar = useUIStore((state) => state.toggleSidebar);
+  const mainViewMode = useUIStore((state) => state.mainViewMode);
+  const setMainViewMode = useUIStore((state) => state.setMainViewMode);
+  const showConfirmDialog = useUIStore((state) => state.showConfirmDialog);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ x: 0, y: 0, note: null });
@@ -351,7 +362,8 @@ export function Sidebar() {
     }
   }, [renamingNote]);
 
-  const folderTree = buildFolderTree(notes);
+  // Memoize the folder tree to prevent expensive O(n) rebuild on every render
+  const folderTree = useMemo(() => buildFolderTree(notes), [notes]);
 
   const handleNewNote = () => {
     const timestamp = new Date().toISOString().split("T")[0];

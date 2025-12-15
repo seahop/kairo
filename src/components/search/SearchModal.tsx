@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useSearchStore, SearchResult } from "@/stores/searchStore";
 import { useNoteStore } from "@/stores/noteStore";
+import DOMPurify from "dompurify";
 import clsx from "clsx";
 
 const SearchIcon = () => (
@@ -91,12 +92,18 @@ export function SearchModal({ onClose }: SearchModalProps) {
     onClose();
   };
 
-  // Highlight matching text in snippet
-  const highlightSnippet = (snippet: string, searchQuery: string) => {
-    if (!searchQuery.trim()) return snippet;
+  // Highlight matching text in snippet - memoized and sanitized against XSS
+  const highlightSnippet = useCallback((snippet: string, searchQuery: string) => {
+    if (!searchQuery.trim()) {
+      // Sanitize even plain text to prevent XSS
+      return DOMPurify.sanitize(snippet, { ALLOWED_TAGS: [] });
+    }
+
+    // First, sanitize the snippet to remove any potentially dangerous HTML
+    const sanitizedSnippet = DOMPurify.sanitize(snippet, { ALLOWED_TAGS: [] });
 
     const terms = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
-    let result = snippet;
+    let result = sanitizedSnippet;
 
     for (const term of terms) {
       const cleanTerm = term.replace(/[*?]/g, "");
@@ -106,8 +113,9 @@ export function SearchModal({ onClose }: SearchModalProps) {
       result = result.replace(regex, '<mark class="search-highlight">$1</mark>');
     }
 
-    return result;
-  };
+    // Final sanitization allowing only the mark tag we just added
+    return DOMPurify.sanitize(result, { ALLOWED_TAGS: ['mark'], ALLOWED_ATTR: ['class'] });
+  }, []);
 
   return (
     <div className="modal-overlay" onClick={onClose}>

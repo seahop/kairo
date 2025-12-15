@@ -1,9 +1,56 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
 use crate::db;
+
+/// Validate that a relative path doesn't escape the vault directory
+fn validate_vault_path(vault_path: &Path, relative_path: &str) -> Result<PathBuf, String> {
+    // Reject obvious traversal attempts
+    if relative_path.contains("..") || relative_path.contains("\0") {
+        return Err("Access denied: invalid path characters".to_string());
+    }
+
+    // Build the full path
+    let full_path = vault_path.join(relative_path);
+
+    // Canonicalize both paths for comparison
+    // Note: For new files, we canonicalize the parent directory
+    let canonical_vault = vault_path
+        .canonicalize()
+        .map_err(|_| "Invalid vault path".to_string())?;
+
+    // If the file exists, canonicalize it directly
+    if full_path.exists() {
+        let canonical_full = full_path
+            .canonicalize()
+            .map_err(|_| "Invalid path".to_string())?;
+
+        if !canonical_full.starts_with(&canonical_vault) {
+            return Err("Access denied: path traversal detected".to_string());
+        }
+
+        return Ok(canonical_full);
+    }
+
+    // For new files, verify the parent directory is within vault
+    if let Some(parent) = full_path.parent() {
+        // Create parent if needed for the check
+        if parent.exists() {
+            let canonical_parent = parent
+                .canonicalize()
+                .map_err(|_| "Invalid parent path".to_string())?;
+
+            if !canonical_parent.starts_with(&canonical_vault) {
+                return Err("Access denied: path traversal detected".to_string());
+            }
+        }
+    }
+
+    // Return the non-canonical path for new files
+    Ok(full_path)
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NoteMetadata {
@@ -43,7 +90,7 @@ pub fn list_notes(app: AppHandle) -> Result<Vec<NoteMetadata>, String> {
 #[tauri::command]
 pub fn read_note(app: AppHandle, path: String) -> Result<Note, String> {
     let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
-    let note_path = vault_path.join(&path);
+    let note_path = validate_vault_path(&vault_path, &path)?;
 
     if !note_path.exists() {
         return Err(format!("Note not found: {}", path));
@@ -95,7 +142,7 @@ pub async fn write_note(
     create_if_missing: bool,
 ) -> Result<NoteMetadata, String> {
     let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
-    let note_path = vault_path.join(&path);
+    let note_path = validate_vault_path(&vault_path, &path)?;
 
     // Check if note exists
     if !note_path.exists() && !create_if_missing {
@@ -150,7 +197,7 @@ pub async fn write_note(
 #[tauri::command]
 pub async fn delete_note(app: AppHandle, path: String) -> Result<(), String> {
     let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
-    let note_path = vault_path.join(&path);
+    let note_path = validate_vault_path(&vault_path, &path)?;
 
     if !note_path.exists() {
         return Err(format!("Note not found: {}", path));
@@ -172,8 +219,8 @@ pub async fn rename_note(
     new_path: String,
 ) -> Result<NoteMetadata, String> {
     let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
-    let old_note_path = vault_path.join(&old_path);
-    let new_note_path = vault_path.join(&new_path);
+    let old_note_path = validate_vault_path(&vault_path, &old_path)?;
+    let new_note_path = validate_vault_path(&vault_path, &new_path)?;
 
     if !old_note_path.exists() {
         return Err(format!("Note not found: {}", old_path));
@@ -235,7 +282,7 @@ pub async fn rename_note(
 #[tauri::command]
 pub fn create_folder(app: AppHandle, path: String) -> Result<(), String> {
     let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
-    let folder_path = vault_path.join(&path);
+    let folder_path = validate_vault_path(&vault_path, &path)?;
 
     fs::create_dir_all(&folder_path).map_err(|e| e.to_string())?;
 

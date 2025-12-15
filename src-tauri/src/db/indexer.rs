@@ -73,8 +73,9 @@ pub async fn index_single_note(
     relative_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let full_path = vault_path.join(relative_path);
-    let content = std::fs::read_to_string(&full_path)?;
-    let metadata = std::fs::metadata(&full_path)?;
+    // Use tokio async file operations to avoid blocking
+    let content = tokio::fs::read_to_string(&full_path).await?;
+    let metadata = tokio::fs::metadata(&full_path).await?;
 
     let path_str = relative_path.to_string_lossy().to_string();
     let id = generate_note_id(&path_str);

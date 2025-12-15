@@ -61,6 +61,7 @@ pub fn init_schema(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> 
         CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type);
         CREATE INDEX IF NOT EXISTS idx_entities_value ON entities(value);
         CREATE INDEX IF NOT EXISTS idx_entities_note ON entities(note_id);
+        CREATE INDEX IF NOT EXISTS idx_entities_note_type ON entities(note_id, entity_type);
 
         -- Backlinks (note-to-note references)
         CREATE TABLE IF NOT EXISTS backlinks (
@@ -71,6 +72,7 @@ pub fn init_schema(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> 
         );
 
         CREATE INDEX IF NOT EXISTS idx_backlinks_target ON backlinks(target_path);
+        CREATE INDEX IF NOT EXISTS idx_backlinks_source_target ON backlinks(source_id, target_path);
 
         -- Saved searches
         CREATE TABLE IF NOT EXISTS saved_searches (
@@ -103,6 +105,7 @@ pub fn init_schema(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> 
 
         CREATE INDEX IF NOT EXISTS idx_code_blocks_note ON code_blocks(note_id);
         CREATE INDEX IF NOT EXISTS idx_code_blocks_lang ON code_blocks(language);
+        CREATE INDEX IF NOT EXISTS idx_code_blocks_note_lang ON code_blocks(note_id, language);
 
         -- Kanban boards (plugin data, but core enough to include)
         CREATE TABLE IF NOT EXISTS kanban_boards (

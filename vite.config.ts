@@ -11,6 +11,48 @@ export default defineConfig(async () => ({
     },
   },
 
+  // Build optimization - code splitting for better performance
+  build: {
+    rollupOptions: {
+      output: {
+        // Manual chunk splitting for optimal loading
+        manualChunks: {
+          // Core React dependencies
+          'vendor-react': ['react', 'react-dom'],
+          // CodeMirror (large) - load separately
+          'vendor-codemirror': [
+            '@codemirror/autocomplete',
+            '@codemirror/commands',
+            '@codemirror/lang-markdown',
+            '@codemirror/language',
+            '@codemirror/search',
+            '@codemirror/state',
+            '@codemirror/view',
+            '@lezer/highlight',
+            '@lezer/markdown',
+          ],
+          // CodeMirror language data - lazy load heavy syntax files
+          'vendor-codemirror-langs': ['@codemirror/language-data'],
+          // Graph visualization (heavy)
+          'vendor-graph': ['react-force-graph-2d', 'd3-force'],
+          // Markdown rendering
+          'vendor-markdown': ['react-markdown', 'rehype-highlight', 'rehype-raw', 'remark-gfm'],
+          // Tauri API
+          'vendor-tauri': [
+            '@tauri-apps/api',
+            '@tauri-apps/plugin-dialog',
+            '@tauri-apps/plugin-fs',
+            '@tauri-apps/plugin-shell',
+          ],
+          // State management
+          'vendor-state': ['zustand'],
+        },
+      },
+    },
+    // Increase chunk size warning limit slightly since we're splitting intentionally
+    chunkSizeWarningLimit: 600,
+  },
+
   // Vite options tailored for Tauri development
   clearScreen: false,
   server: {

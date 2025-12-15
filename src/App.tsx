@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -133,9 +133,22 @@ function App() {
     }
   }, [hasTriedAutoOpen, vault, isLoading, tryOpenLastVault, loadRecentVaults]);
 
-  // Menu event handlers
-  useEffect(() => {
-    const handleOpenVault = async () => {
+  // Use refs to store current values of handlers to avoid recreating event listeners
+  const handlersRef = useRef<Record<string, () => void>>({});
+
+  // Update refs on each render (refs don't cause re-renders)
+  handlersRef.current = {
+    "kairo:new-note": () => {
+      const timestamp = new Date().toISOString().split("T")[0];
+      createNote(`notes/new-note-${timestamp}.md`);
+    },
+    "kairo:new-folder": () => {
+      const folderName = prompt("Folder name:");
+      if (folderName) {
+        createFolder(`notes/${folderName.trim()}`);
+      }
+    },
+    "kairo:open-vault": async () => {
       try {
         const selected = await open({
           directory: true,
@@ -148,50 +161,44 @@ function App() {
       } catch (err) {
         console.error("Failed to open vault:", err);
       }
+    },
+    "kairo:search": () => setSearchOpen(true),
+    "kairo:command-palette": () => setCommandPaletteOpen(true),
+    "kairo:toggle-sidebar": () => toggleSidebar(),
+    "kairo:toggle-preview": () => cycleEditorViewMode(),
+    "kairo:kanban": () => kanbanStore.toggleView(),
+    "kairo:git-pull": () => gitStore.pull(),
+    "kairo:git-commit": () => gitStore.openCommitModal(),
+    "kairo:git-push": () => gitStore.push(),
+    "kairo:templates": () => templateStore.openModal(),
+    "kairo:snippets": () => snippetStore.openModal(),
+    "kairo:graph": () => {
+      graphStore.setViewMode("global");
+      setMainViewMode("graph");
+    },
+    "kairo:shortcuts": () => setShortcutsOpen(true),
+    "kairo:about": () => setAboutOpen(true),
+    "kairo:extensions": () => setPluginManagerOpen(true),
+    "kairo:daily-note": () => openDailyNote(),
+    "kairo:create-note": () => openModal("create-note"),
+  };
+
+  // Menu event handlers - using refs to avoid dependency array issues
+  useEffect(() => {
+    // Create stable event handlers that call through to the ref
+    const createHandler = (eventName: string) => () => {
+      handlersRef.current[eventName]?.();
     };
 
-    const handleNewFolder = () => {
-      const folderName = prompt("Folder name:");
-      if (folderName) {
-        createFolder(`notes/${folderName.trim()}`);
-      }
-    };
-
-    const handlers: Record<string, () => void> = {
-      "kairo:new-note": () => {
-        const timestamp = new Date().toISOString().split("T")[0];
-        createNote(`notes/new-note-${timestamp}.md`);
-      },
-      "kairo:new-folder": handleNewFolder,
-      "kairo:open-vault": handleOpenVault,
-      "kairo:search": () => setSearchOpen(true),
-      "kairo:command-palette": () => setCommandPaletteOpen(true),
-      "kairo:toggle-sidebar": () => toggleSidebar(),
-      "kairo:toggle-preview": () => cycleEditorViewMode(),
-      "kairo:kanban": () => kanbanStore.toggleView(),
-      "kairo:git-pull": () => gitStore.pull(),
-      "kairo:git-commit": () => gitStore.openCommitModal(),
-      "kairo:git-push": () => gitStore.push(),
-      "kairo:templates": () => templateStore.openModal(),
-      "kairo:snippets": () => snippetStore.openModal(),
-      "kairo:graph": () => {
-        graphStore.setViewMode("global");
-        setMainViewMode("graph");
-      },
-      "kairo:shortcuts": () => setShortcutsOpen(true),
-      "kairo:about": () => setAboutOpen(true),
-      "kairo:extensions": () => setPluginManagerOpen(true),
-      "kairo:daily-note": () => openDailyNote(),
-      "kairo:create-note": () => openModal("create-note"),
-    };
-
-    const listeners = Object.entries(handlers).map(([event, handler]) => {
-      window.addEventListener(event, handler);
-      return () => window.removeEventListener(event, handler);
+    const eventNames = Object.keys(handlersRef.current);
+    const cleanups = eventNames.map((eventName) => {
+      const handler = createHandler(eventName);
+      window.addEventListener(eventName, handler);
+      return () => window.removeEventListener(eventName, handler);
     });
 
-    return () => listeners.forEach((cleanup) => cleanup());
-  }, [createNote, createFolder, openVault, setSearchOpen, toggleSidebar, cycleEditorViewMode, kanbanStore, gitStore, templateStore, snippetStore, graphStore, setMainViewMode, openDailyNote, openModal]);
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, []); // Empty deps - handlers are accessed via ref
 
   // Global keyboard shortcuts
   useEffect(() => {

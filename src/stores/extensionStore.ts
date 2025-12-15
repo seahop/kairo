@@ -225,7 +225,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
   log: (level, extensionId, message, details) => {
     set((state) => {
       const newLog: ExtensionLog = {
-        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
         timestamp: Date.now(),
         level,
         extensionId,
@@ -275,7 +275,7 @@ function createExtensionApi(
       });
     },
 
-    // Command registration
+    // Command registration - uses pre-imported module to avoid require() in sandbox
     registerCommand: (command: {
       id: string;
       name: string;
@@ -284,24 +284,28 @@ function createExtensionApi(
       category?: string;
       execute: () => void;
     }) => {
-      const { registerCommand } = require("@/plugins/api");
-      registerCommand({
-        ...command,
-        id: `${extensionId}.${command.id}`,
-        pluginId: extensionId,
+      // Import is handled at module level, not via require
+      import("@/plugins/api").then(({ registerCommand }) => {
+        registerCommand({
+          ...command,
+          id: `${extensionId}.${command.id}`,
+          pluginId: extensionId,
+        });
       });
     },
 
     // Hook registration
     registerHook: (type: string, callback: (...args: unknown[]) => void) => {
-      const { registerHook } = require("@/plugins/api");
-      registerHook(type as any, callback, extensionId);
+      import("@/plugins/api").then(({ registerHook }) => {
+        registerHook(type as any, callback, extensionId);
+      });
     },
 
     // Filter registration
     registerFilter: <T>(type: string, callback: (data: T) => T) => {
-      const { registerFilter } = require("@/plugins/api");
-      registerFilter(type as any, callback, extensionId);
+      import("@/plugins/api").then(({ registerFilter }) => {
+        registerFilter(type as any, callback, extensionId);
+      });
     },
 
     // Logging
@@ -319,31 +323,91 @@ function createExtensionApi(
   };
 }
 
-// Evaluate extension code in a somewhat sandboxed way
+// Blocked dangerous globals that extensions should not access
+const BLOCKED_GLOBALS = [
+  'eval', 'Function', 'fetch', 'XMLHttpRequest', 'WebSocket',
+  'localStorage', 'sessionStorage', 'indexedDB',
+  'document', 'window', 'globalThis', 'self',
+  'process', 'require', 'module', '__dirname', '__filename',
+  'Deno', 'Bun'
+];
+
+// Evaluate extension code with restricted scope
 function evaluateExtensionCode(
   code: string,
   api: ReturnType<typeof createExtensionApi>,
-  _extensionId: string
+  extensionId: string
 ): { initialize?: () => void | Promise<void>; cleanup?: () => void } {
-  // Create a function that provides the API to the extension
-  // This is not truly sandboxed but provides a clean API surface
   const moduleExports: { initialize?: () => void | Promise<void>; cleanup?: () => void } = {};
 
   try {
-    // Wrap the code to provide exports and kairo API
+    // Validate extension code before execution
+    const validationError = validateExtensionCode(code, extensionId);
+    if (validationError) {
+      throw new Error(validationError);
+    }
+
+    // Create a restricted scope object that blocks dangerous globals
+    const blockedScope: Record<string, undefined> = {};
+    for (const name of BLOCKED_GLOBALS) {
+      blockedScope[name] = undefined;
+    }
+
+    // Use Function constructor instead of eval - it's slightly safer as it creates
+    // a new function scope and doesn't have access to local variables
+    // The blocked scope prevents access to dangerous globals
+    const argNames = ['kairo', 'exports', ...BLOCKED_GLOBALS];
+    const argValues = [api, moduleExports, ...BLOCKED_GLOBALS.map(() => undefined)];
+
+    // Wrap code to prevent breaking out of the function scope
     const wrappedCode = `
-      (function(kairo, exports) {
-        ${code}
-      })
+      "use strict";
+      ${code}
     `;
 
-    // eslint-disable-next-line no-eval
-    const extensionFn = eval(wrappedCode);
-    extensionFn(api, moduleExports);
+    // Create and execute the sandboxed function
+    const sandboxedFn = new Function(...argNames, wrappedCode);
+    sandboxedFn(...argValues);
 
     return moduleExports;
   } catch (err) {
     api.log.error(`Failed to evaluate extension code`, String(err));
     throw err;
   }
+}
+
+// Validate extension code for potentially dangerous patterns
+function validateExtensionCode(code: string, extensionId: string): string | null {
+  // Check for code size limits (prevent DoS)
+  const MAX_CODE_SIZE = 500 * 1024; // 500KB
+  if (code.length > MAX_CODE_SIZE) {
+    return `Extension code exceeds maximum size of ${MAX_CODE_SIZE} bytes`;
+  }
+
+  // Patterns that indicate attempts to break out of sandbox
+  const dangerousPatterns = [
+    // Attempts to access constructor chains to get Function
+    /\bconstructor\s*\[/gi,
+    /\['constructor'\]/gi,
+    /\["constructor"\]/gi,
+    /\.__proto__/gi,
+    /\[['"]__proto__['"]\]/gi,
+    // Attempts to use import() which can load arbitrary modules
+    /\bimport\s*\(/gi,
+    // Direct process/require access attempts
+    /\bprocess\s*\./gi,
+    /\brequire\s*\(/gi,
+    // Accessing global this in various ways
+    /\bglobalThis\b/gi,
+    /\bself\[/gi,
+  ];
+
+  for (const pattern of dangerousPatterns) {
+    if (pattern.test(code)) {
+      console.warn(`[Extension:${extensionId}] Blocked: dangerous pattern detected`);
+      return `Extension contains blocked code pattern: ${pattern.source}`;
+    }
+  }
+
+  return null;
 }
