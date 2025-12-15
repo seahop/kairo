@@ -1,0 +1,8 @@
+{
+  "id": "note-stats",
+  "name": "Note Statistics",
+  "version": "1.0.0",
+  "description": "Real-time note statistics with hooks and state access demo",
+  "author": "Kairo Team",
+  "main": "index.js"
+}

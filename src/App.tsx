@@ -15,6 +15,9 @@ import { CreateNoteModal } from "./components/modals/CreateNoteModal";
 import { useVaultStore } from "./stores/vaultStore";
 import { useUIStore } from "./stores/uiStore";
 import { useNoteStore } from "./stores/noteStore";
+import { useExtensionStore } from "./stores/extensionStore";
+import { useCommands } from "./plugins/api";
+import { invoke } from "@tauri-apps/api/core";
 
 // Plugin components
 import {
@@ -93,6 +96,26 @@ function AboutModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// Helper to match keyboard shortcuts from commands
+function matchShortcut(e: KeyboardEvent, shortcut: string): boolean {
+  // Parse shortcut string like "Ctrl+Shift+W" or "Cmd+K"
+  const parts = shortcut.toLowerCase().split("+");
+  const key = parts[parts.length - 1];
+  const needsCtrl = parts.includes("ctrl") || parts.includes("cmd");
+  const needsShift = parts.includes("shift");
+  const needsAlt = parts.includes("alt");
+
+  const pressedKey = e.key.toLowerCase();
+  const ctrlPressed = e.ctrlKey || e.metaKey;
+
+  return (
+    pressedKey === key &&
+    ctrlPressed === needsCtrl &&
+    e.shiftKey === needsShift &&
+    e.altKey === needsAlt
+  );
+}
+
 function App() {
   const { vault, isLoading, openVault, tryOpenLastVault, loadRecentVaults } = useVaultStore();
   const { isSearchOpen, setSearchOpen, toggleSidebar, mainViewMode, setMainViewMode, openModal, isSidebarCollapsed, setSidebarWidth } = useUIStore();
@@ -118,6 +141,9 @@ function App() {
     setSidebarWidth(pixelWidth);
   }, [setSidebarWidth]);
 
+  // Extension store
+  const { loadSettings, loadExtensionsFromFolder } = useExtensionStore();
+
   // Initialize plugins and try to auto-open last vault
   useEffect(() => {
     if (!pluginsInitialized) {
@@ -132,6 +158,30 @@ function App() {
       tryOpenLastVault();
     }
   }, [hasTriedAutoOpen, vault, isLoading, tryOpenLastVault, loadRecentVaults]);
+
+  // Auto-load extensions when vault opens
+  useEffect(() => {
+    if (!vault?.path) return;
+
+    const loadExtensions = async () => {
+      try {
+        // First load settings (to know which extensions are enabled/disabled)
+        await loadSettings(vault.path);
+
+        // Get the extensions folder path
+        const extensionsPath = await invoke<string>("get_extensions_path", {
+          vaultPath: vault.path
+        });
+
+        // Load all extensions from the folder
+        await loadExtensionsFromFolder(extensionsPath);
+      } catch (err) {
+        console.error("Failed to auto-load extensions:", err);
+      }
+    };
+
+    loadExtensions();
+  }, [vault?.path, loadSettings, loadExtensionsFromFolder]);
 
   // Use refs to store current values of handlers to avoid recreating event listeners
   const handlersRef = useRef<Record<string, () => void>>({});
@@ -241,6 +291,16 @@ function App() {
           setCommandPaletteOpen(false);
         } else if (mainViewMode === "graph") {
           setMainViewMode("notes");
+        }
+      }
+
+      // Check registered commands for matching shortcuts (extensions, plugins)
+      const commands = useCommands.getState().getCommands();
+      for (const command of commands) {
+        if (command.shortcut && matchShortcut(e, command.shortcut)) {
+          e.preventDefault();
+          command.execute();
+          return;
         }
       }
     };

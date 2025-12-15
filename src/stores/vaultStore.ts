@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { triggerHook } from "@/plugins/api/hooks";
 
 export interface VaultInfo {
   path: string;
@@ -92,6 +93,9 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       // Add to recent vaults
       addToRecentVaults(vault);
       set({ recentVaults: getStoredRecentVaults() });
+
+      // Trigger hook for extensions
+      triggerHook("onVaultOpen", { vault, path });
     } catch (error) {
       set({ error: String(error), isLoading: false });
       throw error;
@@ -107,6 +111,9 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       // Add to recent vaults
       addToRecentVaults(vault);
       set({ recentVaults: getStoredRecentVaults() });
+
+      // Trigger hook for extensions
+      triggerHook("onVaultOpen", { vault, path });
     } catch (error) {
       set({ error: String(error), isLoading: false });
       throw error;
@@ -114,7 +121,12 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   },
 
   closeVault: async () => {
+    const { vault } = get();
     try {
+      // Trigger hook before closing
+      if (vault) {
+        triggerHook("onVaultClose", { vault, path: vault.path });
+      }
       await invoke("close_vault");
       set({ vault: null });
       // Don't remove from recent - just close

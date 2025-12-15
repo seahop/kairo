@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { useUIStore } from "./uiStore";
+import { triggerHook } from "@/plugins/api/hooks";
 
 export interface NoteMetadata {
   id: string;
@@ -96,6 +97,8 @@ export const useNoteStore = create<NoteState>((set, get) => ({
           hasUnsavedChanges: false,
           isLoading: false,
         });
+        // Trigger hook for extensions
+        triggerHook("onNoteOpen", { note, path });
       } catch (error) {
         set({ error: String(error), isLoading: false });
       }
@@ -178,11 +181,15 @@ export const useNoteStore = create<NoteState>((set, get) => ({
       });
 
       // Update current note with new metadata
+      const updatedNote = { ...currentNote, content: editorContent, ...metadata };
       set({
-        currentNote: { ...currentNote, content: editorContent, ...metadata },
+        currentNote: updatedNote,
         hasUnsavedChanges: false,
         isSaving: false,
       });
+
+      // Trigger hook for extensions
+      triggerHook("onNoteSave", { note: updatedNote, path: currentNote.path });
 
       // Refresh notes list
       get().loadNotes();
@@ -200,6 +207,9 @@ export const useNoteStore = create<NoteState>((set, get) => ({
         createIfMissing: true,
       });
 
+      // Trigger hook for extensions
+      triggerHook("onNoteCreate", { path, content });
+
       // Refresh notes list and open the new note
       await get().loadNotes();
       await get().openNote(path);
@@ -210,10 +220,16 @@ export const useNoteStore = create<NoteState>((set, get) => ({
 
   deleteNote: async (path: string) => {
     try {
+      // Get note info before deletion for the hook
+      const { notes, currentNote } = get();
+      const noteToDelete = notes.find(n => n.path === path);
+
       await invoke("delete_note", { path });
 
+      // Trigger hook for extensions
+      triggerHook("onNoteDelete", { path, note: noteToDelete });
+
       // If this was the current note, close it
-      const { currentNote } = get();
       if (currentNote?.path === path) {
         set({ currentNote: null, editorContent: "", hasUnsavedChanges: false });
       }
@@ -295,6 +311,11 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   },
 
   closeNote: () => {
+    const { currentNote } = get();
+    // Trigger hook for extensions before closing
+    if (currentNote) {
+      triggerHook("onNoteClose", { note: currentNote, path: currentNote.path });
+    }
     set({
       currentNote: null,
       editorContent: "",

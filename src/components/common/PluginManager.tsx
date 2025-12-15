@@ -3,9 +3,10 @@ import { usePluginStore, Plugin } from "@/plugins/api";
 import { useHooks, HookType, FilterType } from "@/plugins/api";
 import { SlotType } from "@/plugins/api";
 import { useCommands } from "@/plugins/api";
-import { useExtensionStore, Extension } from "@/stores/extensionStore";
+import { useExtensionStore, Extension, ExtensionManifest } from "@/stores/extensionStore";
 import { useVaultStore } from "@/stores/vaultStore";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 
 const CloseIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -49,6 +50,18 @@ const ErrorIcon = () => (
   </svg>
 );
 
+const TrashIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+  </svg>
+);
+
+const ImportIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+  </svg>
+);
+
 interface PluginManagerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -61,14 +74,50 @@ export function PluginManager({ isOpen, onClose }: PluginManagerProps) {
   return <PluginManagerContent onClose={onClose} />;
 }
 
+// Import confirmation dialog state
+interface ImportConfirmState {
+  isOpen: boolean;
+  sourcePath: string;
+  manifest: ExtensionManifest | null;
+  existingExtension: Extension | null;
+}
+
+// Delete confirmation dialog state
+interface DeleteConfirmState {
+  isOpen: boolean;
+  extensionId: string;
+  extensionName: string;
+}
+
 function PluginManagerContent({ onClose }: { onClose: () => void }) {
   const { plugins, enablePlugin, disablePlugin } = usePluginStore();
-  const { extensions, loadExtensionsFromFolder, unloadExtension, setConsoleOpen, logs } = useExtensionStore();
+  const {
+    extensions,
+    loadExtensionsFromFolder,
+    unloadExtension,
+    enableExtension,
+    disableExtension,
+    removeExtension,
+    setConsoleOpen,
+    logs
+  } = useExtensionStore();
   const { vault } = useVaultStore();
   const [selectedPlugin, setSelectedPlugin] = useState<Plugin | null>(null);
   const [selectedExtension, setSelectedExtension] = useState<Extension | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>("builtin");
   const [extensionsPath, setExtensionsPath] = useState<string>("");
+  const [isImporting, setIsImporting] = useState(false);
+  const [importConfirm, setImportConfirm] = useState<ImportConfirmState>({
+    isOpen: false,
+    sourcePath: "",
+    manifest: null,
+    existingExtension: null,
+  });
+  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState>({
+    isOpen: false,
+    extensionId: "",
+    extensionName: "",
+  });
 
   const commandsMap = useCommands((state) => state.commands);
   const commands = useMemo(() => Array.from(commandsMap.values()), [commandsMap]);
@@ -100,6 +149,97 @@ function PluginManagerContent({ onClose }: { onClose: () => void }) {
         console.error("Failed to load extensions:", err);
       }
     }
+  };
+
+  // Handle importing an extension from disk
+  const handleImportExtension = async () => {
+    if (!vault) return;
+
+    try {
+      // Open folder picker
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select Extension Folder",
+      });
+
+      if (!selected || typeof selected !== "string") return;
+
+      setIsImporting(true);
+
+      // Read manifest from selected folder
+      const manifestJson = await invoke<string>("read_extension_manifest_from_path", {
+        path: selected,
+      });
+      const manifest: ExtensionManifest = JSON.parse(manifestJson);
+
+      // Check if extension with this ID already exists
+      const exists = await invoke<boolean>("extension_exists", {
+        vaultPath: vault.path,
+        extensionId: manifest.id,
+      });
+
+      if (exists) {
+        // Show confirmation dialog for overwrite
+        const existingExt = extensions.get(manifest.id) || null;
+        setImportConfirm({
+          isOpen: true,
+          sourcePath: selected,
+          manifest,
+          existingExtension: existingExt,
+        });
+        setIsImporting(false);
+      } else {
+        // Import directly
+        await performImport(selected, manifest.id, false);
+      }
+    } catch (err) {
+      console.error("Failed to import extension:", err);
+      alert(`Failed to import extension: ${err}`);
+      setIsImporting(false);
+    }
+  };
+
+  // Perform the actual import
+  const performImport = async (sourcePath: string, extensionId: string, overwrite: boolean) => {
+    if (!vault) return;
+
+    try {
+      setIsImporting(true);
+
+      // If overwriting, unload the existing extension first
+      if (overwrite && extensions.has(extensionId)) {
+        unloadExtension(extensionId);
+      }
+
+      // Import the extension
+      await invoke("import_extension", {
+        sourcePath,
+        vaultPath: vault.path,
+        extensionId,
+        overwrite,
+      });
+
+      // Reload extensions to load the new one
+      await handleLoadExtensions();
+
+      setImportConfirm({ isOpen: false, sourcePath: "", manifest: null, existingExtension: null });
+      setIsImporting(false);
+    } catch (err) {
+      console.error("Failed to import extension:", err);
+      alert(`Failed to import extension: ${err}`);
+      setIsImporting(false);
+    }
+  };
+
+  const handleConfirmOverwrite = () => {
+    if (importConfirm.manifest) {
+      performImport(importConfirm.sourcePath, importConfirm.manifest.id, true);
+    }
+  };
+
+  const handleCancelImport = () => {
+    setImportConfirm({ isOpen: false, sourcePath: "", manifest: null, existingExtension: null });
   };
 
   const getPluginHookInfo = (pluginId: string) => {
@@ -265,14 +405,34 @@ function PluginManagerContent({ onClose }: { onClose: () => void }) {
                 <div className="p-4">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-medium text-dark-400">User Extensions</h3>
-                    <button
-                      className="btn-icon text-dark-400 hover:text-dark-200"
-                      onClick={handleLoadExtensions}
-                      title="Reload extensions"
-                    >
-                      <RefreshIcon />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className="btn-icon text-dark-400 hover:text-dark-200"
+                        onClick={handleImportExtension}
+                        disabled={isImporting || !vault}
+                        title="Import extension from disk"
+                      >
+                        <ImportIcon />
+                      </button>
+                      <button
+                        className="btn-icon text-dark-400 hover:text-dark-200"
+                        onClick={handleLoadExtensions}
+                        title="Reload extensions"
+                      >
+                        <RefreshIcon />
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Import button */}
+                  <button
+                    className="w-full mb-4 flex items-center justify-center gap-2 px-3 py-2 bg-accent-primary/10 hover:bg-accent-primary/20 text-accent-primary rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                    onClick={handleImportExtension}
+                    disabled={isImporting || !vault}
+                  >
+                    <ImportIcon />
+                    {isImporting ? "Importing..." : "Import Extension"}
+                  </button>
 
                   {/* Extensions folder info */}
                   <div className="mb-4 p-3 bg-dark-800 rounded-lg">
@@ -289,7 +449,7 @@ function PluginManagerContent({ onClose }: { onClose: () => void }) {
                     <div className="text-sm text-dark-500 text-center py-4">
                       <p className="mb-2">No user extensions loaded</p>
                       <p className="text-xs">
-                        Place extensions in the extensions folder and click refresh
+                        Import an extension or place one in the extensions folder
                       </p>
                     </div>
                   ) : (
@@ -301,18 +461,27 @@ function PluginManagerContent({ onClose }: { onClose: () => void }) {
                             selectedExtension?.manifest.id === ext.manifest.id
                               ? "bg-dark-700"
                               : "hover:bg-dark-800"
-                          }`}
+                          } ${!ext.enabled ? "opacity-60" : ""}`}
                           onClick={() => setSelectedExtension(ext)}
                         >
-                          <div className={ext.error ? "text-red-400" : ext.enabled ? "text-accent-success" : "text-dark-500"}>
+                          <div className={
+                            ext.error
+                              ? "text-red-400"
+                              : !ext.enabled
+                                ? "text-dark-600"
+                                : ext.loaded
+                                  ? "text-accent-success"
+                                  : "text-dark-500"
+                          }>
                             {ext.error ? <ErrorIcon /> : <PluginIcon />}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-dark-100 truncate">
+                            <div className={`font-medium truncate ${ext.enabled ? "text-dark-100" : "text-dark-400"}`}>
                               {ext.manifest.name}
                             </div>
                             <div className="text-xs text-dark-500">
                               v{ext.manifest.version}
+                              {!ext.enabled && <span className="ml-2 text-dark-600">(disabled)</span>}
                             </div>
                           </div>
                           {ext.loaded && ext.enabled && (
@@ -332,7 +501,16 @@ function PluginManagerContent({ onClose }: { onClose: () => void }) {
                 {selectedExtension ? (
                   <ExtensionDetails
                     extension={selectedExtension}
-                    onUnload={() => unloadExtension(selectedExtension.manifest.id)}
+                    onEnable={() => enableExtension(selectedExtension.manifest.id)}
+                    onDisable={() => disableExtension(selectedExtension.manifest.id)}
+                    onRemove={() => {
+                      // Show custom delete confirmation dialog
+                      setDeleteConfirm({
+                        isOpen: true,
+                        extensionId: selectedExtension.manifest.id,
+                        extensionName: selectedExtension.manifest.name,
+                      });
+                    }}
                   />
                 ) : (
                   <EmptyState message="Select a user extension to view details" />
@@ -366,6 +544,87 @@ function PluginManagerContent({ onClose }: { onClose: () => void }) {
           </div>
         </div>
       </div>
+
+      {/* Import Confirmation Dialog */}
+      {importConfirm.isOpen && importConfirm.manifest && (
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center" onClick={handleCancelImport}>
+          <div className="bg-dark-900 rounded-lg p-6 w-full max-w-md border border-dark-700 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-dark-100 mb-2">Extension Already Exists</h3>
+            <p className="text-dark-400 text-sm mb-4">
+              An extension with ID <code className="bg-dark-800 px-1.5 py-0.5 rounded text-accent-primary">{importConfirm.manifest.id}</code> already exists.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="card">
+                <div className="text-xs text-dark-500 mb-1">Existing</div>
+                <div className="text-sm text-dark-200">{importConfirm.existingExtension?.manifest.name || importConfirm.manifest.id}</div>
+                <div className="text-xs text-dark-500">v{importConfirm.existingExtension?.manifest.version || "?"}</div>
+              </div>
+              <div className="card border-accent-primary/30">
+                <div className="text-xs text-accent-primary mb-1">New</div>
+                <div className="text-sm text-dark-200">{importConfirm.manifest.name}</div>
+                <div className="text-xs text-dark-500">v{importConfirm.manifest.version}</div>
+              </div>
+            </div>
+
+            <p className="text-dark-500 text-xs mb-4">
+              Replacing will remove the existing extension and import the new one in its place.
+            </p>
+
+            <div className="flex justify-end gap-3">
+              <button className="btn-secondary" onClick={handleCancelImport}>
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-medium transition-colors"
+                onClick={handleConfirmOverwrite}
+                disabled={isImporting}
+              >
+                {isImporting ? "Replacing..." : "Replace Extension"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirm.isOpen && (
+        <div
+          className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center"
+          onClick={() => setDeleteConfirm({ isOpen: false, extensionId: "", extensionName: "" })}
+        >
+          <div className="bg-dark-900 rounded-lg p-6 w-full max-w-md border border-dark-700 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-dark-100 mb-2">Remove Extension</h3>
+            <p className="text-dark-400 text-sm mb-4">
+              Are you sure you want to remove <span className="text-dark-200 font-medium">"{deleteConfirm.extensionName}"</span>?
+            </p>
+            <p className="text-dark-500 text-xs mb-4">
+              This will permanently delete the extension files from your vault.
+            </p>
+
+            <div className="flex justify-end gap-3">
+              <button
+                className="btn-secondary"
+                onClick={() => setDeleteConfirm({ isOpen: false, extensionId: "", extensionName: "" })}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium transition-colors"
+                onClick={() => {
+                  const { extensionId } = deleteConfirm;
+                  setDeleteConfirm({ isOpen: false, extensionId: "", extensionName: "" });
+                  removeExtension(extensionId).then(() => {
+                    setSelectedExtension(null);
+                  });
+                }}
+              >
+                Remove Extension
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -487,10 +746,14 @@ function PluginDetails({
 
 function ExtensionDetails({
   extension,
-  onUnload,
+  onEnable,
+  onDisable,
+  onRemove,
 }: {
   extension: Extension;
-  onUnload: () => void;
+  onEnable: () => void;
+  onDisable: () => void;
+  onRemove: () => void;
 }) {
   return (
     <div>
@@ -503,9 +766,24 @@ function ExtensionDetails({
             {extension.manifest.description || "No description available"}
           </p>
         </div>
-        <button className="btn-secondary" onClick={onUnload}>
-          Unload
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            className={extension.enabled ? "btn-secondary" : "btn-primary"}
+            onClick={extension.enabled ? onDisable : onEnable}
+          >
+            {extension.enabled ? "Disable" : "Enable"}
+          </button>
+          <button
+            className="btn-icon text-red-400 hover:text-red-300 hover:bg-red-500/10"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            title="Remove extension"
+          >
+            <TrashIcon />
+          </button>
+        </div>
       </div>
 
       {extension.error && (
@@ -526,8 +804,14 @@ function ExtensionDetails({
           </div>
           <div className="card">
             <div className="text-sm text-dark-400">Status</div>
-            <div className={extension.loaded ? "text-accent-success" : "text-red-400"}>
-              {extension.loaded ? "Loaded" : "Failed"}
+            <div className={
+              !extension.enabled
+                ? "text-dark-500"
+                : extension.loaded
+                  ? "text-accent-success"
+                  : "text-red-400"
+            }>
+              {!extension.enabled ? "Disabled" : extension.loaded ? "Loaded" : "Failed"}
             </div>
           </div>
           {extension.manifest.author && (

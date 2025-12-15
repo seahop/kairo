@@ -1,6 +1,34 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import { usePluginStore, Plugin, PluginManifest } from "@/plugins/api";
+import { usePluginStore, Plugin, PluginManifest, registerCommand, registerHook, registerFilter } from "@/plugins/api";
+import { useNoteStore } from "./noteStore";
+import { useVaultStore } from "./vaultStore";
+import { useUIStore } from "./uiStore";
+import { useSearchStore } from "./searchStore";
+import { useSlots, SlotType } from "@/plugins/api/slots";
+
+// Theme/CSS management
+const extensionStyles = new Map<string, HTMLStyleElement>();
+
+function addExtensionStyles(extensionId: string, css: string): void {
+  // Remove existing styles for this extension
+  removeExtensionStyles(extensionId);
+
+  // Add new styles
+  const styleEl = document.createElement("style");
+  styleEl.id = `extension-styles-${extensionId}`;
+  styleEl.textContent = css;
+  document.head.appendChild(styleEl);
+  extensionStyles.set(extensionId, styleEl);
+}
+
+function removeExtensionStyles(extensionId: string): void {
+  const existing = extensionStyles.get(extensionId);
+  if (existing) {
+    existing.remove();
+    extensionStyles.delete(extensionId);
+  }
+}
 
 export interface ExtensionLog {
   id: string;
@@ -24,9 +52,19 @@ export interface Extension {
   error?: string;
 }
 
+// Settings persisted to .kairo/extension-settings.json
+export interface ExtensionSettings {
+  // Map of extension ID to enabled state
+  enabled: Record<string, boolean>;
+}
+
 interface ExtensionState {
   // Extension registry
   extensions: Map<string, Extension>;
+
+  // Persisted settings
+  settings: ExtensionSettings;
+  settingsLoaded: boolean;
 
   // Debug console
   logs: ExtensionLog[];
@@ -37,8 +75,13 @@ interface ExtensionState {
   loadExtensionsFromFolder: (folderPath: string) => Promise<void>;
   loadExtension: (extensionPath: string) => Promise<void>;
   unloadExtension: (extensionId: string) => void;
-  enableExtension: (extensionId: string) => void;
-  disableExtension: (extensionId: string) => void;
+  enableExtension: (extensionId: string) => Promise<void>;
+  disableExtension: (extensionId: string) => Promise<void>;
+  removeExtension: (extensionId: string) => Promise<void>;
+
+  // Settings actions
+  loadSettings: (vaultPath: string) => Promise<void>;
+  saveSettings: (vaultPath: string) => Promise<void>;
 
   // Console actions
   log: (level: ExtensionLog["level"], extensionId: string, message: string, details?: string) => void;
@@ -49,6 +92,8 @@ interface ExtensionState {
 
 export const useExtensionStore = create<ExtensionState>((set, get) => ({
   extensions: new Map(),
+  settings: { enabled: {} },
+  settingsLoaded: false,
   logs: [],
   maxLogs: 500,
   consoleOpen: false,
@@ -105,13 +150,28 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       const mainPath = `${extensionPath}/${manifest.main}`;
       const mainCode = await invoke<string>("read_file_text", { path: mainPath });
 
+      // Check if extension is disabled in settings
+      const { settings } = get();
+      const isEnabled = settings.enabled[manifest.id] !== false; // Default to enabled
+
       // Create extension record
       const extension: Extension = {
         manifest,
         path: extensionPath,
         loaded: false,
-        enabled: true,
+        enabled: isEnabled,
       };
+
+      // If disabled, just register it without loading
+      if (!isEnabled) {
+        log("info", manifest.id, `Extension ${manifest.name} is disabled, skipping initialization`);
+        set((state) => {
+          const newExtensions = new Map(state.extensions);
+          newExtensions.set(manifest.id, extension);
+          return { extensions: newExtensions };
+        });
+        return;
+      }
 
       // Try to execute the extension code in a sandboxed way
       try {
@@ -121,9 +181,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
         // Execute the extension code with the API
         const extensionModule = evaluateExtensionCode(mainCode, extensionApi, manifest.id);
 
-        // If the module exports an initialize function, call it
+        // If the module exports an initialize function, call it with the API
         if (typeof extensionModule.initialize === "function") {
-          await extensionModule.initialize();
+          await extensionModule.initialize(extensionApi);
         }
 
         // Register as a plugin
@@ -137,7 +197,7 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
           },
           enabled: true,
           cleanup: typeof extensionModule.cleanup === "function"
-            ? extensionModule.cleanup
+            ? () => extensionModule.cleanup!(extensionApi)
             : undefined,
         };
 
@@ -173,6 +233,9 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       return;
     }
 
+    // Clean up extension styles
+    removeExtensionStyles(extensionId);
+
     // Unregister from plugin system
     usePluginStore.getState().unregisterPlugin(extensionId);
 
@@ -186,13 +249,26 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
     log("info", extensionId, "Extension unloaded");
   },
 
-  enableExtension: (extensionId: string) => {
-    const { log, extensions } = get();
+  enableExtension: async (extensionId: string) => {
+    const { log, extensions, loadExtension } = get();
     const extension = extensions.get(extensionId);
 
     if (!extension) return;
 
-    usePluginStore.getState().enablePlugin(extensionId);
+    // Update settings
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        enabled: { ...state.settings.enabled, [extensionId]: true }
+      }
+    }));
+
+    // If extension wasn't loaded, load it now
+    if (!extension.loaded) {
+      await loadExtension(extension.path);
+    } else {
+      usePluginStore.getState().enablePlugin(extensionId);
+    }
 
     set((state) => {
       const newExtensions = new Map(state.extensions);
@@ -201,25 +277,141 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
       return { extensions: newExtensions };
     });
 
+    // Save settings to disk
+    const vaultPath = useVaultStore.getState().vault?.path;
+    if (vaultPath) {
+      await get().saveSettings(vaultPath);
+    }
+
     log("info", extensionId, "Extension enabled");
   },
 
-  disableExtension: (extensionId: string) => {
+  disableExtension: async (extensionId: string) => {
     const { log, extensions } = get();
     const extension = extensions.get(extensionId);
 
     if (!extension) return;
 
-    usePluginStore.getState().disablePlugin(extensionId);
+    // Update settings
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        enabled: { ...state.settings.enabled, [extensionId]: false }
+      }
+    }));
+
+    // Unload extension if loaded
+    if (extension.loaded) {
+      // Clean up extension styles
+      removeExtensionStyles(extensionId);
+
+      // Disable in plugin system
+      usePluginStore.getState().disablePlugin(extensionId);
+    }
 
     set((state) => {
       const newExtensions = new Map(state.extensions);
       const ext = newExtensions.get(extensionId);
-      if (ext) ext.enabled = false;
+      if (ext) {
+        ext.enabled = false;
+        ext.loaded = false;
+      }
       return { extensions: newExtensions };
     });
 
+    // Save settings to disk
+    const vaultPath = useVaultStore.getState().vault?.path;
+    if (vaultPath) {
+      await get().saveSettings(vaultPath);
+    }
+
     log("info", extensionId, "Extension disabled");
+  },
+
+  removeExtension: async (extensionId: string) => {
+    const { log, extensions, unloadExtension } = get();
+    const extension = extensions.get(extensionId);
+
+    if (!extension) {
+      log("warn", "system", `Extension ${extensionId} not found`);
+      return;
+    }
+
+    const vaultPath = useVaultStore.getState().vault?.path;
+    if (!vaultPath) {
+      log("error", "system", "No vault open");
+      return;
+    }
+
+    // Unload extension first
+    if (extension.loaded) {
+      unloadExtension(extensionId);
+    }
+
+    try {
+      // Remove from disk
+      await invoke("remove_extension", {
+        vaultPath,
+        extensionId
+      });
+
+      // Remove from registry
+      set((state) => {
+        const newExtensions = new Map(state.extensions);
+        newExtensions.delete(extensionId);
+        // Also remove from settings
+        const newEnabled = { ...state.settings.enabled };
+        delete newEnabled[extensionId];
+        return {
+          extensions: newExtensions,
+          settings: { ...state.settings, enabled: newEnabled }
+        };
+      });
+
+      // Save updated settings
+      await get().saveSettings(vaultPath);
+
+      log("info", "system", `Extension ${extensionId} removed`);
+    } catch (err) {
+      log("error", "system", `Failed to remove extension ${extensionId}`, String(err));
+    }
+  },
+
+  loadSettings: async (vaultPath: string) => {
+    const { log } = get();
+
+    try {
+      const settingsJson = await invoke<string>("read_extension_settings", {
+        vaultPath
+      });
+
+      const settings: ExtensionSettings = JSON.parse(settingsJson);
+
+      // Ensure enabled object exists
+      if (!settings.enabled) {
+        settings.enabled = {};
+      }
+
+      set({ settings, settingsLoaded: true });
+      log("debug", "system", "Extension settings loaded", JSON.stringify(settings));
+    } catch (err) {
+      log("warn", "system", "Failed to load extension settings, using defaults", String(err));
+      set({ settings: { enabled: {} }, settingsLoaded: true });
+    }
+  },
+
+  saveSettings: async (vaultPath: string) => {
+    const { log, settings } = get();
+
+    try {
+      await invoke("save_extension_settings", {
+        vaultPath,
+        settingsJson: JSON.stringify(settings)
+      });
+      log("debug", "system", "Extension settings saved");
+    } catch (err) {
+      log("error", "system", "Failed to save extension settings", String(err));
+    }
   },
 
   log: (level, extensionId, message, details) => {
@@ -275,7 +467,7 @@ function createExtensionApi(
       });
     },
 
-    // Command registration - uses pre-imported module to avoid require() in sandbox
+    // Command registration - synchronous using module-level import
     registerCommand: (command: {
       id: string;
       name: string;
@@ -284,28 +476,24 @@ function createExtensionApi(
       category?: string;
       execute: () => void;
     }) => {
-      // Import is handled at module level, not via require
-      import("@/plugins/api").then(({ registerCommand }) => {
-        registerCommand({
-          ...command,
-          id: `${extensionId}.${command.id}`,
-          pluginId: extensionId,
-        });
+      registerCommand({
+        ...command,
+        id: `${extensionId}.${command.id}`,
+        pluginId: extensionId,
       });
+      log("debug", extensionId, `Registered command: ${command.id}`);
     },
 
-    // Hook registration
+    // Hook registration - synchronous
     registerHook: (type: string, callback: (...args: unknown[]) => void) => {
-      import("@/plugins/api").then(({ registerHook }) => {
-        registerHook(type as any, callback, extensionId);
-      });
+      registerHook(type as any, callback, extensionId);
+      log("debug", extensionId, `Registered hook: ${type}`);
     },
 
-    // Filter registration
+    // Filter registration - synchronous
     registerFilter: <T>(type: string, callback: (data: T) => T) => {
-      import("@/plugins/api").then(({ registerFilter }) => {
-        registerFilter(type as any, callback, extensionId);
-      });
+      registerFilter(type as any, callback, extensionId);
+      log("debug", extensionId, `Registered filter: ${type}`);
     },
 
     // Logging
@@ -316,20 +504,93 @@ function createExtensionApi(
       debug: (message: string, details?: string) => log("debug", extensionId, message, details),
     },
 
-    // Store access (limited)
-    getState: () => ({
-      // Could expose specific store states here
-    }),
+    // Store access (read-only snapshots)
+    getState: () => {
+      const noteState = useNoteStore.getState();
+      const vaultState = useVaultStore.getState();
+      const uiState = useUIStore.getState();
+      const searchState = useSearchStore.getState();
+
+      return {
+        notes: {
+          list: noteState.notes,
+          current: noteState.currentNote,
+          editorContent: noteState.editorContent,
+          hasUnsavedChanges: noteState.hasUnsavedChanges,
+        },
+        vault: vaultState.vault,
+        ui: {
+          isSidebarCollapsed: uiState.isSidebarCollapsed,
+          mainViewMode: uiState.mainViewMode,
+          editorViewMode: uiState.editorViewMode,
+        },
+        search: {
+          query: searchState.query,
+          results: searchState.results,
+          filters: searchState.filters,
+        },
+      };
+    },
+
+    // Subscribe to state changes
+    subscribe: (storeName: string, callback: (state: unknown) => void) => {
+      switch (storeName) {
+        case "notes":
+          return useNoteStore.subscribe(callback);
+        case "vault":
+          return useVaultStore.subscribe(callback);
+        case "ui":
+          return useUIStore.subscribe(callback);
+        case "search":
+          return useSearchStore.subscribe(callback);
+        default:
+          log("warn", extensionId, `Unknown store: ${storeName}`);
+          return () => {};
+      }
+    },
+
+    // CSS/Theme API
+    addStyles: (css: string) => {
+      addExtensionStyles(extensionId, css);
+      log("debug", extensionId, "Added custom styles");
+    },
+
+    removeStyles: () => {
+      removeExtensionStyles(extensionId);
+      log("debug", extensionId, "Removed custom styles");
+    },
+
+    // UI Slot registration
+    registerSlot: (slot: string, component: { id: string; component: React.ComponentType<{ data?: unknown }>; priority?: number }) => {
+      useSlots.getState().registerSlot(slot as SlotType, {
+        id: `${extensionId}.${component.id}`,
+        pluginId: extensionId,
+        component: component.component,
+        priority: component.priority,
+      });
+      log("debug", extensionId, `Registered slot component: ${slot}/${component.id}`);
+    },
+
+    unregisterSlot: (slot: string, componentId: string) => {
+      useSlots.getState().unregisterSlot(slot as SlotType, `${extensionId}.${componentId}`);
+      log("debug", extensionId, `Unregistered slot component: ${slot}/${componentId}`);
+    },
   };
 }
 
 // Blocked dangerous globals that extensions should not access
+// Note: 'eval' and 'arguments' cannot be used as function parameter names in strict mode,
+// so we handle them separately in the wrapper code
+//
+// We allow: document, window, localStorage (needed for DOM manipulation and preferences)
+// We block: network access, eval-like functions, Node.js globals
 const BLOCKED_GLOBALS = [
-  'eval', 'Function', 'fetch', 'XMLHttpRequest', 'WebSocket',
-  'localStorage', 'sessionStorage', 'indexedDB',
-  'document', 'window', 'globalThis', 'self',
-  'process', 'require', 'module', '__dirname', '__filename',
-  'Deno', 'Bun'
+  'Function',  // Prevents dynamic code generation
+  'fetch', 'XMLHttpRequest', 'WebSocket',  // Network access
+  'indexedDB',  // Large storage that could be abused
+  'globalThis', 'self',  // Alternative global access
+  'process', 'require', 'module', '__dirname', '__filename',  // Node.js
+  'Deno', 'Bun'  // Other runtimes
 ];
 
 // Evaluate extension code with restricted scope
@@ -337,8 +598,8 @@ function evaluateExtensionCode(
   code: string,
   api: ReturnType<typeof createExtensionApi>,
   extensionId: string
-): { initialize?: () => void | Promise<void>; cleanup?: () => void } {
-  const moduleExports: { initialize?: () => void | Promise<void>; cleanup?: () => void } = {};
+): { initialize?: (api: ReturnType<typeof createExtensionApi>) => void | Promise<void>; cleanup?: (api: ReturnType<typeof createExtensionApi>) => void } {
+  const moduleExports: { initialize?: (api: ReturnType<typeof createExtensionApi>) => void | Promise<void>; cleanup?: (api: ReturnType<typeof createExtensionApi>) => void } = {};
 
   try {
     // Validate extension code before execution
@@ -400,6 +661,8 @@ function validateExtensionCode(code: string, extensionId: string): string | null
     // Accessing global this in various ways
     /\bglobalThis\b/gi,
     /\bself\[/gi,
+    // Direct eval usage (can't be shadowed via parameter in strict mode)
+    /\beval\s*\(/gi,
   ];
 
   for (const pattern of dangerousPatterns) {

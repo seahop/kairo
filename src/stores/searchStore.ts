@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { triggerHook, applyFilter } from "@/plugins/api/hooks";
 
 export interface SearchResult {
   id: string;
@@ -78,15 +79,25 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       return;
     }
 
+    // Trigger hook for extensions
+    triggerHook("onSearch", { query });
+
     set({ isSearching: true, error: null });
     try {
       const { filters } = get();
-      const results = await invoke<SearchResult[]>("search_notes", {
+      let results = await invoke<SearchResult[]>("search_notes", {
         query,
         filters: Object.keys(filters).length > 0 ? filters : null,
         limit: 50,
       });
+
+      // Apply filter hook to allow extensions to modify results
+      results = await applyFilter("filterSearchResults", results, query, filters);
+
       set({ results, isSearching: false });
+
+      // Trigger hook with results
+      triggerHook("onSearchResult", { query, results, filters });
     } catch (error) {
       set({ error: String(error), isSearching: false, results: [] });
     }

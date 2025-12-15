@@ -107,6 +107,12 @@ pub fn run() {
             commands::extensions::read_file_text,
             commands::extensions::get_extensions_path,
             commands::extensions::ensure_extensions_directory,
+            commands::extensions::read_extension_manifest_from_path,
+            commands::extensions::extension_exists,
+            commands::extensions::import_extension,
+            commands::extensions::read_extension_settings,
+            commands::extensions::save_extension_settings,
+            commands::extensions::remove_extension,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

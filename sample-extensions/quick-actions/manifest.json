@@ -1,0 +1,8 @@
+{
+  "id": "quick-actions",
+  "name": "Quick Actions",
+  "version": "1.0.0",
+  "description": "Adds productivity commands to the palette",
+  "author": "Kairo Team",
+  "main": "index.js"
+}

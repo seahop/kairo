@@ -1,0 +1,8 @@
+{
+  "id": "focus-mode",
+  "name": "Focus Mode",
+  "version": "1.0.0",
+  "description": "Distraction-free writing mode with settings persistence",
+  "author": "Kairo Team",
+  "main": "index.js"
+}
