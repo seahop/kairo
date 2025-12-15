@@ -1,26 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
-
-/// Validate that a path is within an allowed base directory (prevents path traversal)
-fn validate_path_within(base: &Path, user_path: &Path) -> Result<PathBuf, String> {
-    // Canonicalize the base path
-    let canonical_base = base
-        .canonicalize()
-        .map_err(|_| "Invalid base path".to_string())?;
-
-    // Join and canonicalize the full path
-    let full_path = base.join(user_path);
-    let canonical_full = full_path
-        .canonicalize()
-        .map_err(|_| "Path not found or invalid".to_string())?;
-
-    // Verify the canonical path starts with the base
-    if !canonical_full.starts_with(&canonical_base) {
-        return Err("Access denied: path traversal detected".to_string());
-    }
-
-    Ok(canonical_full)
-}
+use std::path::Path;
 
 /// Validate that a path string doesn't contain traversal patterns
 fn reject_traversal_patterns(path: &str) -> Result<(), String> {

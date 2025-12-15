@@ -37,7 +37,7 @@ jobs:
             ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
 
       - name: TypeScript check
         run: pnpm typecheck
@@ -147,7 +147,7 @@ jobs:
             libjavascriptcoregtk-4.1-dev
 
       - name: Install frontend dependencies
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build frontend
         run: pnpm build
