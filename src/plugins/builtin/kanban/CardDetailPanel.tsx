@@ -163,6 +163,7 @@ export function CardDetailPanel() {
   const [newLabelColor, setNewLabelColor] = useState(labelColors[0]);
   const [viewMode, setViewMode] = useState<ViewMode>("edit");
   const [showImageUpload, setShowImageUpload] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Resizable panel state
   const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
@@ -230,10 +231,20 @@ export function CardDetailPanel() {
     });
   };
 
+  // Show delete confirmation dialog (don't delete yet)
   const handleDelete = () => {
-    if (confirm("Delete this card?")) {
-      deleteCard(selectedCard.id);
-    }
+    setShowDeleteConfirm(true);
+  };
+
+  // Actually delete the card (only called from confirmation dialog)
+  const handleConfirmDelete = () => {
+    setShowDeleteConfirm(false);
+    deleteCard(selectedCard.id);
+  };
+
+  // Cancel deletion
+  const handleCancelDelete = () => {
+    setShowDeleteConfirm(false);
   };
 
   const handleAddAssignee = (name: string) => {
@@ -591,6 +602,32 @@ export function CardDetailPanel() {
           {selectedCard.closedAt && <div>Closed: {formatDateTime(selectedCard.closedAt)}</div>}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center">
+          <div className="bg-dark-900 rounded-lg p-6 w-full max-w-sm border border-dark-700">
+            <h2 className="text-lg font-semibold text-dark-100 mb-2">Delete Card</h2>
+            <p className="text-dark-400 mb-6">
+              Are you sure you want to delete "{selectedCard.title}"? This action cannot be undone.
+            </p>
+            <div className="flex gap-2">
+              <button
+                className="btn-secondary flex-1"
+                onClick={handleCancelDelete}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-primary flex-1 bg-red-600 hover:bg-red-700"
+                onClick={handleConfirmDelete}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

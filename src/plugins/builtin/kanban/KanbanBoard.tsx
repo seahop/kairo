@@ -421,8 +421,10 @@ function Card({ card, onDelete, onDragStart, onClick }: CardProps) {
     ?.map((labelId) => labels.find((l) => l.id === labelId))
     .filter(Boolean) || [];
 
+  // Just call onDelete - confirmation is handled by parent component's dialog
   const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    e.preventDefault();
     onDelete();
   };
 
@@ -541,7 +543,7 @@ interface ColumnProps {
   column: KanbanColumn;
   cards: KanbanCard[];
   boardId: string;
-  onDeleteCard: (cardId: string) => void;
+  onDeleteCard: (cardId: string, cardTitle: string) => void;
   onOpenCard: (card: KanbanCard) => void;
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
@@ -594,7 +596,7 @@ function Column({ column, cards, boardId, onDeleteCard, onOpenCard, onDragOver, 
                 <button
                   className="w-full px-3 py-2 text-left text-sm hover:bg-dark-700 text-red-400"
                   onClick={() => {
-                    if (confirm(`Delete column "${column.name}"? All cards will be removed.`)) {
+                    if (window.confirm(`Delete column "${column.name}"? All cards will be removed.`)) {
                       removeColumn(boardId, column.id);
                     }
                     setShowMenu(false);
@@ -614,7 +616,7 @@ function Column({ column, cards, boardId, onDeleteCard, onOpenCard, onDragOver, 
           <Card
             key={card.id}
             card={card}
-            onDelete={() => onDeleteCard(card.id)}
+            onDelete={() => onDeleteCard(card.id, card.title)}
             onClick={() => onOpenCard(card)}
             onDragStart={(e) => {
               e.dataTransfer.setData("cardId", card.id);
@@ -661,6 +663,30 @@ export function KanbanBoard() {
   const [, setDraggedCard] = useState<string | null>(null);
   const [showMembersPanel, setShowMembersPanel] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
+
+  // Delete confirmation dialog state (same pattern as extension removal)
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    cardId: string;
+    cardTitle: string;
+  }>({ isOpen: false, cardId: "", cardTitle: "" });
+
+  // Handler to show delete confirmation dialog
+  const handleDeleteCardRequest = (cardId: string, cardTitle: string) => {
+    setDeleteConfirm({ isOpen: true, cardId, cardTitle });
+  };
+
+  // Handler to actually delete the card (only called from dialog)
+  const handleConfirmDelete = () => {
+    const { cardId } = deleteConfirm;
+    setDeleteConfirm({ isOpen: false, cardId: "", cardTitle: "" });
+    deleteCard(cardId);
+  };
+
+  // Handler to cancel deletion
+  const handleCancelDelete = () => {
+    setDeleteConfirm({ isOpen: false, cardId: "", cardTitle: "" });
+  };
 
   // Load boards when view opens
   useEffect(() => {
@@ -825,7 +851,7 @@ export function KanbanBoard() {
                   column={column}
                   cards={cards.filter((c) => c.columnId === column.id)}
                   boardId={currentBoard.id}
-                  onDeleteCard={deleteCard}
+                  onDeleteCard={handleDeleteCardRequest}
                   onOpenCard={openCardDetail}
                   onDragOver={handleDragOver}
                   onDrop={handleDrop(column.id)}
@@ -872,6 +898,32 @@ export function KanbanBoard() {
 
       {/* Card Detail Panel */}
       <CardDetailPanel />
+
+      {/* Delete Card Confirmation Dialog */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+          <div className="bg-dark-900 rounded-lg p-6 w-full max-w-sm border border-dark-700">
+            <h2 className="text-lg font-semibold text-dark-100 mb-2">Delete Card</h2>
+            <p className="text-dark-400 mb-6">
+              Are you sure you want to delete "{deleteConfirm.cardTitle}"? This action cannot be undone.
+            </p>
+            <div className="flex gap-2">
+              <button
+                className="btn-secondary flex-1"
+                onClick={handleCancelDelete}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-primary flex-1 bg-red-600 hover:bg-red-700"
+                onClick={handleConfirmDelete}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
