@@ -6,6 +6,18 @@ import { useVaultStore } from "./vaultStore";
 import { useUIStore } from "./uiStore";
 import { useSearchStore } from "./searchStore";
 import { useSlots, SlotType } from "@/plugins/api/slots";
+import {
+  useContextMenuStore,
+  ContextMenuType,
+  ContextMenuItem,
+  ContextMenuContext,
+} from "@/plugins/api/contextMenu";
+import {
+  useMenuBarStore,
+  MenuCategory,
+  MenuBarItem,
+  CustomMenuCategory,
+} from "@/plugins/api/menuBar";
 
 // Theme/CSS management
 const extensionStyles = new Map<string, HTMLStyleElement>();
@@ -138,10 +150,10 @@ export const useExtensionStore = create<ExtensionState>((set, get) => ({
         throw new Error("Invalid manifest: missing required fields (id, name, version, main)");
       }
 
-      // Check if already loaded
+      // If already loaded, unload first (handles reloading/updating extensions)
       if (extensions.has(manifest.id)) {
-        log("warn", manifest.id, "Extension already loaded, skipping");
-        return;
+        log("info", manifest.id, "Extension already loaded, unloading before reload");
+        get().unloadExtension(manifest.id);
       }
 
       log("info", manifest.id, `Loading extension: ${manifest.name} v${manifest.version}`);
@@ -574,6 +586,105 @@ function createExtensionApi(
     unregisterSlot: (slot: string, componentId: string) => {
       useSlots.getState().unregisterSlot(slot as SlotType, `${extensionId}.${componentId}`);
       log("debug", extensionId, `Unregistered slot component: ${slot}/${componentId}`);
+    },
+
+    // Context menu registration
+    registerContextMenuItem: (
+      menuType: string,
+      item: {
+        id: string;
+        label: string;
+        icon?: string;
+        shortcut?: string;
+        execute: (context: ContextMenuContext) => void | Promise<void>;
+        when?: (context: ContextMenuContext) => boolean;
+        priority?: number;
+        divider?: boolean;
+      }
+    ) => {
+      useContextMenuStore.getState().registerMenuItem(
+        menuType as ContextMenuType,
+        item as Omit<ContextMenuItem, "pluginId">,
+        extensionId
+      );
+      log("debug", extensionId, `Registered context menu item: ${menuType}/${item.id}`);
+    },
+
+    unregisterContextMenuItem: (menuType: string, itemId: string) => {
+      useContextMenuStore.getState().unregisterMenuItem(
+        menuType as ContextMenuType,
+        `${extensionId}.${itemId}`
+      );
+      log("debug", extensionId, `Unregistered context menu item: ${menuType}/${itemId}`);
+    },
+
+    // Menu bar registration
+    registerMenuItem: (
+      category: string,
+      item: {
+        id: string;
+        label: string;
+        shortcut?: string;
+        icon?: string;
+        execute: () => void | Promise<void>;
+        when?: () => boolean;
+        priority?: number;
+        divider?: boolean;
+      }
+    ) => {
+      useMenuBarStore.getState().registerMenuItem(
+        category as MenuCategory,
+        item as Omit<MenuBarItem, "pluginId">,
+        extensionId
+      );
+      log("debug", extensionId, `Registered menu item: ${category}/${item.id}`);
+    },
+
+    unregisterMenuItem: (category: string, itemId: string) => {
+      useMenuBarStore.getState().unregisterMenuItem(
+        category as MenuCategory,
+        `${extensionId}.${itemId}`
+      );
+      log("debug", extensionId, `Unregistered menu item: ${category}/${itemId}`);
+    },
+
+    // Custom menu category registration
+    registerMenuCategory: (category: {
+      id: string;
+      label: string;
+      priority?: number;
+    }) => {
+      useMenuBarStore.getState().registerCategory(
+        category as Omit<CustomMenuCategory, "pluginId">,
+        extensionId
+      );
+      log("debug", extensionId, `Registered menu category: ${category.id}`);
+    },
+
+    unregisterMenuCategory: (categoryId: string) => {
+      useMenuBarStore.getState().unregisterCategory(`${extensionId}.${categoryId}`);
+      log("debug", extensionId, `Unregistered menu category: ${categoryId}`);
+    },
+
+    registerCustomMenuItem: (
+      categoryId: string,
+      item: {
+        id: string;
+        label: string;
+        shortcut?: string;
+        icon?: string;
+        execute: () => void | Promise<void>;
+        when?: () => boolean;
+        priority?: number;
+        divider?: boolean;
+      }
+    ) => {
+      useMenuBarStore.getState().registerCustomMenuItem(
+        `${extensionId}.${categoryId}`,
+        item as Omit<MenuBarItem, "pluginId">,
+        extensionId
+      );
+      log("debug", extensionId, `Registered custom menu item: ${categoryId}/${item.id}`);
     },
   };
 }

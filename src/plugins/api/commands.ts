@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { triggerHook } from "./hooks";
 
 export interface Command {
   id: string;
@@ -15,6 +16,7 @@ interface CommandsState {
   commands: Map<string, Command>;
   registerCommand: (command: Command) => void;
   unregisterCommand: (id: string) => void;
+  unregisterPluginCommands: (pluginId: string) => void;
   executeCommand: (id: string) => Promise<void>;
   getCommands: () => Command[];
   searchCommands: (query: string) => Command[];
@@ -39,10 +41,32 @@ export const useCommands = create<CommandsState>((set, get) => ({
     });
   },
 
+  unregisterPluginCommands: (pluginId: string) => {
+    set((state) => {
+      const newCommands = new Map(state.commands);
+      for (const [id, command] of newCommands) {
+        if (command.pluginId === pluginId) {
+          newCommands.delete(id);
+        }
+      }
+      return { commands: newCommands };
+    });
+  },
+
   executeCommand: async (id: string) => {
     const command = get().commands.get(id);
     if (command) {
-      await command.execute();
+      try {
+        // Trigger hook before execution
+        triggerHook("onCommandExecute", { commandId: id, command });
+        await command.execute();
+      } catch (err) {
+        console.error(`[Command] Error executing ${id}:`, err);
+        // Re-throw so callers can handle if needed
+        throw err;
+      }
+    } else {
+      console.warn(`[Command] Command not found: ${id}`);
     }
   },
 

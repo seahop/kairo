@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useVaultStore } from "@/stores/vaultStore";
+import { useMenuBarStore, MenuCategory } from "@/plugins/api/menuBar";
 
 const appWindow = getCurrentWindow();
 
@@ -116,8 +117,31 @@ function DropdownMenu({ label, items }: DropdownMenuProps) {
   );
 }
 
+// Helper hook to get extension menu items for a category
+function useExtensionMenuItems(category: MenuCategory): DropdownItem[] {
+  // Subscribe to menuItems state changes, then call getMenuItems
+  const menuItems = useMenuBarStore((state) => state.menuItems);
+  const items = useMenuBarStore.getState().getMenuItems(category);
+  // Re-run when menuItems changes by including it in dependencies implicitly
+  void menuItems;
+  return items.map((item) => ({
+    label: item.label,
+    shortcut: item.shortcut,
+    onClick: () => item.execute(),
+    divider: item.divider,
+  }));
+}
+
 export function TitleBar() {
   const { vault, closeVault, recentVaults, openVault, createVault } = useVaultStore();
+  const customCategories = useMenuBarStore((state) => state.customCategories);
+
+  // Get extension items for each category
+  const extFileItems = useExtensionMenuItems("file");
+  const extEditItems = useExtensionMenuItems("edit");
+  const extViewItems = useExtensionMenuItems("view");
+  const extToolsItems = useExtensionMenuItems("tools");
+  const extHelpItems = useExtensionMenuItems("help");
 
   const handleMinimize = () => appWindow.minimize();
   const handleMaximize = () => appWindow.toggleMaximize();
@@ -174,7 +198,9 @@ export function TitleBar() {
       ...recentVaultItems,
     ] : []),
     { label: "Close Vault", onClick: closeVault, divider: true },
-    { label: "Exit", shortcut: "Alt+F4", onClick: handleClose },
+    // Extension items for File menu
+    ...(extFileItems.length > 0 ? [{ label: "", onClick: () => {}, divider: true } as DropdownItem, ...extFileItems] : []),
+    { label: "Exit", shortcut: "Alt+F4", onClick: handleClose, divider: extFileItems.length > 0 },
   ];
 
   const editMenuItems: DropdownItem[] = [
@@ -184,6 +210,8 @@ export function TitleBar() {
     { label: "Copy", shortcut: "Ctrl+C", onClick: () => document.execCommand("copy") },
     { label: "Paste", shortcut: "Ctrl+V", onClick: () => document.execCommand("paste") },
     { label: "Find...", shortcut: "Ctrl+F", onClick: () => window.dispatchEvent(new CustomEvent("kairo:search")), divider: true },
+    // Extension items for Edit menu
+    ...(extEditItems.length > 0 ? extEditItems.map((item, i) => ({ ...item, divider: i === 0 || item.divider })) : []),
   ];
 
   const viewMenuItems: DropdownItem[] = [
@@ -191,6 +219,8 @@ export function TitleBar() {
     { label: "Search", shortcut: "Ctrl+Shift+F", onClick: () => window.dispatchEvent(new CustomEvent("kairo:search")), divider: true },
     { label: "Toggle Sidebar", shortcut: "Ctrl+B", onClick: () => window.dispatchEvent(new CustomEvent("kairo:toggle-sidebar")) },
     { label: "Toggle Preview", shortcut: "Ctrl+Shift+V", onClick: () => window.dispatchEvent(new CustomEvent("kairo:toggle-preview")) },
+    // Extension items for View menu
+    ...(extViewItems.length > 0 ? extViewItems.map((item, i) => ({ ...item, divider: i === 0 || item.divider })) : []),
   ];
 
   const toolsMenuItems: DropdownItem[] = [
@@ -201,12 +231,16 @@ export function TitleBar() {
     { label: "Templates", onClick: () => window.dispatchEvent(new CustomEvent("kairo:templates")) },
     { label: "Snippets", onClick: () => window.dispatchEvent(new CustomEvent("kairo:snippets")) },
     { label: "Extensions", onClick: () => window.dispatchEvent(new CustomEvent("kairo:extensions")), divider: true },
+    // Extension items for Tools menu
+    ...(extToolsItems.length > 0 ? extToolsItems.map((item, i) => ({ ...item, divider: i === 0 || item.divider })) : []),
   ];
 
   const helpMenuItems: DropdownItem[] = [
     { label: "Keyboard Shortcuts", shortcut: "Ctrl+/", onClick: () => window.dispatchEvent(new CustomEvent("kairo:shortcuts")) },
     { label: "Documentation", onClick: () => window.open("https://github.com/kairo-app/kairo", "_blank") },
     { label: "About Kairo", onClick: () => window.dispatchEvent(new CustomEvent("kairo:about")), divider: true },
+    // Extension items for Help menu
+    ...(extHelpItems.length > 0 ? extHelpItems.map((item, i) => ({ ...item, divider: i === 0 || item.divider })) : []),
   ];
 
   return (
@@ -232,6 +266,22 @@ export function TitleBar() {
         <DropdownMenu label="Edit" items={editMenuItems} />
         <DropdownMenu label="View" items={viewMenuItems} />
         <DropdownMenu label="Tools" items={toolsMenuItems} />
+        {/* Custom menu categories from extensions */}
+        {customCategories.map((category) => {
+          const items = useMenuBarStore.getState().getCustomMenuItems(category.id);
+          return (
+            <DropdownMenu
+              key={category.id}
+              label={category.label}
+              items={items.map((item) => ({
+                label: item.label,
+                shortcut: item.shortcut,
+                onClick: () => item.execute(),
+                divider: item.divider,
+              }))}
+            />
+          );
+        })}
         <DropdownMenu label="Help" items={helpMenuItems} />
       </div>
 

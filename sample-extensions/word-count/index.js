@@ -38,7 +38,7 @@ function initialize(kairo) {
       });
 
       // Also show alert for visibility
-      alert(`Word Count:\n\nWords: ${words}\nCharacters: ${chars}\nSentences: ${sentences}\nReading time: ~${readingTime} min`);
+      window.alert(`Word Count:\n\nWords: ${words}\nCharacters: ${chars}\nSentences: ${sentences}\nReading time: ~${readingTime} min`);
     }
   });
 
@@ -50,12 +50,12 @@ function initialize(kairo) {
     execute: async () => {
       const text = await navigator.clipboard.readText().catch(() => "");
       if (!text) {
-        alert("Copy some text first to estimate reading time.");
+        window.alert("Copy some text first to estimate reading time.");
         return;
       }
       const words = text.trim().split(/\s+/).length;
       const minutes = Math.ceil(words / 200);
-      alert(`Estimated reading time: ${minutes} minute${minutes !== 1 ? 's' : ''} (${words} words)`);
+      window.alert(`Estimated reading time: ${minutes} minute${minutes !== 1 ? 's' : ''} (${words} words)`);
     }
   });
 }

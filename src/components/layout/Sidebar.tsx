@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { useNoteStore, NoteMetadata } from "@/stores/noteStore";
 import { useVaultStore } from "@/stores/vaultStore";
 import { useUIStore } from "@/stores/uiStore";
+import { useContextMenuStore, ContextMenuContext } from "@/plugins/api/contextMenu";
 import clsx from "clsx";
 
 // Context menu state
@@ -28,6 +29,19 @@ function NoteContextMenu({
   onOpenInNewPane: (note: NoteMetadata) => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Get extension items for the note-tree context menu
+  // Subscribe to menus state for reactivity
+  const menus = useContextMenuStore((s) => s.menus);
+  void menus; // Subscribe to changes
+
+  const context: ContextMenuContext = {
+    type: "note-tree",
+    notePath: state.note?.path,
+    noteTitle: state.note?.title,
+    event: { clientX: state.x, clientY: state.y },
+  };
+  const extensionItems = useContextMenuStore.getState().getMenuItems("note-tree", context);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -103,6 +117,26 @@ function NoteContextMenu({
         </svg>
         Archive (PARA)
       </button>
+      {/* Extension menu items */}
+      {extensionItems.length > 0 && (
+        <>
+          <div className="border-t border-dark-700 my-1" />
+          {extensionItems.map((item) => (
+            <button
+              key={item.id}
+              className="w-full px-4 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 hover:text-dark-50 flex items-center gap-2"
+              onClick={() => {
+                item.execute(context);
+                onClose();
+              }}
+            >
+              {item.icon && <span className="w-4 text-center">{item.icon}</span>}
+              {item.label}
+              {item.shortcut && <span className="ml-auto text-xs text-dark-500">{item.shortcut}</span>}
+            </button>
+          ))}
+        </>
+      )}
       <div className="border-t border-dark-700 my-1" />
       <button
         className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2"

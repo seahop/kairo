@@ -3,6 +3,7 @@ mod db;
 mod fs;
 mod git;
 
+#[allow(unused_imports)]
 use tauri::Manager;
 
 pub fn run() {

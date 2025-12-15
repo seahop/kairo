@@ -1,0 +1,8 @@
+{
+  "id": "command-enhancer",
+  "name": "Command Enhancer",
+  "version": "1.0.0",
+  "description": "Enhances command palette with favorites and history. Demonstrates filterCommands and onCommandExecute.",
+  "author": "Kairo Team",
+  "main": "index.js"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "preview-enhancer",
+  "name": "Preview Enhancer",
+  "version": "1.0.0",
+  "description": "Enhances the markdown preview with custom styling and features. Demonstrates filterPreviewHtml filter.",
+  "author": "Kairo Team",
+  "main": "index.js"
+}

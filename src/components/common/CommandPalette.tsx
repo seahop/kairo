@@ -49,7 +49,10 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
         case "Enter":
           e.preventDefault();
           if (commands[selectedIndex]) {
-            executeCommand(commands[selectedIndex].id);
+            executeCommand(commands[selectedIndex].id).catch((err) => {
+              console.error("Command execution failed:", err);
+              alert(`Command failed: ${err.message || err}`);
+            });
             onClose();
           }
           break;
@@ -63,7 +66,10 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   );
 
   const handleCommandClick = (command: Command) => {
-    executeCommand(command.id);
+    executeCommand(command.id).catch((err) => {
+      console.error("Command execution failed:", err);
+      alert(`Command failed: ${err.message || err}`);
+    });
     onClose();
   };
 

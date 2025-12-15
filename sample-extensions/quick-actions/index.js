@@ -1,8 +1,12 @@
 // Quick Actions Extension
-// Demonstrates: Multiple commands, categories, storage API
+// Demonstrates: Commands, keyboard shortcuts, context menus, menu bar items
 
 function initialize(kairo) {
   kairo.log.info("Quick Actions extension loaded");
+
+  // ==========================================
+  // COMMANDS WITH KEYBOARD SHORTCUTS
+  // ==========================================
 
   // Date/Time insertion commands
   kairo.registerCommand({
@@ -13,7 +17,7 @@ function initialize(kairo) {
     execute: async () => {
       const date = new Date().toISOString().split("T")[0];
       await navigator.clipboard.writeText(date);
-      kairo.log.info("Copied date to clipboard", { date });
+      kairo.log.info("Copied date to clipboard", date);
     }
   });
 
@@ -25,7 +29,7 @@ function initialize(kairo) {
     execute: async () => {
       const datetime = new Date().toLocaleString();
       await navigator.clipboard.writeText(datetime);
-      kairo.log.info("Copied datetime to clipboard", { datetime });
+      kairo.log.info("Copied datetime to clipboard", datetime);
     }
   });
 
@@ -37,7 +41,7 @@ function initialize(kairo) {
     execute: async () => {
       const timestamp = Date.now().toString();
       await navigator.clipboard.writeText(timestamp);
-      kairo.log.info("Copied timestamp", { timestamp });
+      kairo.log.info("Copied timestamp", timestamp);
     }
   });
 
@@ -46,10 +50,11 @@ function initialize(kairo) {
     name: "Copy UUID",
     description: "Generate and copy a UUID v4",
     category: "Insert",
+    shortcut: "Ctrl+Shift+U",  // Keyboard shortcut example
     execute: async () => {
       const uuid = crypto.randomUUID();
       await navigator.clipboard.writeText(uuid);
-      kairo.log.info("Copied UUID", { uuid });
+      kairo.log.info("Copied UUID", uuid);
     }
   });
 
@@ -117,16 +122,123 @@ function initialize(kairo) {
     category: "Developer",
     shortcut: "Ctrl+Shift+D",
     execute: () => {
-      // Dispatch custom event that App.tsx listens for
       const event = new CustomEvent("kairo:toggle-debug");
       window.dispatchEvent(event);
       kairo.log.info("Toggled debug console");
     }
   });
+
+  // ==========================================
+  // CONTEXT MENU ITEMS (Right-click menus)
+  // ==========================================
+
+  // Add "Copy Note Path" to note right-click menu
+  kairo.registerContextMenuItem("note-tree", {
+    id: "copy-note-path",
+    label: "Copy Full Path",
+    icon: "📋",
+    priority: 5,
+    execute: async (context) => {
+      if (context.notePath) {
+        await navigator.clipboard.writeText(context.notePath);
+        kairo.log.info("Copied note path", context.notePath);
+      }
+    }
+  });
+
+  // Add "Copy as Wiki Link" to note right-click menu
+  kairo.registerContextMenuItem("note-tree", {
+    id: "copy-wiki-link",
+    label: "Copy as Wiki Link",
+    icon: "🔗",
+    priority: 4,
+    execute: async (context) => {
+      if (context.noteTitle) {
+        const wikiLink = `[[${context.noteTitle}]]`;
+        await navigator.clipboard.writeText(wikiLink);
+        kairo.log.info("Copied wiki link", wikiLink);
+      }
+    }
+  });
+
+  // Add "Insert Timestamp" to editor right-click menu
+  kairo.registerContextMenuItem("editor", {
+    id: "insert-timestamp-here",
+    label: "Insert Timestamp",
+    icon: "⏰",
+    execute: async () => {
+      const timestamp = new Date().toLocaleString();
+      await navigator.clipboard.writeText(timestamp);
+      kairo.log.info("Timestamp copied - paste to insert", timestamp);
+    }
+  });
+
+  // Add "Copy Link Target" to wiki link right-click menu
+  kairo.registerContextMenuItem("wiki-link", {
+    id: "copy-link-target",
+    label: "Copy Link Target",
+    icon: "📄",
+    execute: async (context) => {
+      if (context.linkTarget) {
+        await navigator.clipboard.writeText(context.linkTarget);
+        kairo.log.info("Copied link target", context.linkTarget);
+      }
+    }
+  });
+
+  // ==========================================
+  // MENU BAR ITEMS (Top menu)
+  // ==========================================
+
+  // Add items to the Tools menu
+  kairo.registerMenuItem("tools", {
+    id: "copy-uuid",
+    label: "Generate UUID",
+    shortcut: "Ctrl+Shift+U",
+    priority: 50,
+    divider: true,
+    execute: async () => {
+      const uuid = crypto.randomUUID();
+      await navigator.clipboard.writeText(uuid);
+      kairo.log.info("Copied UUID", uuid);
+    }
+  });
+
+  kairo.registerMenuItem("tools", {
+    id: "copy-date",
+    label: "Copy Today's Date",
+    priority: 49,
+    execute: async () => {
+      const date = new Date().toISOString().split("T")[0];
+      await navigator.clipboard.writeText(date);
+      kairo.log.info("Copied date", date);
+    }
+  });
+
+  // Add to Edit menu
+  kairo.registerMenuItem("edit", {
+    id: "clear-clipboard",
+    label: "Clear Clipboard",
+    priority: 10,
+    execute: async () => {
+      await navigator.clipboard.writeText("");
+      kairo.log.info("Clipboard cleared");
+    }
+  });
+
+  // ==========================================
+  // HOOKS (Respond to app events)
+  // ==========================================
+
+  kairo.registerHook("onNoteOpen", (data) => {
+    kairo.log.debug("Note opened via Quick Actions hook", data.path || "unknown");
+  });
 }
 
 function cleanup(kairo) {
   kairo.log.info("Quick Actions extension unloaded");
+  // Context menu items and menu bar items are automatically cleaned up
+  // when the extension unloads
 }
 
 exports.initialize = initialize;

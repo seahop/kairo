@@ -1,4 +1,9 @@
 import { create } from "zustand";
+import { useCommands } from "./commands";
+import { useHooks } from "./hooks";
+import { useSlots } from "./slots";
+import { useMenuBarStore } from "./menuBar";
+import { useContextMenuStore } from "./contextMenu";
 
 export interface PluginManifest {
   id: string;
@@ -13,6 +18,20 @@ export interface Plugin {
   enabled: boolean;
   initialize?: () => void | Promise<void>;
   cleanup?: () => void;
+}
+
+// Helper to clean up all artifacts registered by a plugin
+function cleanupPluginArtifacts(pluginId: string) {
+  // Clean up commands
+  useCommands.getState().unregisterPluginCommands(pluginId);
+  // Clean up hooks and filters
+  useHooks.getState().unregisterPluginHooks(pluginId);
+  // Clean up slots
+  useSlots.getState().unregisterPluginSlots(pluginId);
+  // Clean up menu bar items
+  useMenuBarStore.getState().unregisterPluginMenuItems(pluginId);
+  // Clean up context menu items
+  useContextMenuStore.getState().unregisterPluginMenuItems(pluginId);
 }
 
 interface PluginState {
@@ -42,9 +61,14 @@ export const usePluginStore = create<PluginState>((set, get) => ({
 
   unregisterPlugin: (id: string) => {
     const plugin = get().plugins.get(id);
+
+    // Call plugin's cleanup function first
     if (plugin?.cleanup) {
       plugin.cleanup();
     }
+
+    // Clean up all registered artifacts (commands, hooks, menus, etc.)
+    cleanupPluginArtifacts(id);
 
     set((state) => {
       const newPlugins = new Map(state.plugins);
@@ -68,14 +92,23 @@ export const usePluginStore = create<PluginState>((set, get) => ({
   },
 
   disablePlugin: (id: string) => {
+    const plugin = get().plugins.get(id);
+
+    if (plugin) {
+      // Call plugin's cleanup function
+      if (plugin.cleanup) {
+        plugin.cleanup();
+      }
+
+      // Clean up all registered artifacts
+      cleanupPluginArtifacts(id);
+    }
+
     set((state) => {
       const newPlugins = new Map(state.plugins);
-      const plugin = newPlugins.get(id);
-      if (plugin) {
-        if (plugin.cleanup) {
-          plugin.cleanup();
-        }
-        plugin.enabled = false;
+      const p = newPlugins.get(id);
+      if (p) {
+        p.enabled = false;
       }
       return { plugins: newPlugins };
     });

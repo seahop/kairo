@@ -22,6 +22,7 @@ interface SlotsState {
   slots: Map<SlotType, SlotComponent[]>;
   registerSlot: (slot: SlotType, component: SlotComponent) => void;
   unregisterSlot: (slot: SlotType, componentId: string) => void;
+  unregisterPluginSlots: (pluginId: string) => void;
   getSlotComponents: (slot: SlotType) => SlotComponent[];
 }
 
@@ -51,6 +52,16 @@ export const useSlots = create<SlotsState>((set, get) => ({
           slot,
           components.filter((c) => c.id !== componentId)
         );
+      }
+      return { slots: newSlots };
+    });
+  },
+
+  unregisterPluginSlots: (pluginId: string) => {
+    set((state) => {
+      const newSlots = new Map(state.slots);
+      for (const [slot, components] of newSlots) {
+        newSlots.set(slot, components.filter((c) => c.pluginId !== pluginId));
       }
       return { slots: newSlots };
     });

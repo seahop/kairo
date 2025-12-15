@@ -299,7 +299,17 @@ function App() {
       for (const command of commands) {
         if (command.shortcut && matchShortcut(e, command.shortcut)) {
           e.preventDefault();
-          command.execute();
+          try {
+            const result = command.execute();
+            // Handle async commands
+            if (result instanceof Promise) {
+              result.catch((err) => {
+                console.error(`Command shortcut ${command.id} failed:`, err);
+              });
+            }
+          } catch (err) {
+            console.error(`Command shortcut ${command.id} failed:`, err);
+          }
           return;
         }
       }

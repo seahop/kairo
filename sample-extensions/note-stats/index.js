@@ -105,7 +105,7 @@ function initialize(kairo) {
       };
 
       kairo.log.info("Current Statistics", JSON.stringify(stats, null, 2));
-      alert("Statistics logged to debug console!\n\n" +
+      window.alert("Statistics logged to debug console!\n\n" +
         "Vault: " + stats.vault + "\n" +
         "Total Notes: " + stats.totalNotes + "\n" +
         "Created Today: " + stats.notesCreatedThisSession + "\n" +
@@ -124,7 +124,7 @@ function initialize(kairo) {
       const note = state.notes?.current;
 
       if (!note) {
-        alert("No note is currently open.");
+        window.alert("No note is currently open.");
         return;
       }
 
@@ -151,7 +151,7 @@ function initialize(kairo) {
 
       kairo.log.info("Current Note Info", JSON.stringify(info, null, 2));
 
-      alert(
+      window.alert(
         "Note: " + info.title + "\n\n" +
         "Words: " + info.words + "\n" +
         "Lines: " + info.lines + "\n" +
