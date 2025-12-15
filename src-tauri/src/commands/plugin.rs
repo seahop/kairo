@@ -15,7 +15,9 @@ fn validate_plugin_id(id: &str) -> Result<(), String> {
         .chars()
         .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
     {
-        return Err("Invalid plugin ID: only alphanumeric, hyphens, and underscores allowed".to_string());
+        return Err(
+            "Invalid plugin ID: only alphanumeric, hyphens, and underscores allowed".to_string(),
+        );
     }
 
     // Reject traversal patterns
@@ -41,7 +43,9 @@ fn validate_data_key(key: &str) -> Result<(), String> {
         .chars()
         .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
     {
-        return Err("Invalid key: only alphanumeric, hyphens, underscores, and dots allowed".to_string());
+        return Err(
+            "Invalid key: only alphanumeric, hyphens, underscores, and dots allowed".to_string(),
+        );
     }
 
     // Reject traversal patterns
@@ -53,7 +57,11 @@ fn validate_data_key(key: &str) -> Result<(), String> {
 }
 
 /// Validate the final path is within the plugin directory
-fn validate_plugin_path(vault_path: &Path, plugin_id: &str, key: &str) -> Result<std::path::PathBuf, String> {
+fn validate_plugin_path(
+    vault_path: &Path,
+    plugin_id: &str,
+    key: &str,
+) -> Result<std::path::PathBuf, String> {
     let plugin_dir = vault_path.join(".kairo").join("plugins").join(plugin_id);
     let data_path = plugin_dir.join(format!("{}.json", key));
 
@@ -110,7 +118,11 @@ pub fn write_plugin_data(
     // Limit data size to prevent DoS
     const MAX_DATA_SIZE: usize = 10 * 1024 * 1024; // 10MB
     if data.len() > MAX_DATA_SIZE {
-        return Err(format!("Data too large: {} bytes (max {})", data.len(), MAX_DATA_SIZE));
+        return Err(format!(
+            "Data too large: {} bytes (max {})",
+            data.len(),
+            MAX_DATA_SIZE
+        ));
     }
 
     let vault_path = db::get_current_vault_path(&app).ok_or("No vault is currently open")?;

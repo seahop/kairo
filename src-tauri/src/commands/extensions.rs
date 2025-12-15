@@ -118,10 +118,7 @@ pub fn read_file_text(path: &str) -> Result<String, String> {
     }
 
     // Only allow certain file extensions
-    let extension = file_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
+    let extension = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     let allowed_extensions = ["js", "json", "ts", "mjs", "cjs"];
     if !allowed_extensions.contains(&extension) {

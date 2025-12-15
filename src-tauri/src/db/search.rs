@@ -162,9 +162,8 @@ pub fn search_notes(
                     let note_ids: Vec<&str> = results.iter().map(|r| r.id.as_str()).collect();
 
                     // Build a single query with placeholders
-                    let placeholders: Vec<String> = (1..=note_ids.len())
-                        .map(|i| format!("?{}", i))
-                        .collect();
+                    let placeholders: Vec<String> =
+                        (1..=note_ids.len()).map(|i| format!("?{}", i)).collect();
                     let batch_query = format!(
                         "SELECT note_id, tag FROM tags WHERE note_id IN ({})",
                         placeholders.join(", ")
