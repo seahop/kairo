@@ -5,10 +5,25 @@ import { useVaultStore } from "@/stores/vaultStore";
 
 const appWindow = getCurrentWindow();
 
-// Handle window dragging for Tauri 2.0
-const handleDragStart = (e: React.MouseEvent) => {
-  // Only drag on left mouse button
-  if (e.button === 0) {
+// Track double-click timing for title bar
+let lastClickTime = 0;
+
+// Handle window dragging and double-click to maximize for Tauri 2.0
+const handleTitleBarMouseDown = (e: React.MouseEvent) => {
+  // Only handle left mouse button
+  if (e.button !== 0) return;
+
+  const now = Date.now();
+  const timeSinceLastClick = now - lastClickTime;
+  lastClickTime = now;
+
+  // Double-click detected (within 300ms)
+  if (timeSinceLastClick < 300) {
+    e.preventDefault();
+    appWindow.toggleMaximize();
+    lastClickTime = 0; // Reset to prevent triple-click issues
+  } else {
+    // Single click - start dragging
     e.preventDefault();
     appWindow.startDragging();
   }
@@ -201,7 +216,7 @@ export function TitleBar() {
       {/* App icon and name - draggable */}
       <div
         className="flex items-center gap-2 px-3 cursor-default"
-        onMouseDown={handleDragStart}
+        onMouseDown={handleTitleBarMouseDown}
       >
         <img
           src="/icon-32.png"
@@ -223,7 +238,7 @@ export function TitleBar() {
       {/* Draggable area - title */}
       <div
         className="flex-1 text-center h-full flex items-center justify-center cursor-default"
-        onMouseDown={handleDragStart}
+        onMouseDown={handleTitleBarMouseDown}
       >
         {vault && (
           <span className="text-xs text-dark-500">
