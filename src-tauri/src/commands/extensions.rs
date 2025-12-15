@@ -258,8 +258,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
         if src_path.is_dir() {
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
-            fs::copy(&src_path, &dst_path)
-                .map_err(|e| format!("Failed to copy file: {}", e))?;
+            fs::copy(&src_path, &dst_path).map_err(|e| format!("Failed to copy file: {}", e))?;
         }
     }
 
