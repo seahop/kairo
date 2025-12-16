@@ -26,6 +26,8 @@ export interface NodeData {
   borderStyle?: 'solid' | 'dashed' | 'dotted';
   borderWidth?: number;
   opacity?: number;
+  // Selection grouping - nodes with same groupId move together
+  selectionGroupId?: string;
 }
 
 export interface DiagramNode {

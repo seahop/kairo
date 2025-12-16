@@ -345,3 +345,43 @@
 .react-flow__node-group > div {
   background: transparent;
 }
+
+/* Selection box - prevent rendering artifacts */
+.react-flow__selection {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  will-change: transform;
+}
+
+.react-flow__nodesselection {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.react-flow__nodesselection-rect {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  /* Fix white border residue */
+  background: rgba(59, 130, 246, 0.1) !important;
+  border: 1px solid rgba(59, 130, 246, 0.5) !important;
+}
+
+/* Selection drag box styling */
+.react-flow__selectionpane {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+
+/* User selection box during drag */
+.react-flow__selection-rect {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}

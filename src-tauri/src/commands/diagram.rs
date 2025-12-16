@@ -46,6 +46,9 @@ pub struct NodeData {
     #[serde(rename = "borderWidth")]
     pub border_width: Option<f64>,
     pub opacity: Option<f64>, // 0-1 for fill opacity
+    // Selection grouping - nodes with same groupId move together
+    #[serde(rename = "selectionGroupId")]
+    pub selection_group_id: Option<String>,
 }
 
 /// A node in the diagram (shape, icon, or text)

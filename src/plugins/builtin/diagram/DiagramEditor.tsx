@@ -15,9 +15,10 @@ import {
   BackgroundVariant,
   MarkerType,
   ConnectionMode,
+  SelectionMode,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { ZoomIn, ZoomOut, Maximize, Lock, Unlock, Copy, Trash2, ArrowUpToLine, ArrowDownToLine, Layers, Plus, Palette, Square, Circle as CircleIcon, Minus, ChevronRight, Type, Zap } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize, Lock, Unlock, Copy, Trash2, ArrowUpToLine, ArrowDownToLine, Layers, Plus, Palette, Square, Circle as CircleIcon, Minus, ChevronRight, Type, Zap, MousePointer2, Move, Link2, Unlink } from "lucide-react";
 
 import { useDiagramStore } from "./store";
 import { ShapeNode, IconNode, TextNode, GroupNode, ICON_MAP } from "./components/CustomNodes";
@@ -107,9 +108,11 @@ const COLOR_PALETTE = [
 interface CustomControlsProps {
   isLocked: boolean;
   onToggleLock: () => void;
+  isSelectMode: boolean;
+  onToggleSelectMode: () => void;
 }
 
-function CustomControls({ isLocked, onToggleLock }: CustomControlsProps) {
+function CustomControls({ isLocked, onToggleLock, isSelectMode, onToggleSelectMode }: CustomControlsProps) {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
 
   return (
@@ -134,6 +137,15 @@ function CustomControls({ isLocked, onToggleLock }: CustomControlsProps) {
         title="Fit View"
       >
         <Maximize size={18} />
+      </button>
+      <div className="border-t border-dark-600 my-1" />
+      <button
+        onClick={onToggleSelectMode}
+        disabled={isLocked}
+        className={`p-2 rounded transition-colors ${isSelectMode ? 'text-blue-400 bg-dark-700' : 'text-dark-300 hover:text-white hover:bg-dark-700'} ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+        title={isSelectMode ? "Select Mode (drag to select)" : "Pan Mode (drag to pan)"}
+      >
+        {isSelectMode ? <MousePointer2 size={18} /> : <Move size={18} />}
       </button>
       <button
         onClick={onToggleLock}
@@ -181,8 +193,10 @@ export function DiagramEditor() {
   const [activeTab, setActiveTab] = useState<"shapes" | "icons">("shapes");
   const [selectedColor, setSelectedColor] = useState(COLOR_PALETTE[0]);
   const [isLocked, setIsLocked] = useState(true); // Default to locked for viewing
+  const [isSelectMode, setIsSelectMode] = useState(false); // Selection mode vs pan mode
   const isNewBoardRef = useRef(false); // Track if board was just created (ref for sync updates)
   const reactFlowRef = useRef<HTMLDivElement>(null);
+  const dragStartPositions = useRef<Map<string, { x: number; y: number }>>(new Map()); // Track drag start for grouped movement
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -234,7 +248,7 @@ export function DiagramEditor() {
     (changes) => {
       onNodesChange(changes);
 
-      // Debounce position updates to backend
+      // Debounce position updates to backend (only for non-grouped or single node moves)
       const positionChanges = changes.filter(
         (c): c is { type: "position"; id: string; position: { x: number; y: number }; dragging?: boolean } =>
           c.type === "position" && "position" in c && !!(c as { position?: unknown }).position && !(c as { dragging?: boolean }).dragging
@@ -250,6 +264,92 @@ export function DiagramEditor() {
       }
     },
     [onNodesChange, currentBoard, bulkUpdateNodes]
+  );
+
+  // Handle drag start - record positions for grouped movement
+  const handleNodeDragStart = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      const nodeData = node.data as NodeData;
+      const groupId = nodeData?.selectionGroupId;
+
+      if (groupId) {
+        // Record starting positions of all nodes in the same group
+        dragStartPositions.current.clear();
+        nodes.forEach((n) => {
+          const nData = n.data as NodeData;
+          if (nData?.selectionGroupId === groupId) {
+            dragStartPositions.current.set(n.id, { x: n.position.x, y: n.position.y });
+          }
+        });
+      }
+    },
+    [nodes]
+  );
+
+  // Handle drag - move all grouped nodes together
+  const handleNodeDrag = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      const nodeData = node.data as NodeData;
+      const groupId = nodeData?.selectionGroupId;
+
+      if (groupId && dragStartPositions.current.size > 1) {
+        const startPos = dragStartPositions.current.get(node.id);
+        if (!startPos) return;
+
+        // Calculate delta from drag start
+        const deltaX = node.position.x - startPos.x;
+        const deltaY = node.position.y - startPos.y;
+
+        // Update all grouped nodes
+        setNodes((nds) =>
+          nds.map((n) => {
+            const nData = n.data as NodeData;
+            if (nData?.selectionGroupId === groupId && n.id !== node.id) {
+              const nStartPos = dragStartPositions.current.get(n.id);
+              if (nStartPos) {
+                return {
+                  ...n,
+                  position: {
+                    x: nStartPos.x + deltaX,
+                    y: nStartPos.y + deltaY,
+                  },
+                };
+              }
+            }
+            return n;
+          })
+        );
+      }
+    },
+    [setNodes]
+  );
+
+  // Handle drag stop - save all grouped node positions to backend
+  const handleNodeDragStop = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      const nodeData = node.data as NodeData;
+      const groupId = nodeData?.selectionGroupId;
+
+      if (groupId && dragStartPositions.current.size > 1 && currentBoard) {
+        // Save all grouped nodes' new positions
+        const updates: { id: string; positionX: number; positionY: number }[] = [];
+        nodes.forEach((n) => {
+          const nData = n.data as NodeData;
+          if (nData?.selectionGroupId === groupId) {
+            updates.push({
+              id: n.id,
+              positionX: n.position.x,
+              positionY: n.position.y,
+            });
+          }
+        });
+        if (updates.length > 0) {
+          bulkUpdateNodes(currentBoard.id, updates);
+        }
+      }
+      dragStartPositions.current.clear();
+    },
+    [nodes, currentBoard, bulkUpdateNodes]
   );
 
   // Handle edge changes
@@ -508,6 +608,81 @@ export function DiagramEditor() {
     );
     closeContextMenu();
   }, [currentBoard, contextMenu, storeNodes, closeContextMenu]);
+
+  // Group selected nodes - assign same selectionGroupId
+  const handleGroupSelection = useCallback(async () => {
+    if (!currentBoard || selectedNodeIds.length < 2) return;
+
+    // Generate a new group ID
+    const groupId = `group-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Update all selected nodes with the new group ID
+    for (const nodeId of selectedNodeIds) {
+      const node = storeNodes.find((n) => n.id === nodeId);
+      if (node) {
+        const newData = { ...node.data, selectionGroupId: groupId };
+        await useDiagramStore.getState().updateNode(
+          nodeId,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          newData
+        );
+      }
+    }
+    closeContextMenu();
+  }, [currentBoard, selectedNodeIds, storeNodes, closeContextMenu]);
+
+  // Ungroup node - remove selectionGroupId
+  const handleUngroupNode = useCallback(async () => {
+    if (!currentBoard || !contextMenu?.nodeId) return;
+
+    const node = storeNodes.find((n) => n.id === contextMenu.nodeId);
+    if (node && node.data.selectionGroupId) {
+      // Remove the selectionGroupId
+      const { selectionGroupId: _, ...restData } = node.data;
+      await useDiagramStore.getState().updateNode(
+        contextMenu.nodeId,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        restData as NodeData
+      );
+    }
+    closeContextMenu();
+  }, [currentBoard, contextMenu, storeNodes, closeContextMenu]);
+
+  // Ungroup all nodes in the same group
+  const handleUngroupAll = useCallback(async () => {
+    if (!currentBoard || !contextMenu?.nodeId) return;
+
+    const node = storeNodes.find((n) => n.id === contextMenu.nodeId);
+    if (node && node.data.selectionGroupId) {
+      const groupId = node.data.selectionGroupId;
+      // Find all nodes in this group and remove their groupId
+      for (const n of storeNodes) {
+        if (n.data.selectionGroupId === groupId) {
+          const { selectionGroupId: _, ...restData } = n.data;
+          await useDiagramStore.getState().updateNode(
+            n.id,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            restData as NodeData
+          );
+        }
+      }
+    }
+    closeContextMenu();
+  }, [currentBoard, contextMenu, storeNodes, closeContextMenu]);
+
+  // Check if context node is in a group
+  const contextNodeGroupId = contextMenu?.nodeId
+    ? storeNodes.find((n) => n.id === contextMenu.nodeId)?.data.selectionGroupId
+    : undefined;
 
   // Delete selected
   const handleDeleteSelected = useCallback(() => {
@@ -913,7 +1088,39 @@ export function DiagramEditor() {
         </div>
 
         {/* Main Canvas */}
-        <div className="flex-1" ref={reactFlowRef}>
+        <div
+          className="flex-1"
+          ref={reactFlowRef}
+          onContextMenu={(e) => {
+            // Fallback context menu handler for when React Flow's onPaneContextMenu doesn't fire
+            // This happens in selection mode or when right-clicking on selection areas
+            if (isLocked) return;
+
+            // Check if right-click was on a node or edge (those have their own handlers)
+            const target = e.target as HTMLElement;
+            const isOnNode = target.closest('.react-flow__node');
+            const isOnEdge = target.closest('.react-flow__edge');
+            const isOnSelection = target.closest('.react-flow__nodesselection') || target.closest('.react-flow__selection');
+
+            // Always prevent default to stop browser context menu
+            e.preventDefault();
+
+            // If on selection area or canvas (not on specific node/edge), show our context menu
+            if (isOnSelection || (!isOnNode && !isOnEdge)) {
+              const bounds = reactFlowRef.current?.getBoundingClientRect();
+              if (!bounds) return;
+
+              setContextMenu({
+                x: e.clientX,
+                y: e.clientY,
+                flowPosition: {
+                  x: e.clientX - bounds.left,
+                  y: e.clientY - bounds.top,
+                },
+              });
+            }
+          }}
+        >
           {currentBoard ? (
             <ReactFlow
               nodes={nodes}
@@ -922,6 +1129,9 @@ export function DiagramEditor() {
               onEdgesChange={isLocked ? undefined : handleEdgesChange}
               onConnect={isLocked ? undefined : handleConnect}
               onSelectionChange={isLocked ? undefined : handleSelectionChange}
+              onNodeDragStart={isLocked ? undefined : handleNodeDragStart}
+              onNodeDrag={isLocked ? undefined : handleNodeDrag}
+              onNodeDragStop={isLocked ? undefined : handleNodeDragStop}
               onPaneContextMenu={handleContextMenu}
               onNodeContextMenu={handleNodeContextMenu}
               onEdgeContextMenu={handleEdgeContextMenu}
@@ -930,6 +1140,9 @@ export function DiagramEditor() {
               nodesDraggable={!isLocked}
               nodesConnectable={!isLocked}
               elementsSelectable={!isLocked}
+              selectionOnDrag={!isLocked && isSelectMode}
+              panOnDrag={!isLocked && !isSelectMode}
+              selectionMode={SelectionMode.Partial}
               fitView
               snapToGrid
               snapGrid={[15, 15]}
@@ -944,7 +1157,12 @@ export function DiagramEditor() {
               }}
             >
               <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#374151" />
-              <CustomControls isLocked={isLocked} onToggleLock={() => setIsLocked(!isLocked)} />
+              <CustomControls
+                isLocked={isLocked}
+                onToggleLock={() => setIsLocked(!isLocked)}
+                isSelectMode={isSelectMode}
+                onToggleSelectMode={() => setIsSelectMode(!isSelectMode)}
+              />
               <MiniMap
                 className="bg-dark-800 border border-dark-700"
                 nodeColor={(node) => {
@@ -1133,6 +1351,43 @@ export function DiagramEditor() {
                 <ArrowDownToLine size={14} />
                 Send to Back
               </button>
+
+              {/* Grouping options */}
+              <div className="border-t border-dark-600 my-1" />
+              <div className="px-3 py-1.5 text-xs text-dark-500 uppercase font-semibold">Grouping</div>
+              {selectedNodeIds.length >= 2 && (
+                <button
+                  onClick={handleGroupSelection}
+                  className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2"
+                >
+                  <Link2 size={14} />
+                  Group Selection ({selectedNodeIds.length} items)
+                </button>
+              )}
+              {contextNodeGroupId && (
+                <>
+                  <button
+                    onClick={handleUngroupNode}
+                    className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2"
+                  >
+                    <Unlink size={14} />
+                    Remove from Group
+                  </button>
+                  <button
+                    onClick={handleUngroupAll}
+                    className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2"
+                  >
+                    <Unlink size={14} />
+                    Ungroup All
+                  </button>
+                </>
+              )}
+              {!contextNodeGroupId && selectedNodeIds.length < 2 && (
+                <div className="px-3 py-2 text-xs text-dark-500 italic">
+                  Select 2+ nodes to group
+                </div>
+              )}
+
               <div className="border-t border-dark-600 my-1" />
               <button
                 onClick={handleDeleteSelected}
@@ -1401,6 +1656,27 @@ export function DiagramEditor() {
           {/* Canvas options (add new elements) */}
           {!contextMenu.nodeId && !contextMenu.edgeId && contextMenu.flowPosition && (
             <>
+              {/* Selection grouping options - show when multiple nodes selected */}
+              {selectedNodeIds.length >= 2 && (
+                <>
+                  <div className="px-3 py-1.5 text-xs text-dark-500 uppercase font-semibold">Selection</div>
+                  <button
+                    onClick={handleGroupSelection}
+                    className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2"
+                  >
+                    <Link2 size={14} />
+                    Group Selection ({selectedNodeIds.length} items)
+                  </button>
+                  <button
+                    onClick={handleDeleteSelected}
+                    className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-dark-700 flex items-center gap-2"
+                  >
+                    <Trash2 size={14} />
+                    Delete Selection
+                  </button>
+                  <div className="border-t border-dark-600 my-1" />
+                </>
+              )}
               <div className="px-3 py-1.5 text-xs text-dark-500 uppercase font-semibold">Add Element</div>
               <button
                 onClick={() => handleAddAtPosition("shape", "rectangle")}
