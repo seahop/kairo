@@ -332,3 +332,16 @@
     transform: translateZ(0);
   }
 }
+
+/* Group node - completely transparent wrapper, no default styling */
+.react-flow__node-group {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+/* Ensure group nodes have no default node styling */
+.react-flow__node-group > div {
+  background: transparent;
+}

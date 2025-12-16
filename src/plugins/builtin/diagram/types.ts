@@ -22,6 +22,10 @@ export interface NodeData {
   color?: string;
   borderColor?: string;
   fontSize?: number;
+  // Group/container specific
+  borderStyle?: 'solid' | 'dashed' | 'dotted';
+  borderWidth?: number;
+  opacity?: number;
 }
 
 export interface DiagramNode {

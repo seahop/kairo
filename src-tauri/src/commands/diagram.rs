@@ -40,6 +40,12 @@ pub struct NodeData {
     pub border_color: Option<String>,
     #[serde(rename = "fontSize")]
     pub font_size: Option<f64>,
+    // Group/container specific properties
+    #[serde(rename = "borderStyle")]
+    pub border_style: Option<String>, // 'solid', 'dashed', 'dotted'
+    #[serde(rename = "borderWidth")]
+    pub border_width: Option<f64>,
+    pub opacity: Option<f64>, // 0-1 for fill opacity
 }
 
 /// A node in the diagram (shape, icon, or text)

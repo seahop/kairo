@@ -17,10 +17,10 @@ import {
   ConnectionMode,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { ZoomIn, ZoomOut, Maximize, Lock, Unlock } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize, Lock, Unlock, Copy, Trash2, ArrowUpToLine, ArrowDownToLine, Layers, Plus, Palette, Square, Circle as CircleIcon, Minus, ChevronRight, Type, Zap } from "lucide-react";
 
 import { useDiagramStore } from "./store";
-import { ShapeNode, IconNode, TextNode, ICON_MAP } from "./components/CustomNodes";
+import { ShapeNode, IconNode, TextNode, GroupNode, ICON_MAP } from "./components/CustomNodes";
 import { exportToPng } from "./utils/export";
 import type { DiagramNode, DiagramEdge, NodeData, ReactFlowNodeData } from "./types";
 
@@ -29,6 +29,7 @@ const nodeTypes: NodeTypes = {
   shape: ShapeNode,
   icon: IconNode,
   text: TextNode,
+  group: GroupNode,
 };
 
 // Shape definitions for palette
@@ -182,6 +183,16 @@ export function DiagramEditor() {
   const [isLocked, setIsLocked] = useState(true); // Default to locked for viewing
   const isNewBoardRef = useRef(false); // Track if board was just created (ref for sync updates)
   const reactFlowRef = useRef<HTMLDivElement>(null);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    nodeId?: string;
+    edgeId?: string;
+    flowPosition?: { x: number; y: number };
+    submenu?: "fill" | "border" | "borderStyle" | "opacity" | "edgeColor" | "edgeType";
+  } | null>(null);
 
   // Sync React Flow state with store
   useEffect(() => {
@@ -365,6 +376,337 @@ export function DiagramEditor() {
     );
   }, [currentBoard, addNode]);
 
+  // Add group/container node
+  const handleAddGroup = useCallback(async () => {
+    if (!currentBoard) return;
+
+    await addNode(
+      currentBoard.id,
+      "group",
+      150 + Math.random() * 100,
+      150 + Math.random() * 100,
+      300,
+      200,
+      {
+        label: "Group",
+        borderColor: selectedColor,
+        opacity: 0, // No fill by default
+      }
+    );
+  }, [currentBoard, addNode, selectedColor]);
+
+  // Context menu: handle right-click on canvas (pane)
+  const handleContextMenu = useCallback(
+    (event: MouseEvent | React.MouseEvent) => {
+      event.preventDefault();
+      if (isLocked) return;
+
+      // Get flow position from screen coordinates
+      const bounds = reactFlowRef.current?.getBoundingClientRect();
+      if (!bounds) return;
+
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        flowPosition: {
+          x: event.clientX - bounds.left,
+          y: event.clientY - bounds.top,
+        },
+      });
+    },
+    [isLocked]
+  );
+
+  // Context menu: handle right-click on node
+  const handleNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      event.preventDefault();
+      event.stopPropagation(); // Prevent pane context menu from also firing
+      if (isLocked) return;
+
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        nodeId: node.id,
+      });
+    },
+    [isLocked]
+  );
+
+  // Context menu: handle right-click on edge
+  const handleEdgeContextMenu = useCallback(
+    (event: React.MouseEvent, edge: Edge) => {
+      event.preventDefault();
+      event.stopPropagation(); // Prevent pane context menu from also firing
+      if (isLocked) return;
+
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        edgeId: edge.id,
+      });
+    },
+    [isLocked]
+  );
+
+  // Close context menu
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  // Duplicate selected nodes
+  const handleDuplicate = useCallback(async () => {
+    if (!currentBoard || selectedNodeIds.length === 0) return;
+
+    for (const nodeId of selectedNodeIds) {
+      const node = storeNodes.find((n) => n.id === nodeId);
+      if (node) {
+        await addNode(
+          currentBoard.id,
+          node.nodeType,
+          node.positionX + 30,
+          node.positionY + 30,
+          node.width,
+          node.height,
+          { ...node.data }
+        );
+      }
+    }
+    closeContextMenu();
+  }, [currentBoard, selectedNodeIds, storeNodes, addNode, closeContextMenu]);
+
+  // Bring node to front (increase z-index)
+  const handleBringToFront = useCallback(async () => {
+    if (!currentBoard || !contextMenu?.nodeId) return;
+
+    const maxZ = Math.max(...storeNodes.map((n) => n.zIndex), 0);
+    await useDiagramStore.getState().updateNode(
+      contextMenu.nodeId,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      maxZ + 1
+    );
+    closeContextMenu();
+  }, [currentBoard, contextMenu, storeNodes, closeContextMenu]);
+
+  // Send node to back (decrease z-index)
+  const handleSendToBack = useCallback(async () => {
+    if (!currentBoard || !contextMenu?.nodeId) return;
+
+    const minZ = Math.min(...storeNodes.map((n) => n.zIndex), 0);
+    await useDiagramStore.getState().updateNode(
+      contextMenu.nodeId,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      minZ - 1
+    );
+    closeContextMenu();
+  }, [currentBoard, contextMenu, storeNodes, closeContextMenu]);
+
+  // Delete selected
+  const handleDeleteSelected = useCallback(() => {
+    selectedNodeIds.forEach((id) => deleteNode(id));
+    selectedEdgeIds.forEach((id) => deleteEdge(id));
+    closeContextMenu();
+  }, [selectedNodeIds, selectedEdgeIds, deleteNode, deleteEdge, closeContextMenu]);
+
+  // Add at position (from context menu)
+  const handleAddAtPosition = useCallback(
+    async (type: "shape" | "icon" | "text" | "group", shapeType?: string, iconName?: string) => {
+      if (!currentBoard || !contextMenu?.flowPosition) return;
+
+      const { x, y } = contextMenu.flowPosition;
+
+      if (type === "shape" && shapeType) {
+        await addNode(currentBoard.id, "shape", x, y, 120, 80, {
+          label: shapeType,
+          shapeType: shapeType as NodeData["shapeType"],
+          color: selectedColor,
+          borderColor: selectedColor,
+        });
+      } else if (type === "icon" && iconName) {
+        await addNode(currentBoard.id, "icon", x, y, 80, 80, {
+          label: iconName,
+          icon: iconName,
+          color: selectedColor,
+          borderColor: selectedColor,
+        });
+      } else if (type === "text") {
+        await addNode(currentBoard.id, "text", x, y, undefined, undefined, {
+          label: "Text",
+          color: "#e5e7eb",
+        });
+      } else if (type === "group") {
+        await addNode(currentBoard.id, "group", x, y, 300, 200, {
+          label: "Group",
+          borderColor: selectedColor,
+          opacity: 0, // No fill by default
+        });
+      }
+      closeContextMenu();
+    },
+    [currentBoard, contextMenu, addNode, selectedColor, closeContextMenu]
+  );
+
+  // Change node fill/background color
+  const handleChangeNodeColor = useCallback(
+    async (color: string) => {
+      if (!contextMenu?.nodeId) return;
+      const node = storeNodes.find((n) => n.id === contextMenu.nodeId);
+      if (node) {
+        const newData = { ...node.data, color };
+        await useDiagramStore.getState().updateNode(
+          contextMenu.nodeId,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          newData
+        );
+      }
+      closeContextMenu();
+    },
+    [contextMenu, storeNodes, closeContextMenu]
+  );
+
+  // Change node border color
+  const handleChangeNodeBorderColor = useCallback(
+    async (borderColor: string) => {
+      if (!contextMenu?.nodeId) return;
+      const node = storeNodes.find((n) => n.id === contextMenu.nodeId);
+      if (node) {
+        const newData = { ...node.data, borderColor };
+        await useDiagramStore.getState().updateNode(
+          contextMenu.nodeId,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          newData
+        );
+      }
+      closeContextMenu();
+    },
+    [contextMenu, storeNodes, closeContextMenu]
+  );
+
+  // Change border style (for groups)
+  const handleChangeBorderStyle = useCallback(
+    async (borderStyle: "solid" | "dashed" | "dotted") => {
+      if (!contextMenu?.nodeId) return;
+      const node = storeNodes.find((n) => n.id === contextMenu.nodeId);
+      if (node) {
+        const newData = { ...node.data, borderStyle };
+        await useDiagramStore.getState().updateNode(
+          contextMenu.nodeId,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          newData
+        );
+      }
+      closeContextMenu();
+    },
+    [contextMenu, storeNodes, closeContextMenu]
+  );
+
+  // Change opacity (for groups)
+  const handleChangeOpacity = useCallback(
+    async (opacity: number) => {
+      if (!contextMenu?.nodeId) return;
+      const node = storeNodes.find((n) => n.id === contextMenu.nodeId);
+      if (node) {
+        // If changing from 0 opacity and no color set, use the border color
+        const color = node.data.color || node.data.borderColor || "#3b82f6";
+        const newData = { ...node.data, color, opacity };
+        await useDiagramStore.getState().updateNode(
+          contextMenu.nodeId,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          newData
+        );
+      }
+      closeContextMenu();
+    },
+    [contextMenu, storeNodes, closeContextMenu]
+  );
+
+  // Change edge color
+  const handleChangeEdgeColor = useCallback(
+    async (color: string) => {
+      if (!contextMenu?.edgeId) return;
+      const edge = storeEdges.find((e) => e.id === contextMenu.edgeId);
+      if (edge) {
+        await useDiagramStore.getState().updateEdge(
+          contextMenu.edgeId,
+          undefined,
+          undefined,
+          undefined,
+          { ...edge.data, color }
+        );
+      }
+      closeContextMenu();
+    },
+    [contextMenu, storeEdges, closeContextMenu]
+  );
+
+  // Change edge type
+  const handleChangeEdgeType = useCallback(
+    async (edgeType: "default" | "straight" | "step" | "smoothstep") => {
+      if (!contextMenu?.edgeId) return;
+      await useDiagramStore.getState().updateEdge(
+        contextMenu.edgeId,
+        undefined,
+        undefined,
+        edgeType,
+        undefined
+      );
+      closeContextMenu();
+    },
+    [contextMenu, closeContextMenu]
+  );
+
+  // Toggle edge animation
+  const handleToggleEdgeAnimation = useCallback(async () => {
+    if (!contextMenu?.edgeId) return;
+    const edge = storeEdges.find((e) => e.id === contextMenu.edgeId);
+    if (edge) {
+      await useDiagramStore.getState().updateEdge(
+        contextMenu.edgeId,
+        undefined,
+        undefined,
+        undefined,
+        { ...edge.data, animated: !edge.data?.animated }
+      );
+    }
+    closeContextMenu();
+  }, [contextMenu, storeEdges, closeContextMenu]);
+
+  // Open submenu
+  const openSubmenu = useCallback((submenu: "fill" | "border" | "borderStyle" | "opacity" | "edgeColor" | "edgeType") => {
+    setContextMenu((prev) => prev ? { ...prev, submenu } : null);
+  }, []);
+
+  // Get current node for context menu (to show current values)
+  const contextNode = contextMenu?.nodeId ? storeNodes.find((n) => n.id === contextMenu.nodeId) : null;
+  const contextEdge = contextMenu?.edgeId ? storeEdges.find((e) => e.id === contextMenu.edgeId) : null;
+
+  // Close context menu when clicking elsewhere
+  useEffect(() => {
+    const handleClick = () => closeContextMenu();
+    window.addEventListener("click", handleClick);
+    return () => window.removeEventListener("click", handleClick);
+  }, [closeContextMenu]);
+
   // Create new board
   const handleCreateBoard = useCallback(async () => {
     if (!newBoardName.trim()) return;
@@ -494,22 +836,48 @@ export function DiagramEditor() {
 
           {/* Palette Content */}
           <div className="flex-1 overflow-y-auto p-3">
+            {isLocked && (
+              <div className="text-xs text-amber-500 bg-amber-500/10 px-2 py-1.5 rounded mb-3">
+                Unlock to add elements
+              </div>
+            )}
             {activeTab === "shapes" ? (
               <div className="space-y-2">
                 {SHAPE_PALETTE.map((shape) => (
                   <button
                     key={shape.id}
                     onClick={() => handleAddShape(shape.shapeType)}
-                    className="w-full px-3 py-2 text-left text-sm text-dark-300 hover:bg-dark-700 hover:text-white rounded transition-colors"
+                    disabled={isLocked}
+                    className={`w-full px-3 py-2 text-left text-sm rounded transition-colors ${
+                      isLocked
+                        ? "text-dark-500 cursor-not-allowed"
+                        : "text-dark-300 hover:bg-dark-700 hover:text-white"
+                    }`}
                   >
                     {shape.name}
                   </button>
                 ))}
                 <button
                   onClick={handleAddText}
-                  className="w-full px-3 py-2 text-left text-sm text-dark-300 hover:bg-dark-700 hover:text-white rounded transition-colors"
+                  disabled={isLocked}
+                  className={`w-full px-3 py-2 text-left text-sm rounded transition-colors ${
+                    isLocked
+                      ? "text-dark-500 cursor-not-allowed"
+                      : "text-dark-300 hover:bg-dark-700 hover:text-white"
+                  }`}
                 >
                   Text
+                </button>
+                <button
+                  onClick={handleAddGroup}
+                  disabled={isLocked}
+                  className={`w-full px-3 py-2 text-left text-sm rounded transition-colors ${
+                    isLocked
+                      ? "text-dark-500 cursor-not-allowed"
+                      : "text-dark-300 hover:bg-dark-700 hover:text-white"
+                  }`}
+                >
+                  Group / Border
                 </button>
               </div>
             ) : (
@@ -524,7 +892,12 @@ export function DiagramEditor() {
                           <button
                             key={iconName}
                             onClick={() => handleAddIcon(iconName)}
-                            className="p-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded transition-colors"
+                            disabled={isLocked}
+                            className={`p-2 rounded transition-colors ${
+                              isLocked
+                                ? "text-dark-600 cursor-not-allowed"
+                                : "text-dark-400 hover:text-white hover:bg-dark-700"
+                            }`}
                             title={iconName}
                           >
                             <IconComponent size={20} />
@@ -549,6 +922,9 @@ export function DiagramEditor() {
               onEdgesChange={isLocked ? undefined : handleEdgesChange}
               onConnect={isLocked ? undefined : handleConnect}
               onSelectionChange={isLocked ? undefined : handleSelectionChange}
+              onPaneContextMenu={handleContextMenu}
+              onNodeContextMenu={handleNodeContextMenu}
+              onEdgeContextMenu={handleEdgeContextMenu}
               nodeTypes={nodeTypes}
               connectionMode={ConnectionMode.Loose}
               nodesDraggable={!isLocked}
@@ -653,6 +1029,417 @@ export function DiagramEditor() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Context Menu */}
+      {contextMenu && !isLocked && (
+        <div
+          className="fixed z-[100] bg-dark-800 border border-dark-600 rounded-lg shadow-xl py-1 min-w-[200px]"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Node-specific options */}
+          {contextMenu.nodeId && !contextMenu.submenu && (
+            <>
+              {/* Style options */}
+              <div className="px-3 py-1.5 text-xs text-dark-500 uppercase font-semibold">Style</div>
+              <button
+                onClick={() => openSubmenu("fill")}
+                className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center justify-between"
+              >
+                <span className="flex items-center gap-2">
+                  <Palette size={14} />
+                  Fill Color
+                </span>
+                <span className="flex items-center gap-1">
+                  <span
+                    className="w-4 h-4 rounded border border-dark-500"
+                    style={{ backgroundColor: contextNode?.data.color || "#3b82f6" }}
+                  />
+                  <ChevronRight size={12} className="text-dark-500" />
+                </span>
+              </button>
+              <button
+                onClick={() => openSubmenu("border")}
+                className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center justify-between"
+              >
+                <span className="flex items-center gap-2">
+                  <Square size={14} />
+                  Border Color
+                </span>
+                <span className="flex items-center gap-1">
+                  <span
+                    className="w-4 h-4 rounded border border-dark-500"
+                    style={{ backgroundColor: contextNode?.data.borderColor || "#3b82f6" }}
+                  />
+                  <ChevronRight size={12} className="text-dark-500" />
+                </span>
+              </button>
+              {contextNode?.nodeType === "group" && (
+                <>
+                  <button
+                    onClick={() => openSubmenu("borderStyle")}
+                    className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Minus size={14} />
+                      Border Style
+                    </span>
+                    <span className="text-xs text-dark-400 flex items-center gap-1">
+                      {contextNode?.data.borderStyle || "dashed"}
+                      <ChevronRight size={12} className="text-dark-500" />
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => openSubmenu("opacity")}
+                    className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Layers size={14} />
+                      Fill Opacity
+                    </span>
+                    <span className="text-xs text-dark-400 flex items-center gap-1">
+                      {Math.round((contextNode?.data.opacity ?? 0) * 100)}%
+                      <ChevronRight size={12} className="text-dark-500" />
+                    </span>
+                  </button>
+                </>
+              )}
+
+              <div className="border-t border-dark-600 my-1" />
+              <div className="px-3 py-1.5 text-xs text-dark-500 uppercase font-semibold">Arrange</div>
+              <button
+                onClick={handleDuplicate}
+                className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2"
+              >
+                <Copy size={14} />
+                Duplicate
+              </button>
+              <button
+                onClick={handleBringToFront}
+                className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2"
+              >
+                <ArrowUpToLine size={14} />
+                Bring to Front
+              </button>
+              <button
+                onClick={handleSendToBack}
+                className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2"
+              >
+                <ArrowDownToLine size={14} />
+                Send to Back
+              </button>
+              <div className="border-t border-dark-600 my-1" />
+              <button
+                onClick={handleDeleteSelected}
+                className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-dark-700 flex items-center gap-2"
+              >
+                <Trash2 size={14} />
+                Delete
+              </button>
+            </>
+          )}
+
+          {/* Fill color submenu */}
+          {contextMenu.nodeId && contextMenu.submenu === "fill" && (
+            <>
+              <div className="px-3 py-1.5 text-xs text-dark-500 uppercase font-semibold flex items-center gap-2">
+                <button
+                  onClick={() => setContextMenu((prev) => prev ? { ...prev, submenu: undefined } : null)}
+                  className="hover:text-white"
+                >
+                  ←
+                </button>
+                Fill Color
+              </div>
+              <div className="px-3 py-2 grid grid-cols-6 gap-1">
+                {COLOR_PALETTE.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => handleChangeNodeColor(color)}
+                    className={`w-6 h-6 rounded border ${contextNode?.data.color === color ? "ring-2 ring-white ring-offset-1 ring-offset-dark-800" : "border-dark-500 hover:border-white"}`}
+                    style={{ backgroundColor: color }}
+                    title={color}
+                  />
+                ))}
+              </div>
+              <div className="border-t border-dark-600 my-1" />
+              <button
+                onClick={() => handleChangeNodeColor("transparent")}
+                className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2"
+              >
+                <span className="w-4 h-4 rounded border border-dark-500 bg-dark-900 relative overflow-hidden">
+                  <span className="absolute inset-0 bg-gradient-to-br from-transparent via-red-500 to-transparent" style={{ transform: "rotate(45deg)", width: "200%", left: "-50%" }} />
+                </span>
+                No Fill
+              </button>
+            </>
+          )}
+
+          {/* Border color submenu */}
+          {contextMenu.nodeId && contextMenu.submenu === "border" && (
+            <>
+              <div className="px-3 py-1.5 text-xs text-dark-500 uppercase font-semibold flex items-center gap-2">
+                <button
+                  onClick={() => setContextMenu((prev) => prev ? { ...prev, submenu: undefined } : null)}
+                  className="hover:text-white"
+                >
+                  ←
+                </button>
+                Border Color
+              </div>
+              <div className="px-3 py-2 grid grid-cols-6 gap-1">
+                {COLOR_PALETTE.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => handleChangeNodeBorderColor(color)}
+                    className={`w-6 h-6 rounded border ${contextNode?.data.borderColor === color ? "ring-2 ring-white ring-offset-1 ring-offset-dark-800" : "border-dark-500 hover:border-white"}`}
+                    style={{ backgroundColor: color }}
+                    title={color}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Border style submenu */}
+          {contextMenu.nodeId && contextMenu.submenu === "borderStyle" && (
+            <>
+              <div className="px-3 py-1.5 text-xs text-dark-500 uppercase font-semibold flex items-center gap-2">
+                <button
+                  onClick={() => setContextMenu((prev) => prev ? { ...prev, submenu: undefined } : null)}
+                  className="hover:text-white"
+                >
+                  ←
+                </button>
+                Border Style
+              </div>
+              <button
+                onClick={() => handleChangeBorderStyle("solid")}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-dark-700 flex items-center gap-2 ${contextNode?.data.borderStyle === "solid" ? "text-blue-400" : "text-dark-200"}`}
+              >
+                <span className="w-8 h-0 border-t-2 border-current" style={{ borderStyle: "solid" }} />
+                Solid
+              </button>
+              <button
+                onClick={() => handleChangeBorderStyle("dashed")}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-dark-700 flex items-center gap-2 ${contextNode?.data.borderStyle === "dashed" || !contextNode?.data.borderStyle ? "text-blue-400" : "text-dark-200"}`}
+              >
+                <span className="w-8 h-0 border-t-2 border-current" style={{ borderStyle: "dashed" }} />
+                Dashed
+              </button>
+              <button
+                onClick={() => handleChangeBorderStyle("dotted")}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-dark-700 flex items-center gap-2 ${contextNode?.data.borderStyle === "dotted" ? "text-blue-400" : "text-dark-200"}`}
+              >
+                <span className="w-8 h-0 border-t-2 border-current" style={{ borderStyle: "dotted" }} />
+                Dotted
+              </button>
+            </>
+          )}
+
+          {/* Opacity submenu (for groups) */}
+          {contextMenu.nodeId && contextMenu.submenu === "opacity" && (
+            <>
+              <div className="px-3 py-1.5 text-xs text-dark-500 uppercase font-semibold flex items-center gap-2">
+                <button
+                  onClick={() => setContextMenu((prev) => prev ? { ...prev, submenu: undefined } : null)}
+                  className="hover:text-white"
+                >
+                  ←
+                </button>
+                Fill Opacity
+              </div>
+              {[0, 0.1, 0.2, 0.3, 0.5, 0.75, 1].map((opacity) => (
+                <button
+                  key={opacity}
+                  onClick={() => handleChangeOpacity(opacity)}
+                  className={`w-full px-3 py-2 text-left text-sm hover:bg-dark-700 flex items-center justify-between ${(contextNode?.data.opacity ?? 0) === opacity ? "text-blue-400" : "text-dark-200"}`}
+                >
+                  <span>{opacity === 0 ? "No Fill" : `${Math.round(opacity * 100)}%`}</span>
+                  <span
+                    className="w-6 h-4 rounded border border-dark-500"
+                    style={{
+                      backgroundColor: opacity === 0
+                        ? "transparent"
+                        : `rgba(59, 130, 246, ${opacity})`,
+                    }}
+                  />
+                </button>
+              ))}
+            </>
+          )}
+
+          {/* Edge-specific options */}
+          {contextMenu.edgeId && !contextMenu.submenu && (
+            <>
+              <div className="px-3 py-1.5 text-xs text-dark-500 uppercase font-semibold">Style</div>
+              <button
+                onClick={() => openSubmenu("edgeColor")}
+                className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center justify-between"
+              >
+                <span className="flex items-center gap-2">
+                  <Palette size={14} />
+                  Line Color
+                </span>
+                <span className="flex items-center gap-1">
+                  <span
+                    className="w-4 h-4 rounded border border-dark-500"
+                    style={{ backgroundColor: contextEdge?.data?.color || "#64748b" }}
+                  />
+                  <ChevronRight size={12} className="text-dark-500" />
+                </span>
+              </button>
+              <button
+                onClick={() => openSubmenu("edgeType")}
+                className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center justify-between"
+              >
+                <span className="flex items-center gap-2">
+                  <Type size={14} />
+                  Line Type
+                </span>
+                <span className="text-xs text-dark-400 flex items-center gap-1">
+                  {contextEdge?.edgeType || "default"}
+                  <ChevronRight size={12} className="text-dark-500" />
+                </span>
+              </button>
+              <button
+                onClick={handleToggleEdgeAnimation}
+                className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center justify-between"
+              >
+                <span className="flex items-center gap-2">
+                  <Zap size={14} />
+                  Animated
+                </span>
+                <span className={`text-xs ${contextEdge?.data?.animated ? "text-blue-400" : "text-dark-500"}`}>
+                  {contextEdge?.data?.animated ? "ON" : "OFF"}
+                </span>
+              </button>
+              <div className="border-t border-dark-600 my-1" />
+              <button
+                onClick={() => {
+                  deleteEdge(contextMenu.edgeId!);
+                  closeContextMenu();
+                }}
+                className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-dark-700 flex items-center gap-2"
+              >
+                <Trash2 size={14} />
+                Delete Connection
+              </button>
+            </>
+          )}
+
+          {/* Edge color submenu */}
+          {contextMenu.edgeId && contextMenu.submenu === "edgeColor" && (
+            <>
+              <div className="px-3 py-1.5 text-xs text-dark-500 uppercase font-semibold flex items-center gap-2">
+                <button
+                  onClick={() => setContextMenu((prev) => prev ? { ...prev, submenu: undefined } : null)}
+                  className="hover:text-white"
+                >
+                  ←
+                </button>
+                Line Color
+              </div>
+              <div className="px-3 py-2 grid grid-cols-6 gap-1">
+                {COLOR_PALETTE.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => handleChangeEdgeColor(color)}
+                    className={`w-6 h-6 rounded border ${contextEdge?.data?.color === color ? "ring-2 ring-white ring-offset-1 ring-offset-dark-800" : "border-dark-500 hover:border-white"}`}
+                    style={{ backgroundColor: color }}
+                    title={color}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Edge type submenu */}
+          {contextMenu.edgeId && contextMenu.submenu === "edgeType" && (
+            <>
+              <div className="px-3 py-1.5 text-xs text-dark-500 uppercase font-semibold flex items-center gap-2">
+                <button
+                  onClick={() => setContextMenu((prev) => prev ? { ...prev, submenu: undefined } : null)}
+                  className="hover:text-white"
+                >
+                  ←
+                </button>
+                Line Type
+              </div>
+              <button
+                onClick={() => handleChangeEdgeType("default")}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-dark-700 ${contextEdge?.edgeType === "default" ? "text-blue-400" : "text-dark-200"}`}
+              >
+                Bezier (Default)
+              </button>
+              <button
+                onClick={() => handleChangeEdgeType("straight")}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-dark-700 ${contextEdge?.edgeType === "straight" ? "text-blue-400" : "text-dark-200"}`}
+              >
+                Straight
+              </button>
+              <button
+                onClick={() => handleChangeEdgeType("step")}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-dark-700 ${contextEdge?.edgeType === "step" ? "text-blue-400" : "text-dark-200"}`}
+              >
+                Step
+              </button>
+              <button
+                onClick={() => handleChangeEdgeType("smoothstep")}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-dark-700 ${contextEdge?.edgeType === "smoothstep" ? "text-blue-400" : "text-dark-200"}`}
+              >
+                Smooth Step
+              </button>
+            </>
+          )}
+
+          {/* Canvas options (add new elements) */}
+          {!contextMenu.nodeId && !contextMenu.edgeId && contextMenu.flowPosition && (
+            <>
+              <div className="px-3 py-1.5 text-xs text-dark-500 uppercase font-semibold">Add Element</div>
+              <button
+                onClick={() => handleAddAtPosition("shape", "rectangle")}
+                className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2"
+              >
+                <Square size={14} />
+                Rectangle
+              </button>
+              <button
+                onClick={() => handleAddAtPosition("shape", "circle")}
+                className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2"
+              >
+                <CircleIcon size={14} />
+                Circle
+              </button>
+              <button
+                onClick={() => handleAddAtPosition("shape", "diamond")}
+                className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2"
+              >
+                <Plus size={14} />
+                Diamond
+              </button>
+              <button
+                onClick={() => handleAddAtPosition("text")}
+                className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2"
+              >
+                <Type size={14} />
+                Text
+              </button>
+              <div className="border-t border-dark-600 my-1" />
+              <button
+                onClick={() => handleAddAtPosition("group")}
+                className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2"
+              >
+                <Layers size={14} />
+                Group / Border
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
