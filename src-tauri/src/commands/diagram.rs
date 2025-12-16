@@ -369,6 +369,7 @@ pub fn diagram_delete_board(app: AppHandle, board_id: String) -> Result<(), Stri
 
 /// Add a node to a diagram
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn diagram_add_node(
     app: AppHandle,
     board_id: String,
@@ -577,8 +578,7 @@ pub fn diagram_add_edge(
     let now = chrono::Utc::now().timestamp();
     let data_json = data
         .as_ref()
-        .map(|d| serde_json::to_string(d).ok())
-        .flatten();
+        .and_then(|d| serde_json::to_string(d).ok());
 
     with_db(&app, |conn| {
         // Verify both nodes exist and belong to this board
@@ -651,6 +651,7 @@ pub fn diagram_update_edge(
 
     with_db(&app, |conn| {
         // Get current edge
+        #[allow(clippy::type_complexity)]
         let (board_id, source_node_id, target_node_id, curr_source_handle, curr_target_handle, curr_edge_type, curr_data_json, created_at):
             (String, String, String, Option<String>, Option<String>, String, Option<String>, i64) = conn
             .query_row(
@@ -666,7 +667,7 @@ pub fn diagram_update_edge(
         let new_data = data.or_else(|| {
             curr_data_json.and_then(|s| serde_json::from_str(&s).ok())
         });
-        let new_data_json = new_data.as_ref().map(|d| serde_json::to_string(d).ok()).flatten();
+        let new_data_json = new_data.as_ref().and_then(|d| serde_json::to_string(d).ok());
 
         conn.execute(
             "UPDATE diagram_edges SET source_handle = ?1, target_handle = ?2, edge_type = ?3, data = ?4, updated_at = ?5 WHERE id = ?6",
