@@ -758,10 +758,6 @@ export function KanbanBoard() {
             />
           )}
 
-          {currentBoard && (
-            <span className="text-sm text-dark-300 font-medium">{currentBoard.name}</span>
-          )}
-
           <div className="flex-1" />
 
           {/* Members button */}

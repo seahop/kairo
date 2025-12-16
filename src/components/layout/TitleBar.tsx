@@ -226,8 +226,8 @@ export function TitleBar() {
   const toolsMenuItems: DropdownItem[] = [
     { label: "Git: Pull", shortcut: "Ctrl+Shift+P", onClick: () => window.dispatchEvent(new CustomEvent("kairo:git-pull")) },
     { label: "Git: Commit", shortcut: "Ctrl+Shift+C", onClick: () => window.dispatchEvent(new CustomEvent("kairo:git-commit")) },
-    { label: "Git: Push", shortcut: "Ctrl+Shift+U", onClick: () => window.dispatchEvent(new CustomEvent("kairo:git-push")), divider: true },
-    { label: "Kanban Boards", shortcut: "Ctrl+Shift+K", onClick: () => window.dispatchEvent(new CustomEvent("kairo:kanban")) },
+    { label: "Git: Push", shortcut: "Ctrl+Shift+U", onClick: () => window.dispatchEvent(new CustomEvent("kairo:git-push")) },
+    { label: "Kanban Boards", shortcut: "Ctrl+Shift+K", onClick: () => window.dispatchEvent(new CustomEvent("kairo:kanban")), divider: true },
     { label: "Diagram Editor", shortcut: "Ctrl+Shift+D", onClick: () => window.dispatchEvent(new CustomEvent("kairo:diagram")), divider: true },
     { label: "Templates", onClick: () => window.dispatchEvent(new CustomEvent("kairo:templates")) },
     { label: "Snippets", onClick: () => window.dispatchEvent(new CustomEvent("kairo:snippets")) },
