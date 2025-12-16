@@ -224,7 +224,7 @@ fn fetch_linked_notes(conn: &rusqlite::Connection, board_id: &str) -> Vec<Linked
          FROM diagram_board_notes dbn
          JOIN notes n ON dbn.note_id = n.id
          WHERE dbn.board_id = ?1
-         ORDER BY dbn.created_at"
+         ORDER BY dbn.created_at",
     ) {
         Ok(stmt) => stmt,
         Err(_) => return Vec::new(),
@@ -707,8 +707,8 @@ pub fn diagram_remove_all_note_links(
         .map_err(|e| e.to_string())?;
 
         // Fetch and return updated board
-        let (name, description, viewport_json, created_at): (String, Option<String>, String, i64) = conn
-            .query_row(
+        let (name, description, viewport_json, created_at): (String, Option<String>, String, i64) =
+            conn.query_row(
                 "SELECT name, description, viewport, created_at FROM diagram_boards WHERE id = ?1",
                 params![board_id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
