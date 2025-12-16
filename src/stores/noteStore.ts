@@ -31,6 +31,11 @@ interface NoteState {
   // Local editor content (for tracking changes)
   editorContent: string;
 
+  // Navigation history
+  navigationHistory: string[]; // Stack of note paths
+  navigationIndex: number; // Current position in history (-1 means no history)
+  isNavigating: boolean; // Flag to prevent adding to history during back/forward
+
   // Secondary pane support (for preview/split view)
   secondaryNote: Note | null;
   secondaryEditorContent: string;
@@ -41,6 +46,7 @@ interface NoteState {
   loadNotes: () => Promise<void>;
   openNote: (path: string) => Promise<void>;
   openNoteByReference: (reference: string) => Promise<boolean>;
+  openNoteByReferenceInSecondary: (reference: string) => Promise<boolean>;
   resolveNoteReference: (reference: string) => NoteMetadata | null;
   saveNote: () => Promise<void>;
   createNote: (path: string, content?: string) => Promise<void>;
@@ -51,6 +57,12 @@ interface NoteState {
   setEditorContent: (content: string) => void;
   closeNote: () => void;
   openDailyNote: () => Promise<void>;
+
+  // Navigation actions
+  goBack: () => Promise<void>;
+  goForward: () => Promise<void>;
+  canGoBack: () => boolean;
+  canGoForward: () => boolean;
 
   // Secondary pane actions
   openNoteInSecondary: (path: string) => Promise<void>;
@@ -68,6 +80,11 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   error: null,
   hasUnsavedChanges: false,
   editorContent: "",
+
+  // Navigation history state
+  navigationHistory: [],
+  navigationIndex: -1,
+  isNavigating: false,
 
   // Secondary pane state
   secondaryNote: null,
@@ -88,19 +105,47 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   openNote: async (path: string) => {
     // Internal function to actually open the note
     const doOpenNote = async () => {
+      const { isNavigating, navigationHistory, navigationIndex, currentNote: prevNote } = get();
+
       set({ isLoading: true, error: null });
       try {
         const note = await invoke<Note>("read_note", { path });
+
+        // Update navigation history (only if not navigating via back/forward)
+        let newHistory = navigationHistory;
+        let newIndex = navigationIndex;
+
+        if (!isNavigating && prevNote && prevNote.path !== path) {
+          // Trim any forward history when navigating to a new note
+          newHistory = navigationHistory.slice(0, navigationIndex + 1);
+          // Add the new path to history
+          newHistory.push(path);
+          newIndex = newHistory.length - 1;
+
+          // Limit history size to prevent memory issues
+          if (newHistory.length > 50) {
+            newHistory = newHistory.slice(-50);
+            newIndex = newHistory.length - 1;
+          }
+        } else if (!isNavigating && !prevNote) {
+          // First note opened - start history
+          newHistory = [path];
+          newIndex = 0;
+        }
+
         set({
           currentNote: note,
           editorContent: note.content,
           hasUnsavedChanges: false,
           isLoading: false,
+          isNavigating: false,
+          navigationHistory: newHistory,
+          navigationIndex: newIndex,
         });
         // Trigger hook for extensions
         triggerHook("onNoteOpen", { note, path });
       } catch (error) {
-        set({ error: String(error), isLoading: false });
+        set({ error: String(error), isLoading: false, isNavigating: false });
       }
     };
 
@@ -165,6 +210,17 @@ export const useNoteStore = create<NoteState>((set, get) => ({
       return true;
     }
     console.warn(`Could not resolve note reference: ${reference}`);
+    return false;
+  },
+
+  // Open a note by wiki-style reference in the secondary pane
+  openNoteByReferenceInSecondary: async (reference: string): Promise<boolean> => {
+    const resolved = get().resolveNoteReference(reference);
+    if (resolved) {
+      await get().openNoteInSecondary(resolved.path);
+      return true;
+    }
+    console.warn(`Could not resolve note reference for secondary pane: ${reference}`);
     return false;
   },
 
@@ -430,5 +486,70 @@ export const useNoteStore = create<NoteState>((set, get) => ({
       secondaryEditorContent: editorContent,
       hasSecondaryUnsavedChanges: hasUnsavedChanges,
     });
+  },
+
+  // Navigation actions
+  canGoBack: () => {
+    const { navigationIndex } = get();
+    return navigationIndex > 0;
+  },
+
+  canGoForward: () => {
+    const { navigationHistory, navigationIndex } = get();
+    return navigationIndex < navigationHistory.length - 1;
+  },
+
+  goBack: async () => {
+    const { navigationHistory, navigationIndex, hasUnsavedChanges, currentNote } = get();
+
+    if (navigationIndex <= 0) return;
+
+    const previousPath = navigationHistory[navigationIndex - 1];
+
+    // Handle unsaved changes
+    if (hasUnsavedChanges && currentNote) {
+      useUIStore.getState().showConfirmDialog({
+        title: "Unsaved Changes",
+        message: `You have unsaved changes in "${currentNote.title}". Do you want to discard them?`,
+        confirmText: "Discard",
+        cancelText: "Cancel",
+        variant: "warning",
+        onConfirm: async () => {
+          set({ isNavigating: true, navigationIndex: navigationIndex - 1 });
+          await get().openNote(previousPath);
+        },
+      });
+      return;
+    }
+
+    set({ isNavigating: true, navigationIndex: navigationIndex - 1 });
+    await get().openNote(previousPath);
+  },
+
+  goForward: async () => {
+    const { navigationHistory, navigationIndex, hasUnsavedChanges, currentNote } = get();
+
+    if (navigationIndex >= navigationHistory.length - 1) return;
+
+    const nextPath = navigationHistory[navigationIndex + 1];
+
+    // Handle unsaved changes
+    if (hasUnsavedChanges && currentNote) {
+      useUIStore.getState().showConfirmDialog({
+        title: "Unsaved Changes",
+        message: `You have unsaved changes in "${currentNote.title}". Do you want to discard them?`,
+        confirmText: "Discard",
+        cancelText: "Cancel",
+        variant: "warning",
+        onConfirm: async () => {
+          set({ isNavigating: true, navigationIndex: navigationIndex + 1 });
+          await get().openNote(nextPath);
+        },
+      });
+      return;
+    }
+
+    set({ isNavigating: true, navigationIndex: navigationIndex + 1 });
+    await get().openNote(nextPath);
   },
 }));

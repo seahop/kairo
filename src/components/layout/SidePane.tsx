@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useUIStore } from "@/stores/uiStore";
 import { useKanbanStore, KanbanCard } from "@/plugins/builtin/kanban/store";
+import { useNoteStore, Note } from "@/stores/noteStore";
 import { invoke } from "@tauri-apps/api/core";
+import { PreviewPane } from "@/components/editor/PreviewPane";
 
 // Close icon
 const CloseIcon = () => (
@@ -14,6 +16,13 @@ const CloseIcon = () => (
 const CardIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+  </svg>
+);
+
+// Note icon
+const NoteIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
   </svg>
 );
 
@@ -133,6 +142,72 @@ function CardDetailContent({ cardId, boardId }: { cardId: string; boardId: strin
   );
 }
 
+// Note detail content component
+function NoteDetailContent({ notePath }: { notePath: string }) {
+  const [note, setNote] = useState<Note | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { openNote } = useNoteStore();
+  const { closeSidePane } = useUIStore();
+
+  useEffect(() => {
+    const loadNote = async () => {
+      setLoading(true);
+      try {
+        const noteData = await invoke<Note>("read_note", { path: notePath });
+        setNote(noteData);
+      } catch (error) {
+        console.error("Failed to load note:", error);
+      }
+      setLoading(false);
+    };
+
+    loadNote();
+  }, [notePath]);
+
+  const handleOpenInMain = () => {
+    openNote(notePath);
+    closeSidePane();
+  };
+
+  if (loading) {
+    return (
+      <div className="p-4 text-dark-400 text-center">
+        Loading note...
+      </div>
+    );
+  }
+
+  if (!note) {
+    return (
+      <div className="p-4 text-dark-400 text-center">
+        Note not found
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Note header with open button */}
+      <div className="px-4 py-2 border-b border-dark-700 flex items-center justify-between">
+        <span className="text-xs text-dark-500 truncate flex-1" title={notePath}>
+          {notePath}
+        </span>
+        <button
+          onClick={handleOpenInMain}
+          className="text-xs text-accent-primary hover:text-accent-secondary ml-2"
+        >
+          Open
+        </button>
+      </div>
+
+      {/* Note content - rendered as preview */}
+      <div className="flex-1 overflow-auto">
+        <PreviewPane content={note.content} />
+      </div>
+    </div>
+  );
+}
+
 export function SidePane() {
   const { sidePaneContent, closeSidePane } = useUIStore();
 
@@ -146,6 +221,8 @@ export function SidePane() {
         return "Backlinks";
       case "outline":
         return "Outline";
+      case "note":
+        return "Note Preview";
       default:
         return "Details";
     }
@@ -155,6 +232,8 @@ export function SidePane() {
     switch (sidePaneContent.type) {
       case "card":
         return <CardIcon />;
+      case "note":
+        return <NoteIcon />;
       default:
         return null;
     }
@@ -168,6 +247,10 @@ export function SidePane() {
             cardId={sidePaneContent.cardId}
             boardId={sidePaneContent.boardId}
           />
+        );
+      case "note":
+        return (
+          <NoteDetailContent notePath={sidePaneContent.notePath} />
         );
       case "backlinks":
         return (

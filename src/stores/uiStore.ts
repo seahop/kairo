@@ -18,6 +18,7 @@ export type SidePaneContent =
   | { type: 'card'; cardId: string; boardId: string }
   | { type: 'backlinks'; noteId: string }
   | { type: 'outline'; noteId: string }
+  | { type: 'note'; notePath: string }
   | null;
 
 interface UIState {

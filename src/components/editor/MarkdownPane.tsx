@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, ViewPlugin, ViewUpdate } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, undo, redo } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { syntaxHighlighting, HighlightStyle, bracketMatching } from "@codemirror/language";
@@ -303,6 +303,29 @@ export function MarkdownPane() {
       }
     }
   }, [currentNote?.content]);
+
+  // Listen for undo/redo events from toolbar
+  useEffect(() => {
+    const handleUndo = () => {
+      if (viewRef.current) {
+        undo(viewRef.current);
+      }
+    };
+
+    const handleRedo = () => {
+      if (viewRef.current) {
+        redo(viewRef.current);
+      }
+    };
+
+    window.addEventListener("editor:undo", handleUndo);
+    window.addEventListener("editor:redo", handleRedo);
+
+    return () => {
+      window.removeEventListener("editor:undo", handleUndo);
+      window.removeEventListener("editor:redo", handleRedo);
+    };
+  }, []);
 
   return (
     <div className="h-full overflow-hidden">

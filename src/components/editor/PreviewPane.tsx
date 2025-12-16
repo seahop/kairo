@@ -284,6 +284,17 @@ export function PreviewPane({ content }: PreviewPaneProps) {
     [showContextMenu, handleCardLinkClick, openCardInPane, copyLink]
   );
 
+  // Open note in side pane
+  const openNoteInPane = useCallback(
+    (reference: string) => {
+      const resolved = resolveNoteReference(reference);
+      if (resolved) {
+        openSidePane({ type: 'note', notePath: resolved.path });
+      }
+    },
+    [resolveNoteReference, openSidePane]
+  );
+
   // Context menu for wiki links
   const handleWikiContextMenu = useCallback(
     (e: React.MouseEvent, reference: string) => {
@@ -294,6 +305,11 @@ export function PreviewPane({ content }: PreviewPaneProps) {
           onClick: () => handleWikiLinkClick(e, reference),
         },
         {
+          label: "Open in Side Pane",
+          icon: "📄",
+          onClick: () => openNoteInPane(reference),
+        },
+        {
           label: "Copy Link",
           icon: "📋",
           onClick: () => copyLink("wiki", reference),
@@ -301,7 +317,7 @@ export function PreviewPane({ content }: PreviewPaneProps) {
         },
       ]);
     },
-    [showContextMenu, handleWikiLinkClick, copyLink]
+    [showContextMenu, handleWikiLinkClick, openNoteInPane, copyLink]
   );
 
   // Context menu for external links

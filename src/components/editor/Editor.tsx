@@ -32,6 +32,31 @@ const ImageIcon = () => (
   </svg>
 );
 
+// Navigation icons
+const BackIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+  </svg>
+);
+
+const ForwardIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+  </svg>
+);
+
+const UndoIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+  </svg>
+);
+
+const RedoIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
+  </svg>
+);
+
 interface ContextMenuProps {
   x: number;
   y: number;
@@ -145,22 +170,37 @@ function ContextMenu({ x, y, onClose, currentMode, onSetMode }: ContextMenuProps
 }
 
 export function Editor() {
-  const { saveNote, hasUnsavedChanges } = useNoteStore();
+  const { saveNote, hasUnsavedChanges, goBack, goForward, canGoBack, canGoForward } = useNoteStore();
   const { editorViewMode, setEditorViewMode, editorSplitRatio, setEditorSplitRatio } = useUIStore();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [showImageUpload, setShowImageUpload] = useState(false);
 
-  // Keyboard shortcut for save
+  // Check navigation state
+  const canNavigateBack = canGoBack();
+  const canNavigateForward = canGoForward();
+
+  // Keyboard shortcuts
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      // Save: Ctrl/Cmd + S
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         if (hasUnsavedChanges) {
           saveNote();
         }
       }
+      // Navigate back: Alt + Left Arrow
+      if (e.altKey && e.key === "ArrowLeft") {
+        e.preventDefault();
+        goBack();
+      }
+      // Navigate forward: Alt + Right Arrow
+      if (e.altKey && e.key === "ArrowRight") {
+        e.preventDefault();
+        goForward();
+      }
     },
-    [saveNote, hasUnsavedChanges]
+    [saveNote, hasUnsavedChanges, goBack, goForward]
   );
 
   useEffect(() => {
@@ -206,7 +246,59 @@ export function Editor() {
     <div className="h-full flex flex-col">
       {/* Toolbar */}
       <div className="px-4 py-2 border-b border-dark-800 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Navigation buttons */}
+          <div className="flex items-center gap-0.5 mr-2">
+            <button
+              className={`btn-icon p-1.5 rounded ${
+                canNavigateBack
+                  ? "text-dark-400 hover:text-dark-200 hover:bg-dark-800"
+                  : "text-dark-600 cursor-not-allowed"
+              }`}
+              onClick={goBack}
+              disabled={!canNavigateBack}
+              title="Go back (Alt+Left)"
+            >
+              <BackIcon />
+            </button>
+            <button
+              className={`btn-icon p-1.5 rounded ${
+                canNavigateForward
+                  ? "text-dark-400 hover:text-dark-200 hover:bg-dark-800"
+                  : "text-dark-600 cursor-not-allowed"
+              }`}
+              onClick={goForward}
+              disabled={!canNavigateForward}
+              title="Go forward (Alt+Right)"
+            >
+              <ForwardIcon />
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div className="w-px h-4 bg-dark-700 mr-2" />
+
+          {/* Undo/Redo buttons */}
+          <div className="flex items-center gap-0.5 mr-2">
+            <button
+              className="btn-icon p-1.5 rounded text-dark-400 hover:text-dark-200 hover:bg-dark-800"
+              onClick={() => window.dispatchEvent(new CustomEvent("editor:undo"))}
+              title="Undo (Ctrl+Z)"
+            >
+              <UndoIcon />
+            </button>
+            <button
+              className="btn-icon p-1.5 rounded text-dark-400 hover:text-dark-200 hover:bg-dark-800"
+              onClick={() => window.dispatchEvent(new CustomEvent("editor:redo"))}
+              title="Redo (Ctrl+Y)"
+            >
+              <RedoIcon />
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div className="w-px h-4 bg-dark-700 mr-2" />
+
           <div className="text-xs text-dark-500">
             {editorViewMode === "editor" && "Editor"}
             {editorViewMode === "preview" && "Preview"}
