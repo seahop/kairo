@@ -35,6 +35,10 @@ export default defineConfig(async () => ({
           'vendor-codemirror-langs': ['@codemirror/language-data'],
           // Graph visualization (heavy)
           'vendor-graph': ['react-force-graph-2d', 'd3-force'],
+          // Diagram editor (React Flow)
+          'vendor-diagram': ['@xyflow/react', 'html-to-image'],
+          // Icon library
+          'vendor-icons': ['lucide-react'],
           // Markdown rendering
           'vendor-markdown': ['react-markdown', 'rehype-highlight', 'rehype-raw', 'remark-gfm'],
           // Tauri API

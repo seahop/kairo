@@ -167,6 +167,51 @@ pub fn init_schema(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> 
 
         CREATE INDEX IF NOT EXISTS idx_card_backlinks_card ON card_backlinks(card_id);
         CREATE INDEX IF NOT EXISTS idx_card_backlinks_source ON card_backlinks(source_id);
+
+        -- Diagram boards (draw.io-style diagramming)
+        CREATE TABLE IF NOT EXISTS diagram_boards (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            viewport TEXT NOT NULL DEFAULT '{"x":0,"y":0,"zoom":1}',
+            created_at INTEGER NOT NULL,
+            modified_at INTEGER NOT NULL
+        );
+
+        -- Diagram nodes (shapes, icons, text blocks)
+        CREATE TABLE IF NOT EXISTS diagram_nodes (
+            id TEXT PRIMARY KEY,
+            board_id TEXT NOT NULL REFERENCES diagram_boards(id) ON DELETE CASCADE,
+            node_type TEXT NOT NULL,  -- 'shape', 'icon', 'text', 'group'
+            position_x REAL NOT NULL,
+            position_y REAL NOT NULL,
+            width REAL,
+            height REAL,
+            data TEXT NOT NULL,  -- JSON: { label, shapeType, icon, color, borderColor, fontSize }
+            z_index INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_diagram_nodes_board ON diagram_nodes(board_id);
+
+        -- Diagram edges (connections between nodes)
+        CREATE TABLE IF NOT EXISTS diagram_edges (
+            id TEXT PRIMARY KEY,
+            board_id TEXT NOT NULL REFERENCES diagram_boards(id) ON DELETE CASCADE,
+            source_node_id TEXT NOT NULL REFERENCES diagram_nodes(id) ON DELETE CASCADE,
+            target_node_id TEXT NOT NULL REFERENCES diagram_nodes(id) ON DELETE CASCADE,
+            source_handle TEXT,  -- 'top', 'right', 'bottom', 'left'
+            target_handle TEXT,
+            edge_type TEXT NOT NULL DEFAULT 'default',  -- 'default', 'straight', 'step', 'smoothstep'
+            data TEXT,  -- JSON: { label, color, animated, arrowType }
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_diagram_edges_board ON diagram_edges(board_id);
+        CREATE INDEX IF NOT EXISTS idx_diagram_edges_source ON diagram_edges(source_node_id);
+        CREATE INDEX IF NOT EXISTS idx_diagram_edges_target ON diagram_edges(target_node_id);
         "#,
     )?;
 

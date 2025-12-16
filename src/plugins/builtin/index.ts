@@ -2,6 +2,7 @@
 
 import { initGitPlugin } from "./git";
 import { initKanbanPlugin } from "./kanban";
+import { initDiagramPlugin } from "./diagram";
 import { initDailyNotesPlugin } from "./daily-notes";
 import { initTemplatesPlugin } from "./templates";
 import { initSnippetsPlugin } from "./snippets";
@@ -11,6 +12,7 @@ export function initBuiltinPlugins() {
   // Initialize all built-in plugins
   initGitPlugin();
   initKanbanPlugin();
+  initDiagramPlugin();
   initDailyNotesPlugin();
   initTemplatesPlugin();
   initSnippetsPlugin();
@@ -22,6 +24,7 @@ export function initBuiltinPlugins() {
 // Re-export plugin components
 export { GitStatusBar, GitModal, useGitStore } from "./git";
 export { KanbanBoard, KanbanSidebar, useKanbanStore } from "./kanban";
+export { DiagramEditor, DiagramSidebar, useDiagramStore } from "./diagram";
 export { TemplateModal, useTemplateStore } from "./templates";
 export { SnippetModal, useSnippetStore } from "./snippets";
 export { GraphView, GraphViewPanel, useGraphStore } from "./graph";

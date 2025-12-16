@@ -24,10 +24,12 @@ import {
   initBuiltinPlugins,
   GitModal,
   KanbanBoard,
+  DiagramEditor,
   TemplateModal,
   SnippetModal,
   useGitStore,
   useKanbanStore,
+  useDiagramStore,
   useTemplateStore,
   useSnippetStore,
   useGraphStore,
@@ -51,6 +53,7 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
     { key: "Ctrl+Shift+G", action: "Graph View" },
     { key: "Ctrl+G", action: "Local Graph" },
     { key: "Ctrl+Shift+K", action: "Kanban Board" },
+    { key: "Ctrl+Shift+D", action: "Diagram Editor" },
     { key: "Ctrl+Shift+P", action: "Git Pull" },
     { key: "Ctrl+Shift+C", action: "Git Commit" },
     { key: "Ctrl+Shift+U", action: "Git Push" },
@@ -129,6 +132,7 @@ function App() {
   // Plugin states (used by plugin modals)
   const gitStore = useGitStore();
   const kanbanStore = useKanbanStore();
+  const diagramStore = useDiagramStore();
   const templateStore = useTemplateStore();
   const snippetStore = useSnippetStore();
   const graphStore = useGraphStore();
@@ -217,6 +221,7 @@ function App() {
     "kairo:toggle-sidebar": () => toggleSidebar(),
     "kairo:toggle-preview": () => cycleEditorViewMode(),
     "kairo:kanban": () => kanbanStore.toggleView(),
+    "kairo:diagram": () => diagramStore.toggleView(),
     "kairo:git-pull": () => gitStore.pull(),
     "kairo:git-commit": () => gitStore.openCommitModal(),
     "kairo:git-push": () => gitStore.push(),
@@ -379,6 +384,7 @@ function App() {
       {/* Plugin modals */}
       <GitModal />
       <KanbanBoard />
+      <DiagramEditor />
       <TemplateModal />
       <SnippetModal />
       <CreateNoteModal />
