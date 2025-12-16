@@ -110,6 +110,10 @@ pub fn run() {
             commands::diagram::diagram_add_edge,
             commands::diagram::diagram_update_edge,
             commands::diagram::diagram_delete_edge,
+            commands::diagram::diagram_link_note,
+            commands::diagram::diagram_add_note_link,
+            commands::diagram::diagram_remove_note_link,
+            commands::diagram::diagram_remove_all_note_links,
             // Plugin data commands
             commands::plugin::read_plugin_data,
             commands::plugin::write_plugin_data,

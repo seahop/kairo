@@ -7,6 +7,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useNoteStore } from "@/stores/noteStore";
 import { useUIStore } from "@/stores/uiStore";
 import { useKanbanStore } from "@/plugins/builtin/kanban/store";
+import { useDiagramStore } from "@/plugins/builtin/diagram/store";
 import { LinkContextMenu, useContextMenu } from "@/components/common/LinkContextMenu";
 
 // Icon for external links
@@ -17,7 +18,7 @@ const ExternalLinkIcon = () => (
 );
 
 // Transform wiki-style links [[note]] and [[note|display]] to markdown links
-// Also transforms card links [[card:title]] and [[card:title|display]]
+// Also transforms card/kanban links and diagram links
 function preprocessWikiLinks(content: string): string {
   // First, handle card links: [[card:title]] or [[card:board/title]] or [[card:title|display]]
   let processed = content.replace(
@@ -26,6 +27,35 @@ function preprocessWikiLinks(content: string): string {
       const displayText = display || cardRef;
       // Use hash-based URL to avoid protocol sanitization in react-markdown v9
       return `[${displayText}](#cardlink:${encodeURIComponent(cardRef)})`;
+    }
+  );
+
+  // Handle kanban links (alias for card links): [[kanban:board/title]] or [[kanban:board/title|display]]
+  processed = processed.replace(
+    /\[\[kanban:([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+    (_, cardRef, display) => {
+      const displayText = display || cardRef;
+      // Use same cardlink hash - they're equivalent
+      return `[${displayText}](#cardlink:${encodeURIComponent(cardRef)})`;
+    }
+  );
+
+  // Handle diagram links: [[diagram:name]] or [[diagram:name|display]]
+  processed = processed.replace(
+    /\[\[diagram:([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+    (_, diagramRef, display) => {
+      const displayText = display || diagramRef;
+      return `[${displayText}](#diagramlink:${encodeURIComponent(diagramRef)})`;
+    }
+  );
+
+  // Handle note links: [[note:title]] or [[note:title|display]]
+  // This extracts just the title part and converts to a regular wikilink
+  processed = processed.replace(
+    /\[\[note:([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+    (_, noteRef, display) => {
+      const displayText = display || noteRef;
+      return `[${displayText}](#wikilink:${encodeURIComponent(noteRef)})`;
     }
   );
 
@@ -57,14 +87,25 @@ interface KanbanCardResult {
 export function PreviewPane({ content }: PreviewPaneProps) {
   const { editorContent, openNoteByReference, resolveNoteReference } = useNoteStore();
   const { loadBoard } = useKanbanStore();
+  const { boards: diagramBoards, loadBoards: loadDiagramBoards, loadBoard: loadDiagramBoard, setShowView: setDiagramShowView } = useDiagramStore();
   const { openSidePane } = useUIStore();
   const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
   const [vaultPath, setVaultPath] = useState<string | null>(null);
+
+  // Use provided content or fall back to store's editorContent
+  const displayContent = content ?? editorContent;
 
   // Fetch vault path for resolving relative image paths
   useEffect(() => {
     invoke<string | null>("get_vault_path").then(setVaultPath).catch(console.error);
   }, []);
+
+  // Load diagram boards if content contains diagram links
+  useEffect(() => {
+    if (displayContent.includes("[[diagram:")) {
+      loadDiagramBoards();
+    }
+  }, [displayContent, loadDiagramBoards]);
 
   // Resolve relative paths to absolute file URLs
   const resolveImagePath = useCallback(
@@ -83,9 +124,6 @@ export function PreviewPane({ content }: PreviewPaneProps) {
     },
     [vaultPath]
   );
-
-  // Use provided content or fall back to store's editorContent
-  const displayContent = content ?? editorContent;
 
   // Preprocess content to convert wiki links
   const processedContent = useMemo(() => {
@@ -152,6 +190,32 @@ export function PreviewPane({ content }: PreviewPaneProps) {
       }
     },
     [loadBoard]
+  );
+
+  // Handle diagram link clicks
+  const handleDiagramLinkClick = useCallback(
+    async (e: React.MouseEvent, reference: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      try {
+        // Find diagram by name (case-insensitive)
+        const diagram = diagramBoards.find(
+          (d) => d.name.toLowerCase() === reference.toLowerCase()
+        );
+
+        if (diagram) {
+          // Load and open the diagram
+          await loadDiagramBoard(diagram.id);
+          setDiagramShowView(true);
+        } else {
+          console.warn(`Diagram not found: ${reference}`);
+        }
+      } catch (err) {
+        console.error(`Error navigating to diagram:`, err);
+      }
+    },
+    [diagramBoards, loadDiagramBoard, setDiagramShowView]
   );
 
   // Open card in side pane without navigating to kanban view
@@ -284,7 +348,7 @@ export function PreviewPane({ content }: PreviewPaneProps) {
           rehypePlugins={[rehypeRaw]}
           urlTransform={(url) => {
             // Keep our hash-based custom links unchanged
-            if (url.startsWith("#cardlink:") || url.startsWith("#wikilink:")) {
+            if (url.startsWith("#cardlink:") || url.startsWith("#wikilink:") || url.startsWith("#diagramlink:")) {
               return url;
             }
             return url;
@@ -332,6 +396,36 @@ export function PreviewPane({ content }: PreviewPaneProps) {
                     {...props}
                   >
                     <span className="mr-1">🎯</span>
+                    {children}
+                  </a>
+                );
+              }
+
+              // Check if it's a diagram link (hash-based URL)
+              if (href?.startsWith("#diagramlink:")) {
+                const reference = decodeURIComponent(href.slice(13)); // "#diagramlink:" is 13 chars
+                const diagram = diagramBoards.find(
+                  (d) => d.name.toLowerCase() === reference.toLowerCase()
+                );
+                const exists = diagram !== undefined;
+
+                return (
+                  <a
+                    href="#"
+                    data-diagram-link={reference}
+                    onClick={(e) => handleDiagramLinkClick(e, reference)}
+                    className={`
+                      cursor-pointer transition-colors
+                      ${exists
+                        ? "text-purple-400 hover:text-purple-300 underline decoration-dotted"
+                        : "text-red-400 hover:text-red-300 line-through opacity-70"
+                      }
+                    `}
+                    style={exists ? { backgroundColor: 'rgba(168, 85, 247, 0.1)', padding: '0 4px', borderRadius: '4px' } : undefined}
+                    title={exists ? `Open diagram: ${diagram.name}` : `Diagram not found: ${reference}`}
+                    {...props}
+                  >
+                    <span className="mr-1">📊</span>
                     {children}
                   </a>
                 );

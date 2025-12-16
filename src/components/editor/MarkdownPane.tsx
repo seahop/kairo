@@ -1,15 +1,66 @@
 import { useEffect, useRef, useCallback } from "react";
 import { EditorState } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from "@codemirror/view";
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { syntaxHighlighting, HighlightStyle, bracketMatching } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
-import { completionKeymap } from "@codemirror/autocomplete";
+import { completionKeymap, startCompletion } from "@codemirror/autocomplete";
 import { useNoteStore } from "@/stores/noteStore";
 import { kairoAutocompletion, autocompleteTheme } from "./autocomplete";
+
+// Custom plugin that triggers autocomplete on specific patterns
+// Simplified approach: check document state directly, not what was inserted
+const autocompleteTrigger = ViewPlugin.fromClass(
+  class {
+    update(update: ViewUpdate) {
+      if (!update.docChanged) return;
+
+      const pos = update.state.selection.main.head;
+      const line = update.state.doc.lineAt(pos);
+      const lineText = line.text;
+      const colInLine = pos - line.from;
+      const textBeforeCursor = lineText.slice(0, colInLine);
+
+      // Check for [[prefix: patterns (diagram, kanban, note) - trigger after selecting prefix
+      // These need to re-trigger completion to show items after the colon
+      if (/\[\[(diagram|kanban|note):[^\]]*$/.test(textBeforeCursor)) {
+        setTimeout(() => startCompletion(update.view), 0);
+        return;
+      }
+
+      // Check for [[ pattern - look for unclosed [[
+      const lastOpenBracket = textBeforeCursor.lastIndexOf("[[");
+      if (lastOpenBracket !== -1) {
+        const afterBracket = textBeforeCursor.slice(lastOpenBracket);
+        // If we have [[ but no ]], trigger completion
+        if (!afterBracket.includes("]]")) {
+          setTimeout(() => startCompletion(update.view), 0);
+          return;
+        }
+      }
+
+      // Check for # pattern (not at start of line - that's a header)
+      const lastHash = textBeforeCursor.lastIndexOf("#");
+      if (lastHash !== -1 && lastHash > 0) {
+        // Make sure it's not part of a header (headers start with #)
+        const beforeHash = textBeforeCursor.slice(0, lastHash);
+        if (beforeHash.trim().length > 0) {
+          setTimeout(() => startCompletion(update.view), 0);
+          return;
+        }
+      }
+
+      // Check for @ pattern
+      if (textBeforeCursor.includes("@")) {
+        setTimeout(() => startCompletion(update.view), 0);
+        return;
+      }
+    }
+  }
+);
 
 // Extract wiki-link at a position in the document
 function getWikiLinkAtPos(doc: string, pos: number): string | null {
@@ -187,6 +238,9 @@ export function MarkdownPane() {
 
         // Kairo autocompletion (wiki-links, tags, mentions)
         kairoAutocompletion,
+
+        // Custom trigger for autocompletion on specific patterns
+        autocompleteTrigger,
 
         // Keymaps
         keymap.of([

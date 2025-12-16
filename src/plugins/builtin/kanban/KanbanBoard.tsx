@@ -4,6 +4,7 @@ import { CardDetailPanel } from "./CardDetailPanel";
 import { DatePicker } from "../../../components/common/DatePicker";
 import { TemplateSelector } from "./components/TemplateSelector";
 import { CardTemplate } from "./templates";
+import { ExtensionTitleBar, DropdownItem } from "../../../components/layout/ExtensionTitleBar";
 
 const priorityOptions: { value: Priority | ""; label: string }[] = [
   { value: "", label: "No priority" },
@@ -22,12 +23,6 @@ const PlusIcon = () => (
 const TrashIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-  </svg>
-);
-
-const CloseIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
   </svg>
 );
 
@@ -721,117 +716,131 @@ export function KanbanBoard() {
     setDraggedCard(null);
   };
 
+  // Build Kanban menu items
+  const kanbanMenuItems: DropdownItem[] = [
+    { label: "New Board", onClick: openCreateModal },
+    ...(currentBoard ? [
+      { label: "Manage Members", onClick: () => setShowMembersPanel(!showMembersPanel), divider: true },
+      { label: "Add Column", onClick: () => {
+        const name = prompt("Column name:");
+        if (name) {
+          useKanbanStore.getState().addColumn(currentBoard.id, name);
+        }
+      }},
+    ] : []),
+  ];
+
   return (
     <>
       <div className="fixed inset-0 bg-dark-950 z-30 flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-dark-800">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-semibold text-dark-100">Kanban Boards</h1>
+        {/* Title bar with menus and window controls */}
+        <ExtensionTitleBar
+          title="Kanban Boards"
+          onBack={toggleView}
+          menus={[{ label: "Board", items: kanbanMenuItems }]}
+        />
 
-            {/* Board selector */}
-            {boards.length > 0 && (
-              <select
-                className="input py-1 w-48"
-                value={currentBoard?.id || ""}
-                onChange={(e) => e.target.value && loadBoard(e.target.value)}
+        {/* Toolbar - board selector and actions */}
+        <div className="flex items-center gap-4 px-4 py-2 border-b border-dark-800 bg-dark-900">
+          {/* Board selector */}
+          {boards.length > 0 && (
+            <select
+              className="input py-1.5 w-56 text-sm"
+              value={currentBoard?.id || ""}
+              onChange={(e) => e.target.value && loadBoard(e.target.value)}
+            >
+              <option value="">Select a board...</option>
+              {boards.map((board) => (
+                <option key={board.id} value={board.id}>
+                  {board.name}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {currentBoard && (
+            <span className="text-sm text-dark-300 font-medium">{currentBoard.name}</span>
+          )}
+
+          <div className="flex-1" />
+
+          {/* Members button */}
+          {currentBoard && (
+            <div className="relative">
+              <button
+                className="btn-ghost text-sm flex items-center gap-1"
+                onClick={() => setShowMembersPanel(!showMembersPanel)}
               >
-                <option value="">Select a board...</option>
-                {boards.map((board) => (
-                  <option key={board.id} value={board.id}>
-                    {board.name}
-                  </option>
-                ))}
-              </select>
-            )}
+                <UserPlusIcon />
+                <span>Members ({boardMembers.length})</span>
+              </button>
 
-            <button className="btn-ghost text-sm flex items-center" onClick={openCreateModal}>
-              <PlusIcon />
-              <span className="ml-1">New Board</span>
-            </button>
+              {/* Members dropdown panel */}
+              {showMembersPanel && (
+                <div className="absolute top-full right-0 mt-1 w-72 bg-dark-800 rounded-lg shadow-lg border border-dark-700 p-4 z-20">
+                  <h3 className="text-sm font-medium text-dark-200 mb-1">Team Members</h3>
+                  <p className="text-xs text-dark-500 mb-3">Shared across all boards</p>
 
-            {/* Members button */}
-            {currentBoard && (
-              <div className="relative">
-                <button
-                  className="btn-ghost text-sm flex items-center gap-1"
-                  onClick={() => setShowMembersPanel(!showMembersPanel)}
-                >
-                  <UserPlusIcon />
-                  <span>Members ({boardMembers.length})</span>
-                </button>
-
-                {/* Members dropdown panel */}
-                {showMembersPanel && (
-                  <div className="absolute top-full left-0 mt-1 w-72 bg-dark-800 rounded-lg shadow-lg border border-dark-700 p-4 z-20">
-                    <h3 className="text-sm font-medium text-dark-200 mb-1">Team Members</h3>
-                    <p className="text-xs text-dark-500 mb-3">Shared across all boards</p>
-
-                    {/* Add member input */}
-                    <div className="flex gap-2 mb-3">
-                      <input
-                        type="text"
-                        className="input flex-1 text-sm"
-                        placeholder="Add member name..."
-                        value={newMemberName}
-                        onChange={(e) => setNewMemberName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && newMemberName.trim()) {
-                            addBoardMember(currentBoard.id, newMemberName.trim());
-                            setNewMemberName("");
-                          }
-                        }}
-                      />
-                      <button
-                        className="btn-primary text-sm px-3"
-                        onClick={() => {
-                          if (newMemberName.trim()) {
-                            addBoardMember(currentBoard.id, newMemberName.trim());
-                            setNewMemberName("");
-                          }
-                        }}
-                        disabled={!newMemberName.trim()}
-                      >
-                        Add
-                      </button>
-                    </div>
-
-                    {/* Member list */}
-                    <div className="space-y-1 max-h-48 overflow-y-auto">
-                      {boardMembers.length === 0 ? (
-                        <p className="text-xs text-dark-500 py-2">No members yet. Add team members to assign tasks to them.</p>
-                      ) : (
-                        boardMembers.map((member) => (
-                          <div
-                            key={member.id}
-                            className="flex items-center justify-between py-1 px-2 rounded hover:bg-dark-700"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="w-6 h-6 rounded-full bg-accent-primary/20 text-accent-primary text-xs flex items-center justify-center">
-                                {member.name.charAt(0).toUpperCase()}
-                              </span>
-                              <span className="text-sm text-dark-200">{member.name}</span>
-                            </div>
-                            <button
-                              className="text-dark-500 hover:text-red-400 p-1"
-                              onClick={() => removeBoardMember(member.id)}
-                              title="Remove member"
-                            >
-                              <TrashIcon />
-                            </button>
-                          </div>
-                        ))
-                      )}
-                    </div>
+                  {/* Add member input */}
+                  <div className="flex gap-2 mb-3">
+                    <input
+                      type="text"
+                      className="input flex-1 text-sm"
+                      placeholder="Add member name..."
+                      value={newMemberName}
+                      onChange={(e) => setNewMemberName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && newMemberName.trim()) {
+                          addBoardMember(currentBoard.id, newMemberName.trim());
+                          setNewMemberName("");
+                        }
+                      }}
+                    />
+                    <button
+                      className="btn-primary text-sm px-3"
+                      onClick={() => {
+                        if (newMemberName.trim()) {
+                          addBoardMember(currentBoard.id, newMemberName.trim());
+                          setNewMemberName("");
+                        }
+                      }}
+                      disabled={!newMemberName.trim()}
+                    >
+                      Add
+                    </button>
                   </div>
-                )}
-              </div>
-            )}
-          </div>
 
-          <button className="btn-icon" onClick={toggleView}>
-            <CloseIcon />
-          </button>
+                  {/* Member list */}
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {boardMembers.length === 0 ? (
+                      <p className="text-xs text-dark-500 py-2">No members yet. Add team members to assign tasks to them.</p>
+                    ) : (
+                      boardMembers.map((member) => (
+                        <div
+                          key={member.id}
+                          className="flex items-center justify-between py-1 px-2 rounded hover:bg-dark-700"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-full bg-accent-primary/20 text-accent-primary text-xs flex items-center justify-center">
+                              {member.name.charAt(0).toUpperCase()}
+                            </span>
+                            <span className="text-sm text-dark-200">{member.name}</span>
+                          </div>
+                          <button
+                            className="text-dark-500 hover:text-red-400 p-1"
+                            onClick={() => removeBoardMember(member.id)}
+                            title="Remove member"
+                          >
+                            <TrashIcon />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Error display */}

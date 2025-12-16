@@ -55,6 +55,11 @@ interface DiagramState {
   createBoard: (name: string, description?: string) => Promise<DiagramBoard>;
   updateBoard: (boardId: string, name?: string, description?: string, viewport?: Viewport) => Promise<void>;
   deleteBoard: (boardId: string) => Promise<void>;
+  /** @deprecated Use addNoteLink instead */
+  linkNote: (boardId: string, noteId: string | null) => Promise<void>;
+  addNoteLink: (boardId: string, noteId: string) => Promise<void>;
+  removeNoteLink: (boardId: string, noteId: string) => Promise<void>;
+  removeAllNoteLinks: (boardId: string) => Promise<void>;
 
   // Actions - Nodes
   addNode: (
@@ -234,6 +239,54 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
         edges: state.currentBoard?.id === boardId ? [] : state.edges,
         showDeleteConfirm: false,
         boardToDelete: null,
+      }));
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
+
+  linkNote: async (boardId: string, noteId: string | null) => {
+    try {
+      const board = await invoke<DiagramBoard>("diagram_link_note", { boardId, noteId });
+      set((state) => ({
+        boards: state.boards.map((b) => (b.id === boardId ? board : b)),
+        currentBoard: state.currentBoard?.id === boardId ? board : state.currentBoard,
+      }));
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
+
+  addNoteLink: async (boardId: string, noteId: string) => {
+    try {
+      const board = await invoke<DiagramBoard>("diagram_add_note_link", { boardId, noteId });
+      set((state) => ({
+        boards: state.boards.map((b) => (b.id === boardId ? board : b)),
+        currentBoard: state.currentBoard?.id === boardId ? board : state.currentBoard,
+      }));
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
+
+  removeNoteLink: async (boardId: string, noteId: string) => {
+    try {
+      const board = await invoke<DiagramBoard>("diagram_remove_note_link", { boardId, noteId });
+      set((state) => ({
+        boards: state.boards.map((b) => (b.id === boardId ? board : b)),
+        currentBoard: state.currentBoard?.id === boardId ? board : state.currentBoard,
+      }));
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
+
+  removeAllNoteLinks: async (boardId: string) => {
+    try {
+      const board = await invoke<DiagramBoard>("diagram_remove_all_note_links", { boardId });
+      set((state) => ({
+        boards: state.boards.map((b) => (b.id === boardId ? board : b)),
+        currentBoard: state.currentBoard?.id === boardId ? board : state.currentBoard,
       }));
     } catch (e) {
       set({ error: String(e) });

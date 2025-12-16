@@ -6,10 +6,20 @@ export interface Viewport {
   zoom: number;
 }
 
+export interface LinkedNote {
+  noteId: string;
+  notePath: string;
+}
+
 export interface DiagramBoard {
   id: string;
   name: string;
   description?: string;
+  /** @deprecated Use linkedNotes instead */
+  noteId?: string;
+  /** @deprecated Use linkedNotes instead */
+  notePath?: string;
+  linkedNotes: LinkedNote[];
   viewport: Viewport;
   createdAt: number;
   modifiedAt: number;

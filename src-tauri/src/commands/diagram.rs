@@ -15,12 +15,29 @@ pub struct Viewport {
     pub zoom: f64,
 }
 
+/// A linked note reference
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LinkedNote {
+    #[serde(rename = "noteId")]
+    pub note_id: String,
+    #[serde(rename = "notePath")]
+    pub note_path: String,
+}
+
 /// A diagram board container
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DiagramBoard {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    /// Legacy single note link (kept for backwards compatibility)
+    #[serde(rename = "noteId")]
+    pub note_id: Option<String>,
+    #[serde(rename = "notePath")]
+    pub note_path: Option<String>,
+    /// Multiple linked notes
+    #[serde(rename = "linkedNotes")]
+    pub linked_notes: Vec<LinkedNote>,
     pub viewport: Viewport,
     #[serde(rename = "createdAt")]
     pub created_at: i64,
@@ -200,33 +217,73 @@ fn validate_edge_type(edge_type: &str) -> Result<(), String> {
 
 // ============= Board Commands =============
 
+/// Helper function to fetch linked notes for a board
+fn fetch_linked_notes(conn: &rusqlite::Connection, board_id: &str) -> Vec<LinkedNote> {
+    let mut stmt = match conn.prepare(
+        "SELECT dbn.note_id, n.path
+         FROM diagram_board_notes dbn
+         JOIN notes n ON dbn.note_id = n.id
+         WHERE dbn.board_id = ?1
+         ORDER BY dbn.created_at"
+    ) {
+        Ok(stmt) => stmt,
+        Err(_) => return Vec::new(),
+    };
+
+    stmt.query_map(params![board_id], |row| {
+        Ok(LinkedNote {
+            note_id: row.get(0)?,
+            note_path: row.get(1)?,
+        })
+    })
+    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+    .unwrap_or_default()
+}
+
 /// List all diagram boards
 #[tauri::command]
 pub fn diagram_list_boards(app: AppHandle) -> Result<Vec<DiagramBoard>, String> {
     with_db(&app, |conn| {
         let mut stmt = conn
-            .prepare("SELECT id, name, description, viewport, created_at, modified_at FROM diagram_boards ORDER BY modified_at DESC")
+            .prepare(
+                "SELECT b.id, b.name, b.description, b.note_id, n.path, b.viewport, b.created_at, b.modified_at
+                 FROM diagram_boards b
+                 LEFT JOIN notes n ON b.note_id = n.id
+                 ORDER BY b.modified_at DESC"
+            )
             .map_err(|e| e.to_string())?;
 
-        let boards = stmt
+        let boards: Vec<DiagramBoard> = stmt
             .query_map([], |row| {
-                let viewport_json: String = row.get(3)?;
+                let viewport_json: String = row.get(5)?;
                 let viewport: Viewport = serde_json::from_str(&viewport_json).unwrap_or_default();
 
                 Ok(DiagramBoard {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     description: row.get(2)?,
+                    note_id: row.get(3)?,
+                    note_path: row.get(4)?,
+                    linked_notes: Vec::new(), // Will be populated below
                     viewport,
-                    created_at: row.get(4)?,
-                    modified_at: row.get(5)?,
+                    created_at: row.get(6)?,
+                    modified_at: row.get(7)?,
                 })
             })
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
             .collect();
 
-        Ok(boards)
+        // Fetch linked notes for each board
+        let boards_with_links: Vec<DiagramBoard> = boards
+            .into_iter()
+            .map(|mut board| {
+                board.linked_notes = fetch_linked_notes(conn, &board.id);
+                board
+            })
+            .collect();
+
+        Ok(boards_with_links)
     })
     .map_err(|e| e.to_string())
 }
@@ -235,26 +292,35 @@ pub fn diagram_list_boards(app: AppHandle) -> Result<Vec<DiagramBoard>, String> 
 #[tauri::command]
 pub fn diagram_get_board(app: AppHandle, board_id: String) -> Result<DiagramBoardFull, String> {
     with_db(&app, |conn| {
-        // Get board
-        let board = conn
+        // Get board with note path via LEFT JOIN
+        let mut board = conn
             .query_row(
-                "SELECT id, name, description, viewport, created_at, modified_at FROM diagram_boards WHERE id = ?1",
+                "SELECT b.id, b.name, b.description, b.note_id, n.path, b.viewport, b.created_at, b.modified_at
+                 FROM diagram_boards b
+                 LEFT JOIN notes n ON b.note_id = n.id
+                 WHERE b.id = ?1",
                 params![board_id],
                 |row| {
-                    let viewport_json: String = row.get(3)?;
+                    let viewport_json: String = row.get(5)?;
                     let viewport: Viewport = serde_json::from_str(&viewport_json).unwrap_or_default();
 
                     Ok(DiagramBoard {
                         id: row.get(0)?,
                         name: row.get(1)?,
                         description: row.get(2)?,
+                        note_id: row.get(3)?,
+                        note_path: row.get(4)?,
+                        linked_notes: Vec::new(), // Will be populated below
                         viewport,
-                        created_at: row.get(4)?,
-                        modified_at: row.get(5)?,
+                        created_at: row.get(6)?,
+                        modified_at: row.get(7)?,
                     })
                 },
             )
             .map_err(|e| e.to_string())?;
+
+        // Fetch linked notes
+        board.linked_notes = fetch_linked_notes(conn, &board_id);
 
         // Get nodes
         let mut node_stmt = conn
@@ -349,6 +415,9 @@ pub fn diagram_create_board(
             id,
             name,
             description,
+            note_id: None,
+            note_path: None,
+            linked_notes: Vec::new(),
             viewport,
             created_at: now,
             modified_at: now,
@@ -370,11 +439,11 @@ pub fn diagram_update_board(
 
     with_db(&app, |conn| {
         // Get current board
-        let (current_name, current_desc, current_viewport_json, created_at): (String, Option<String>, String, i64) = conn
+        let (current_name, current_desc, current_viewport_json, created_at, current_note_id): (String, Option<String>, String, i64, Option<String>) = conn
             .query_row(
-                "SELECT name, description, viewport, created_at FROM diagram_boards WHERE id = ?1",
+                "SELECT name, description, viewport, created_at, note_id FROM diagram_boards WHERE id = ?1",
                 params![board_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
             )
             .map_err(|e| e.to_string())?;
 
@@ -391,11 +460,271 @@ pub fn diagram_update_board(
         )
         .map_err(|e| e.to_string())?;
 
+        // Get note path if linked
+        let note_path: Option<String> = if let Some(ref nid) = current_note_id {
+            conn.query_row(
+                "SELECT path FROM notes WHERE id = ?1",
+                params![nid],
+                |row| row.get(0),
+            ).ok()
+        } else {
+            None
+        };
+
+        // Fetch linked notes
+        let linked_notes = fetch_linked_notes(conn, &board_id);
+
         Ok(DiagramBoard {
             id: board_id,
             name: new_name,
             description: new_desc,
+            note_id: current_note_id,
+            note_path,
+            linked_notes,
             viewport: new_viewport,
+            created_at,
+            modified_at: now,
+        })
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// Link or unlink a note to a diagram board (legacy - updates single note_id)
+#[tauri::command]
+pub fn diagram_link_note(
+    app: AppHandle,
+    board_id: String,
+    note_id: Option<String>,
+) -> Result<DiagramBoard, String> {
+    let now = chrono::Utc::now().timestamp();
+
+    with_db(&app, |conn| {
+        // Update the note_id
+        conn.execute(
+            "UPDATE diagram_boards SET note_id = ?1, modified_at = ?2 WHERE id = ?3",
+            params![note_id, now, board_id],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Get board data
+        let (name, description, viewport_json, created_at, current_note_id): (String, Option<String>, String, i64, Option<String>) = conn
+            .query_row(
+                "SELECT name, description, viewport, created_at, note_id FROM diagram_boards WHERE id = ?1",
+                params![board_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            )
+            .map_err(|e| e.to_string())?;
+
+        let viewport: Viewport = serde_json::from_str(&viewport_json).unwrap_or_default();
+
+        // Get note path if linked
+        let note_path: Option<String> = if let Some(ref nid) = current_note_id {
+            conn.query_row(
+                "SELECT path FROM notes WHERE id = ?1",
+                params![nid],
+                |row| row.get(0),
+            ).ok()
+        } else {
+            None
+        };
+
+        // Fetch linked notes
+        let linked_notes = fetch_linked_notes(conn, &board_id);
+
+        Ok(DiagramBoard {
+            id: board_id,
+            name,
+            description,
+            note_id: current_note_id,
+            note_path,
+            linked_notes,
+            viewport,
+            created_at,
+            modified_at: now,
+        })
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// Add a note link to a diagram board (multiple notes support)
+#[tauri::command]
+pub fn diagram_add_note_link(
+    app: AppHandle,
+    board_id: String,
+    note_id: String,
+) -> Result<DiagramBoard, String> {
+    let now = chrono::Utc::now().timestamp();
+
+    with_db(&app, |conn| {
+        // Verify the note exists
+        let _note_path: String = conn
+            .query_row(
+                "SELECT path FROM notes WHERE id = ?1",
+                params![note_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| "Note not found")?;
+
+        // Insert into junction table (ignore if already exists)
+        conn.execute(
+            "INSERT OR IGNORE INTO diagram_board_notes (board_id, note_id, created_at) VALUES (?1, ?2, ?3)",
+            params![board_id, note_id, now],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Update board modified_at
+        conn.execute(
+            "UPDATE diagram_boards SET modified_at = ?1 WHERE id = ?2",
+            params![now, board_id],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Fetch and return updated board
+        let (name, description, viewport_json, created_at, legacy_note_id): (String, Option<String>, String, i64, Option<String>) = conn
+            .query_row(
+                "SELECT name, description, viewport, created_at, note_id FROM diagram_boards WHERE id = ?1",
+                params![board_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            )
+            .map_err(|e| e.to_string())?;
+
+        let viewport: Viewport = serde_json::from_str(&viewport_json).unwrap_or_default();
+
+        // Get legacy note path if exists
+        let legacy_note_path: Option<String> = if let Some(ref nid) = legacy_note_id {
+            conn.query_row(
+                "SELECT path FROM notes WHERE id = ?1",
+                params![nid],
+                |row| row.get(0),
+            ).ok()
+        } else {
+            None
+        };
+
+        // Fetch linked notes
+        let linked_notes = fetch_linked_notes(conn, &board_id);
+
+        Ok(DiagramBoard {
+            id: board_id,
+            name,
+            description,
+            note_id: legacy_note_id,
+            note_path: legacy_note_path,
+            linked_notes,
+            viewport,
+            created_at,
+            modified_at: now,
+        })
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// Remove a specific note link from a diagram board
+#[tauri::command]
+pub fn diagram_remove_note_link(
+    app: AppHandle,
+    board_id: String,
+    note_id: String,
+) -> Result<DiagramBoard, String> {
+    let now = chrono::Utc::now().timestamp();
+
+    with_db(&app, |conn| {
+        // Remove from junction table
+        conn.execute(
+            "DELETE FROM diagram_board_notes WHERE board_id = ?1 AND note_id = ?2",
+            params![board_id, note_id],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Update board modified_at
+        conn.execute(
+            "UPDATE diagram_boards SET modified_at = ?1 WHERE id = ?2",
+            params![now, board_id],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Fetch and return updated board
+        let (name, description, viewport_json, created_at, legacy_note_id): (String, Option<String>, String, i64, Option<String>) = conn
+            .query_row(
+                "SELECT name, description, viewport, created_at, note_id FROM diagram_boards WHERE id = ?1",
+                params![board_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            )
+            .map_err(|e| e.to_string())?;
+
+        let viewport: Viewport = serde_json::from_str(&viewport_json).unwrap_or_default();
+
+        // Get legacy note path if exists
+        let legacy_note_path: Option<String> = if let Some(ref nid) = legacy_note_id {
+            conn.query_row(
+                "SELECT path FROM notes WHERE id = ?1",
+                params![nid],
+                |row| row.get(0),
+            ).ok()
+        } else {
+            None
+        };
+
+        // Fetch linked notes
+        let linked_notes = fetch_linked_notes(conn, &board_id);
+
+        Ok(DiagramBoard {
+            id: board_id,
+            name,
+            description,
+            note_id: legacy_note_id,
+            note_path: legacy_note_path,
+            linked_notes,
+            viewport,
+            created_at,
+            modified_at: now,
+        })
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// Remove all note links from a diagram board
+#[tauri::command]
+pub fn diagram_remove_all_note_links(
+    app: AppHandle,
+    board_id: String,
+) -> Result<DiagramBoard, String> {
+    let now = chrono::Utc::now().timestamp();
+
+    with_db(&app, |conn| {
+        // Remove all from junction table
+        conn.execute(
+            "DELETE FROM diagram_board_notes WHERE board_id = ?1",
+            params![board_id],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Also clear legacy note_id
+        conn.execute(
+            "UPDATE diagram_boards SET note_id = NULL, modified_at = ?1 WHERE id = ?2",
+            params![now, board_id],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Fetch and return updated board
+        let (name, description, viewport_json, created_at): (String, Option<String>, String, i64) = conn
+            .query_row(
+                "SELECT name, description, viewport, created_at FROM diagram_boards WHERE id = ?1",
+                params![board_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .map_err(|e| e.to_string())?;
+
+        let viewport: Viewport = serde_json::from_str(&viewport_json).unwrap_or_default();
+
+        Ok(DiagramBoard {
+            id: board_id,
+            name,
+            description,
+            note_id: None,
+            note_path: None,
+            linked_notes: Vec::new(),
+            viewport,
             created_at,
             modified_at: now,
         })

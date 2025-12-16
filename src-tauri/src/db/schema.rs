@@ -173,6 +173,7 @@ pub fn init_schema(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> 
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             description TEXT,
+            note_id TEXT REFERENCES notes(id) ON DELETE SET NULL,
             viewport TEXT NOT NULL DEFAULT '{"x":0,"y":0,"zoom":1}',
             created_at INTEGER NOT NULL,
             modified_at INTEGER NOT NULL
@@ -212,6 +213,17 @@ pub fn init_schema(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> 
         CREATE INDEX IF NOT EXISTS idx_diagram_edges_board ON diagram_edges(board_id);
         CREATE INDEX IF NOT EXISTS idx_diagram_edges_source ON diagram_edges(source_node_id);
         CREATE INDEX IF NOT EXISTS idx_diagram_edges_target ON diagram_edges(target_node_id);
+
+        -- Diagram board to note links (many-to-many)
+        CREATE TABLE IF NOT EXISTS diagram_board_notes (
+            board_id TEXT NOT NULL REFERENCES diagram_boards(id) ON DELETE CASCADE,
+            note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (board_id, note_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_diagram_board_notes_board ON diagram_board_notes(board_id);
+        CREATE INDEX IF NOT EXISTS idx_diagram_board_notes_note ON diagram_board_notes(note_id);
         "#,
     )?;
 
@@ -247,6 +259,49 @@ fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
         let now = chrono::Utc::now().timestamp();
         conn.execute(
             "UPDATE kanban_cards SET created_at = ?1, updated_at = ?1 WHERE created_at IS NULL",
+            rusqlite::params![now],
+        )?;
+    }
+
+    // Migration: Add note_id to diagram_boards for note linking (legacy single link)
+    let has_diagram_note_id = conn
+        .prepare("SELECT note_id FROM diagram_boards LIMIT 0")
+        .is_ok();
+
+    if !has_diagram_note_id {
+        conn.execute_batch(
+            r#"
+            ALTER TABLE diagram_boards ADD COLUMN note_id TEXT REFERENCES notes(id) ON DELETE SET NULL;
+            "#,
+        )?;
+    }
+
+    // Migration: Create diagram_board_notes junction table for multiple note links
+    let has_diagram_board_notes = conn
+        .prepare("SELECT board_id FROM diagram_board_notes LIMIT 0")
+        .is_ok();
+
+    if !has_diagram_board_notes {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS diagram_board_notes (
+                board_id TEXT NOT NULL REFERENCES diagram_boards(id) ON DELETE CASCADE,
+                note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (board_id, note_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_diagram_board_notes_board ON diagram_board_notes(board_id);
+            CREATE INDEX IF NOT EXISTS idx_diagram_board_notes_note ON diagram_board_notes(note_id);
+            "#,
+        )?;
+
+        // Migrate existing note_id links to the junction table
+        let now = chrono::Utc::now().timestamp();
+        conn.execute(
+            r#"
+            INSERT OR IGNORE INTO diagram_board_notes (board_id, note_id, created_at)
+            SELECT id, note_id, ?1 FROM diagram_boards WHERE note_id IS NOT NULL
+            "#,
             rusqlite::params![now],
         )?;
     }
