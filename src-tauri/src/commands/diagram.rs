@@ -576,9 +576,7 @@ pub fn diagram_add_edge(
 
     let id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp();
-    let data_json = data
-        .as_ref()
-        .and_then(|d| serde_json::to_string(d).ok());
+    let data_json = data.as_ref().and_then(|d| serde_json::to_string(d).ok());
 
     with_db(&app, |conn| {
         // Verify both nodes exist and belong to this board
