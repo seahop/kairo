@@ -33,9 +33,9 @@ pub struct DiagramBoard {
 pub struct NodeData {
     pub label: Option<String>,
     #[serde(rename = "shapeType")]
-    pub shape_type: Option<String>,  // 'rectangle', 'circle', 'diamond', 'cylinder', 'hexagon'
-    pub icon: Option<String>,        // Icon identifier (e.g., 'Server', 'Database')
-    pub color: Option<String>,       // Background color
+    pub shape_type: Option<String>, // 'rectangle', 'circle', 'diamond', 'cylinder', 'hexagon'
+    pub icon: Option<String>, // Icon identifier (e.g., 'Server', 'Database')
+    pub color: Option<String>, // Background color
     #[serde(rename = "borderColor")]
     pub border_color: Option<String>,
     #[serde(rename = "fontSize")]
@@ -49,7 +49,7 @@ pub struct DiagramNode {
     #[serde(rename = "boardId")]
     pub board_id: String,
     #[serde(rename = "nodeType")]
-    pub node_type: String,  // 'shape', 'icon', 'text', 'group'
+    pub node_type: String, // 'shape', 'icon', 'text', 'group'
     #[serde(rename = "positionX")]
     pub position_x: f64,
     #[serde(rename = "positionY")]
@@ -72,7 +72,7 @@ pub struct EdgeData {
     pub color: Option<String>,
     pub animated: Option<bool>,
     #[serde(rename = "arrowType")]
-    pub arrow_type: Option<String>,  // 'arrow', 'none'
+    pub arrow_type: Option<String>, // 'arrow', 'none'
 }
 
 /// An edge connecting two nodes
@@ -86,11 +86,11 @@ pub struct DiagramEdge {
     #[serde(rename = "targetNodeId")]
     pub target_node_id: String,
     #[serde(rename = "sourceHandle")]
-    pub source_handle: Option<String>,  // 'top', 'right', 'bottom', 'left'
+    pub source_handle: Option<String>, // 'top', 'right', 'bottom', 'left'
     #[serde(rename = "targetHandle")]
     pub target_handle: Option<String>,
     #[serde(rename = "edgeType")]
-    pub edge_type: String,  // 'default', 'straight', 'step', 'smoothstep'
+    pub edge_type: String, // 'default', 'straight', 'step', 'smoothstep'
     pub data: Option<EdgeData>,
     #[serde(rename = "createdAt")]
     pub created_at: i64,
@@ -128,7 +128,10 @@ fn validate_node_type(node_type: &str) -> Result<(), String> {
     if VALID_NODE_TYPES.contains(&node_type) {
         Ok(())
     } else {
-        Err(format!("Invalid node type: {}. Must be one of: {:?}", node_type, VALID_NODE_TYPES))
+        Err(format!(
+            "Invalid node type: {}. Must be one of: {:?}",
+            node_type, VALID_NODE_TYPES
+        ))
     }
 }
 
@@ -136,7 +139,10 @@ fn validate_edge_type(edge_type: &str) -> Result<(), String> {
     if VALID_EDGE_TYPES.contains(&edge_type) {
         Ok(())
     } else {
-        Err(format!("Invalid edge type: {}. Must be one of: {:?}", edge_type, VALID_EDGE_TYPES))
+        Err(format!(
+            "Invalid edge type: {}. Must be one of: {:?}",
+            edge_type, VALID_EDGE_TYPES
+        ))
     }
 }
 
@@ -273,7 +279,11 @@ pub fn diagram_create_board(
 ) -> Result<DiagramBoard, String> {
     let id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp();
-    let viewport = Viewport { x: 0.0, y: 0.0, zoom: 1.0 };
+    let viewport = Viewport {
+        x: 0.0,
+        y: 0.0,
+        zoom: 1.0,
+    };
     let viewport_json = serde_json::to_string(&viewport).map_err(|e| e.to_string())?;
 
     with_db(&app, |conn| {
@@ -345,8 +355,11 @@ pub fn diagram_update_board(
 #[tauri::command]
 pub fn diagram_delete_board(app: AppHandle, board_id: String) -> Result<(), String> {
     with_db(&app, |conn| {
-        conn.execute("DELETE FROM diagram_boards WHERE id = ?1", params![board_id])
-            .map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM diagram_boards WHERE id = ?1",
+            params![board_id],
+        )
+        .map_err(|e| e.to_string())?;
         Ok(())
     })
     .map_err(|e| e.to_string())
@@ -562,7 +575,10 @@ pub fn diagram_add_edge(
 
     let id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp();
-    let data_json = data.as_ref().map(|d| serde_json::to_string(d).ok()).flatten();
+    let data_json = data
+        .as_ref()
+        .map(|d| serde_json::to_string(d).ok())
+        .flatten();
 
     with_db(&app, |conn| {
         // Verify both nodes exist and belong to this board
