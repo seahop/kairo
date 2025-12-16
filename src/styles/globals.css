@@ -385,3 +385,17 @@
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
 }
+
+/* Layer visibility - hide nodes on hidden layers */
+.react-flow__node.react-flow-node-hidden {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
+/* Also hide edges connected to hidden nodes */
+.react-flow__edge.react-flow-edge-hidden {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}

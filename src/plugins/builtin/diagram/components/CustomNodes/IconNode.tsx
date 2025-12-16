@@ -77,6 +77,8 @@ function IconNodeComponent({ id, data, selected, width: nodeWidth, height: nodeH
   const fillColor = data.color || "#6366f1";
   const borderColor = data.borderColor || "#4f46e5";
   const fontSize = data.fontSize || 11;
+  const fontWeight = data.fontWeight || "normal";
+  const fontStyle = data.fontStyle || "normal";
 
   const handleDoubleClick = useCallback(() => {
     setEditValue(data.label || "");
@@ -149,13 +151,13 @@ function IconNodeComponent({ id, data, selected, width: nodeWidth, height: nodeH
               onBlur={handleBlur}
               onKeyDown={handleKeyDown}
               className="w-full text-center bg-dark-800 border border-dark-600 rounded px-1 text-white outline-none"
-              style={{ fontSize }}
+              style={{ fontSize, fontWeight, fontStyle }}
               autoFocus
             />
           ) : (
             <span
               className="block text-center text-dark-200 truncate"
-              style={{ fontSize }}
+              style={{ fontSize, fontWeight, fontStyle }}
             >
               {data.label}
             </span>

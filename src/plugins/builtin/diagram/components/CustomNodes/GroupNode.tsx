@@ -41,6 +41,7 @@ function GroupNodeComponent({ id, data, selected, width: nodeWidth, height: node
   const borderStyle = data.borderStyle || "dashed";
   const borderWidth = data.borderWidth || 2;
   const opacity = data.opacity ?? 0; // Default to no fill (0 opacity)
+  const borderRadius = data.borderRadius ?? 8;
 
   // Calculate background color with opacity
   // If color is "transparent" or opacity is 0, no fill
@@ -109,7 +110,7 @@ function GroupNodeComponent({ id, data, selected, width: nodeWidth, height: node
           borderColor: borderColor,
           borderStyle: borderStyle,
           borderWidth: `${borderWidth}px`,
-          borderRadius: "8px",
+          borderRadius: `${borderRadius}px`,
           boxSizing: "border-box",
         }}
       >

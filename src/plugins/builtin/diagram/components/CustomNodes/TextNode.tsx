@@ -23,6 +23,9 @@ function TextNodeComponent({ id, data, selected, width: nodeWidth, height: nodeH
 
   const color = data.color || "#e5e7eb";
   const fontSize = data.fontSize || 14;
+  const fontWeight = data.fontWeight || "normal";
+  const fontStyle = data.fontStyle || "normal";
+  const textAlign = data.textAlign || "left";
 
   useEffect(() => {
     if (isEditing && textareaRef.current) {
@@ -92,12 +95,12 @@ function TextNodeComponent({ id, data, selected, width: nodeWidth, height: nodeH
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             className="w-full h-full min-h-[30px] bg-dark-800 border border-dark-600 rounded px-1 resize-none outline-none"
-            style={{ color, fontSize }}
+            style={{ color, fontSize, fontWeight, fontStyle, textAlign }}
           />
         ) : (
           <div
             className="whitespace-pre-wrap w-full h-full"
-            style={{ color, fontSize }}
+            style={{ color, fontSize, fontWeight, fontStyle, textAlign }}
           >
             {data.label || "Double-click to edit"}
           </div>

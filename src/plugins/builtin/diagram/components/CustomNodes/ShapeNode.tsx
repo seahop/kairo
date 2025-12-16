@@ -36,6 +36,10 @@ function ShapeNodeComponent({ id, data, selected, width: nodeWidth, height: node
   const fillColor = data.color || "#3b82f6";
   const borderColor = data.borderColor || "#1d4ed8";
   const fontSize = data.fontSize || 12;
+  const borderRadius = data.borderRadius ?? 4;
+  const fontWeight = data.fontWeight || "normal";
+  const fontStyle = data.fontStyle || "normal";
+  const textAlign = data.textAlign || "center";
 
   const handleDoubleClick = useCallback(() => {
     setEditValue(data.label || "");
@@ -88,6 +92,8 @@ function ShapeNodeComponent({ id, data, selected, width: nodeWidth, height: node
             fill={fillColor}
             stroke={borderColor}
             strokeWidth={2}
+            strokeLinejoin="round"
+            strokeLinecap="round"
           />
         );
       case "cylinder":
@@ -149,7 +155,7 @@ function ShapeNodeComponent({ id, data, selected, width: nodeWidth, height: node
             y={2}
             width={width - 4}
             height={height - 4}
-            rx={4}
+            rx={borderRadius}
             fill={fillColor}
             stroke={borderColor}
             strokeWidth={2}
@@ -189,7 +195,7 @@ function ShapeNodeComponent({ id, data, selected, width: nodeWidth, height: node
 
         {/* Label */}
         <div
-          className="absolute inset-0 flex items-center justify-center pointer-events-none"
+          className={`absolute inset-0 flex items-center pointer-events-none ${textAlign === "left" ? "justify-start" : textAlign === "right" ? "justify-end" : "justify-center"}`}
           style={{ padding: "8px" }}
         >
           {isEditing ? (
@@ -199,14 +205,14 @@ function ShapeNodeComponent({ id, data, selected, width: nodeWidth, height: node
               onChange={(e) => setEditValue(e.target.value)}
               onBlur={handleBlur}
               onKeyDown={handleKeyDown}
-              className="w-full text-center bg-transparent border-none outline-none text-white pointer-events-auto"
-              style={{ fontSize }}
+              className={`w-full bg-transparent border-none outline-none text-white pointer-events-auto`}
+              style={{ fontSize, fontWeight, fontStyle, textAlign }}
               autoFocus
             />
           ) : (
             <span
-              className="text-center text-white truncate"
-              style={{ fontSize, maxWidth: width - 16 }}
+              className="text-white truncate"
+              style={{ fontSize, fontWeight, fontStyle, textAlign, maxWidth: width - 16 }}
             >
               {data.label}
             </span>

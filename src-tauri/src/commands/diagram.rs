@@ -49,6 +49,27 @@ pub struct NodeData {
     // Selection grouping - nodes with same groupId move together
     #[serde(rename = "selectionGroupId")]
     pub selection_group_id: Option<String>,
+    // Text formatting
+    #[serde(rename = "fontWeight")]
+    pub font_weight: Option<String>, // 'normal', 'bold'
+    #[serde(rename = "fontStyle")]
+    pub font_style: Option<String>, // 'normal', 'italic'
+    #[serde(rename = "textAlign")]
+    pub text_align: Option<String>, // 'left', 'center', 'right'
+    // Corner radius for rectangles
+    #[serde(rename = "borderRadius")]
+    pub border_radius: Option<f64>,
+    // Layer assignment
+    #[serde(rename = "layerId")]
+    pub layer_id: Option<String>,
+    // Image node specific
+    #[serde(rename = "imageUrl")]
+    pub image_url: Option<String>,
+    #[serde(rename = "imageFit")]
+    pub image_fit: Option<String>, // 'contain', 'cover', 'fill'
+    // Swimlane specific
+    #[serde(rename = "swimlaneOrientation")]
+    pub swimlane_orientation: Option<String>, // 'horizontal', 'vertical'
 }
 
 /// A node in the diagram (shape, icon, or text)
@@ -74,14 +95,36 @@ pub struct DiagramNode {
     pub updated_at: i64,
 }
 
+/// Waypoint for edge routing
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct Waypoint {
+    pub x: f64,
+    pub y: f64,
+}
+
 /// Data stored in an edge's JSON data field
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct EdgeData {
     pub label: Option<String>,
     pub color: Option<String>,
     pub animated: Option<bool>,
-    #[serde(rename = "arrowType")]
-    pub arrow_type: Option<String>, // 'arrow', 'none'
+    // Arrow styles
+    #[serde(rename = "sourceArrow")]
+    pub source_arrow: Option<String>, // 'none', 'arrow', 'arrowclosed', 'diamond', 'circle'
+    #[serde(rename = "targetArrow")]
+    pub target_arrow: Option<String>,
+    // Line styling
+    #[serde(rename = "strokeWidth")]
+    pub stroke_width: Option<f64>,
+    #[serde(rename = "strokeStyle")]
+    pub stroke_style: Option<String>, // 'solid', 'dashed', 'dotted'
+    // Label positioning
+    #[serde(rename = "labelPosition")]
+    pub label_position: Option<String>, // 'start', 'center', 'end'
+    #[serde(rename = "labelBgColor")]
+    pub label_bg_color: Option<String>,
+    // Waypoints for manual edge routing
+    pub waypoints: Option<Vec<Waypoint>>,
 }
 
 /// An edge connecting two nodes
@@ -128,7 +171,7 @@ pub struct NodePositionUpdate {
 // ============= Validation =============
 
 /// Valid node types
-const VALID_NODE_TYPES: &[&str] = &["shape", "icon", "text", "group"];
+const VALID_NODE_TYPES: &[&str] = &["shape", "icon", "text", "group", "image", "swimlane"];
 
 /// Valid edge types
 const VALID_EDGE_TYPES: &[&str] = &["default", "straight", "step", "smoothstep"];
