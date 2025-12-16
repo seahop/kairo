@@ -104,14 +104,104 @@
   /* Select inputs */
   select.input {
     @apply appearance-none cursor-pointer pr-8;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-color: #0f172a;
     background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
     background-position: right 0.5rem center;
     background-repeat: no-repeat;
     background-size: 1.5em 1.5em;
+    /* Prevent WebKitGTK native styling artifacts */
+    -webkit-tap-highlight-color: transparent;
+    outline: none !important;
+    box-shadow: none;
+  }
+
+  /* Remove any focus artifacts from WebKitGTK */
+  select.input:focus {
+    outline: none !important;
+    -webkit-appearance: none;
+    box-shadow: 0 0 0 1px #6366f1;
+  }
+
+  /* Ensure no native dropdown arrow appears */
+  select.input::-ms-expand {
+    display: none;
+  }
+
+  /* Hide WebKitGTK native dropdown button */
+  select.input::-webkit-inner-spin-button,
+  select.input::-webkit-calendar-picker-indicator {
+    display: none !important;
+    -webkit-appearance: none;
   }
 
   select.input option {
     @apply bg-dark-900 text-dark-100 py-2;
+    background-color: #0f172a;
+  }
+
+  /* Hide any WebKitGTK/Linux native UI elements on selects */
+  select.input::-webkit-scrollbar,
+  select.input::-webkit-resizer,
+  select.input::-webkit-scrollbar-button,
+  select.input::-webkit-scrollbar-track,
+  select.input::-webkit-scrollbar-thumb {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+  }
+
+  /* Disable any GTK-specific rendering */
+  select.input {
+    -gtk-icon-source: none;
+    -gtk-icon-shadow: none;
+  }
+
+  /* Force GPU layer to prevent WebKitGTK rendering artifacts on Linux */
+  select.input,
+  .input {
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    will-change: auto;
+  }
+
+  /* Hide native browser clear/cancel buttons on all inputs */
+  input.input::-webkit-search-cancel-button,
+  input.input::-webkit-search-decoration,
+  input.input::-webkit-inner-spin-button,
+  input.input::-webkit-outer-spin-button,
+  input.input::-webkit-clear-button,
+  input.input::-webkit-contacts-auto-fill-button,
+  input.input::-webkit-credentials-auto-fill-button {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    margin: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+
+  /* Hide IE/Edge clear button */
+  input.input::-ms-clear,
+  input.input::-ms-reveal {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+
+  /* Ensure text inputs don't show any extra UI elements */
+  input[type="text"].input,
+  input[type="search"].input {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
   }
 
   /* Cards */

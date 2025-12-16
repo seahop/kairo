@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import { useKanbanStore, KanbanCard, KanbanColumn, Priority } from "./store";
 import { CardDetailPanel } from "./CardDetailPanel";
 import { DatePicker } from "../../../components/common/DatePicker";
+import { Select, SelectOption } from "../../../components/common/Select";
 import { TemplateSelector } from "./components/TemplateSelector";
 import { CardTemplate } from "./templates";
 import { ExtensionTitleBar, DropdownItem } from "../../../components/layout/ExtensionTitleBar";
 
-const priorityOptions: { value: Priority | ""; label: string }[] = [
+const priorityOptions: SelectOption[] = [
   { value: "", label: "No priority" },
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
@@ -110,6 +111,7 @@ function CreateBoardModal() {
               onChange={(e) => setBoardName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCreate()}
               autoFocus
+              autoComplete="off"
             />
           </div>
 
@@ -121,6 +123,7 @@ function CreateBoardModal() {
               placeholder="To Do, In Progress, Done"
               value={columns}
               onChange={(e) => setColumns(e.target.value)}
+              autoComplete="off"
             />
           </div>
         </div>
@@ -252,6 +255,7 @@ function CreateCardModal() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               autoFocus
+              autoComplete="off"
             />
           </div>
 
@@ -270,6 +274,7 @@ function CreateCardModal() {
               placeholder="Add a description..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              autoComplete="off"
             />
           </div>
 
@@ -277,15 +282,12 @@ function CreateCardModal() {
             {/* Priority */}
             <div>
               <label className="block text-sm text-dark-400 mb-1">Priority</label>
-              <select
-                className="input"
+              <Select
                 value={priority}
-                onChange={(e) => setPriority(e.target.value as Priority | "")}
-              >
-                {priorityOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+                onChange={(value) => setPriority(value as Priority | "")}
+                options={priorityOptions}
+                placeholder="No priority"
+              />
             </div>
 
             {/* Due Date */}
@@ -314,10 +316,12 @@ function CreateCardModal() {
                     </span>
                     {assignee}
                     <button
-                      className="ml-1 text-dark-500 hover:text-red-400"
+                      className="ml-1 p-0.5 text-dark-500 hover:text-red-400 rounded-full hover:bg-dark-700"
                       onClick={() => handleRemoveAssignee(assignee)}
                     >
-                      &times;
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
                     </button>
                   </span>
                 ))}
@@ -347,6 +351,7 @@ function CreateCardModal() {
                     setShowSuggestions(false);
                   }
                 }}
+                autoComplete="off"
               />
               {showSuggestions && filteredSuggestions.length > 0 && (
                 <div className="absolute left-0 right-0 mt-1 bg-dark-800 rounded-lg shadow-lg border border-dark-700 py-1 max-h-32 overflow-y-auto z-10">
@@ -744,18 +749,13 @@ export function KanbanBoard() {
         <div className="flex items-center gap-4 px-4 py-2 border-b border-dark-800 bg-dark-900">
           {/* Board selector */}
           {boards.length > 0 && (
-            <select
-              className="input py-1.5 w-56 text-sm"
+            <Select
+              className="w-56 text-sm"
               value={currentBoard?.id || ""}
-              onChange={(e) => e.target.value && loadBoard(e.target.value)}
-            >
-              <option value="">Select a board...</option>
-              {boards.map((board) => (
-                <option key={board.id} value={board.id}>
-                  {board.name}
-                </option>
-              ))}
-            </select>
+              onChange={(value) => value && loadBoard(value)}
+              options={boards.map((board) => ({ value: board.id, label: board.name }))}
+              placeholder="Select a board..."
+            />
           )}
 
           {currentBoard && (
@@ -795,6 +795,7 @@ export function KanbanBoard() {
                           setNewMemberName("");
                         }
                       }}
+                      autoComplete="off"
                     />
                     <button
                       className="btn-primary text-sm px-3"

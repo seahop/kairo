@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useKanbanStore, Priority } from "./store";
 import { DatePicker } from "../../../components/common/DatePicker";
+import { Select, SelectOption } from "../../../components/common/Select";
 import { CardMarkdownEditor } from "./components/CardMarkdownEditor";
 import { CardPreviewPane } from "./components/CardPreviewPane";
 import { ImageUpload } from "../../../components/editor/ImageUpload";
@@ -100,8 +101,8 @@ function ViewModeToggle({ mode, onChange }: { mode: ViewMode; onChange: (mode: V
   );
 }
 
-const priorityOptions: { value: Priority | ""; label: string; color: string }[] = [
-  { value: "", label: "No priority", color: "" },
+const priorityOptions: SelectOption[] = [
+  { value: "", label: "No priority" },
   { value: "low", label: "Low", color: "text-blue-400" },
   { value: "medium", label: "Medium", color: "text-yellow-400" },
   { value: "high", label: "High", color: "text-orange-400" },
@@ -337,36 +338,29 @@ export function CardDetailPanel() {
         {/* Status (Column) */}
         <div>
           <label className="text-sm font-medium text-dark-400 mb-2 block">Status</label>
-          <select
-            className="input"
+          <Select
             value={selectedCard.columnId}
-            onChange={(e) => handleColumnChange(e.target.value)}
-          >
-            {currentBoard?.columns.map((col) => (
-              <option key={col.id} value={col.id}>
-                {col.name} {col.isDone ? "(Done)" : ""}
-              </option>
-            ))}
-          </select>
+            onChange={handleColumnChange}
+            options={currentBoard?.columns.map((col) => ({
+              value: col.id,
+              label: col.name + (col.isDone ? " (Done)" : ""),
+            })) || []}
+            placeholder="Select status..."
+          />
         </div>
 
         {/* Priority */}
         <div>
           <label className="text-sm font-medium text-dark-400 mb-2 block">Priority</label>
-          <select
-            className="input"
+          <Select
             value={priority}
-            onChange={(e) => {
-              setPriority(e.target.value as Priority | "");
-              updateCard(selectedCard.id, { priority: (e.target.value as Priority) || null });
+            onChange={(value) => {
+              setPriority(value as Priority | "");
+              updateCard(selectedCard.id, { priority: (value as Priority) || null });
             }}
-          >
-            {priorityOptions.map((opt) => (
-              <option key={opt.value} value={opt.value} className={opt.color}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+            options={priorityOptions}
+            placeholder="No priority"
+          />
         </div>
 
         {/* Due Date */}
@@ -398,10 +392,12 @@ export function CardDetailPanel() {
                 </span>
                 {assignee}
                 <button
-                  className="ml-1 text-dark-500 hover:text-red-400"
+                  className="ml-1 p-0.5 text-dark-500 hover:text-red-400 rounded-full hover:bg-dark-700"
                   onClick={() => handleRemoveAssignee(assignee)}
                 >
-                  &times;
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
               </span>
             ))}
@@ -430,6 +426,7 @@ export function CardDetailPanel() {
                     setShowAssigneeSuggestions(false);
                   }
                 }}
+                autoComplete="off"
               />
               <button
                 className="btn-secondary px-3"
