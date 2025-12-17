@@ -35,7 +35,7 @@ pub struct CardMetadata {
     #[serde(default)]
     pub labels: Vec<String>,
     #[serde(rename = "assignedBy", skip_serializing_if = "Option::is_none")]
-    pub assigned_by: Option<String>,  // Username of who created/assigned the card
+    pub assigned_by: Option<String>, // Username of who created/assigned the card
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -607,7 +607,7 @@ pub fn kanban_update_card(
     linked_board_ids: Option<Vec<String>>,
     board_columns: Option<std::collections::HashMap<String, String>>,
     assigned_by: Option<String>,
-    new_board_id: Option<String>,  // Transfer card ownership to a different board
+    new_board_id: Option<String>, // Transfer card ownership to a different board
 ) -> Result<KanbanCard, String> {
     let now = chrono::Utc::now().timestamp();
 
@@ -656,14 +656,10 @@ pub fn kanban_update_card(
 
         // Handle linked_board_ids update
         let new_linked_json: Option<String> = if let Some(ref ids) = linked_board_ids {
-            println!("[KANBAN DEBUG] Setting new linked_board_ids: {:?}", ids);
             Some(serde_json::to_string(ids).map_err(|e| e.to_string())?)
         } else {
-            println!("[KANBAN DEBUG] No linked_board_ids provided, keeping current: {:?}", current_linked);
             current_linked
         };
-        println!("[KANBAN DEBUG] new_linked_json to save: {:?}", new_linked_json);
-
         // Handle board_columns update
         let new_board_cols_json: Option<String> = if let Some(ref cols) = board_columns {
             Some(serde_json::to_string(cols).map_err(|e| e.to_string())?)
@@ -673,7 +669,6 @@ pub fn kanban_update_card(
 
         // Use new_board_id if provided, otherwise keep current
         let final_board_id = new_board_id.unwrap_or(current_board_id);
-        println!("[KANBAN DEBUG] Saving with board_id: {}", final_board_id);
 
         conn.execute(
             r#"
@@ -928,7 +923,7 @@ pub struct BoardMember {
 #[tauri::command]
 pub fn kanban_get_board_members(
     app: AppHandle,
-    _board_id: String,  // Kept for API compatibility, but members are global
+    _board_id: String, // Kept for API compatibility, but members are global
 ) -> Result<Vec<BoardMember>, String> {
     with_db(&app, |conn| {
         // Return ALL unique members (global team), not just for this board
@@ -940,7 +935,7 @@ pub fn kanban_get_board_members(
                 WHERE name IN (SELECT DISTINCT name FROM kanban_board_members)
                 GROUP BY name
                 ORDER BY name
-                "#
+                "#,
             )
             .map_err(|e| e.to_string())?;
 
