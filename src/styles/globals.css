@@ -26,15 +26,62 @@
   background-color: rgba(99, 102, 241, 0.3);
 }
 
+/*
+ * WebKitGTK Rendering Artifact Fix
+ * Forces GPU compositing at root level to prevent ghost line artifacts
+ * from text selection, button states, and transitions
+ */
+#root {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  isolation: isolate;
+}
+
+/* Force GPU layer on all elements with transitions to prevent ghost artifacts */
+.transition-colors,
+.transition-all,
+[class*="transition-"] {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+/*
+ * Override Tailwind ring utilities - box-shadow causes WebKitGTK artifacts
+ * Force all focus rings to use outline instead
+ */
+*:focus {
+  --tw-ring-shadow: none !important;
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 0 #0000) !important;
+}
+
+/* Ensure proper focus visibility for accessibility */
+*:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
 /* Base styles */
 @layer base {
   html {
     font-family: 'Inter', system-ui, sans-serif;
+    /* Force GPU compositing on the entire document */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
   }
 
   body {
     @apply bg-dark-950 text-dark-100 antialiased;
     overflow: hidden;
+    /* Create stacking context to help with repainting */
+    isolation: isolate;
   }
 
   /* Headings */
@@ -71,26 +118,62 @@
 
 /* Component styles */
 @layer components {
-  /* Buttons */
+  /*
+   * Buttons - with GPU acceleration to prevent WebKitGTK ghost artifacts
+   * Using outline instead of box-shadow (ring-*) for focus since WebKitGTK
+   * doesn't properly repaint box-shadow changes
+   */
   .btn {
     @apply px-4 py-2 rounded-lg font-medium transition-all duration-200;
-    @apply focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-dark-950;
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    will-change: transform, box-shadow;
+  }
+
+  .btn:focus {
+    outline: 2px solid var(--color-accent-primary, #6366f1);
+    outline-offset: 2px;
+  }
+
+  .btn:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  .btn:focus-visible {
+    outline: 2px solid var(--color-accent-primary, #6366f1);
+    outline-offset: 2px;
   }
 
   .btn-primary {
-    @apply btn bg-accent-primary text-white hover:bg-accent-secondary focus:ring-accent-primary;
+    @apply btn bg-accent-primary text-white hover:bg-accent-secondary;
   }
 
   .btn-secondary {
-    @apply btn bg-dark-800 text-dark-100 hover:bg-dark-700 focus:ring-dark-600;
+    @apply btn bg-dark-800 text-dark-100 hover:bg-dark-700;
   }
 
   .btn-ghost {
-    @apply btn bg-transparent text-dark-300 hover:bg-dark-800 hover:text-dark-100 focus:ring-dark-600;
+    @apply btn bg-transparent text-dark-300 hover:bg-dark-800 hover:text-dark-100;
   }
 
   .btn-icon {
     @apply p-2 rounded-lg transition-colors hover:bg-dark-800;
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    will-change: transform, box-shadow;
+  }
+
+  .btn-icon:focus {
+    outline: 2px solid var(--color-accent-primary, #6366f1);
+    outline-offset: 2px;
+  }
+
+  .btn-icon:focus:not(:focus-visible) {
+    outline: none;
   }
 
   /* Inputs */
@@ -252,6 +335,26 @@
     @apply animate-slide-in;
   }
 
+  /*
+   * GPU acceleration for dropdowns and floating elements
+   * Prevents WebKitGTK ghost line artifacts when menus close
+   */
+  [class*="absolute"][class*="z-50"],
+  [class*="fixed"][class*="z-50"] {
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+
+  /* Dropdown menu backgrounds - prevent border artifacts */
+  .bg-dark-850 {
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+
   /* Search highlight */
   .search-highlight {
     @apply bg-accent-primary/30 text-accent-primary rounded px-0.5;
@@ -409,12 +512,41 @@
 }
 
 /* Resizable panel handle */
+/* Force GPU layer to prevent WebKitGTK rendering artifacts (ghost lines) */
 [data-panel-group-direction="horizontal"] > [data-panel-resize-handle-id] {
   @apply w-1 bg-dark-800 hover:bg-accent-primary transition-colors;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  will-change: background-color;
 }
 
 [data-panel-group-direction="vertical"] > [data-panel-resize-handle-id] {
   @apply h-1 bg-dark-800 hover:bg-accent-primary transition-colors;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  will-change: background-color;
+}
+
+/* Panel groups - prevent ghost line artifacts at boundaries */
+[data-panel-group] {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+/* Custom resize handles (not using react-resizable-panels) */
+.cursor-col-resize,
+.cursor-row-resize {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  will-change: background-color;
 }
 
 /* React Flow diagram styles - prevent subpixel rendering artifacts */
