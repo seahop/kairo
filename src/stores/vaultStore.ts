@@ -26,38 +26,8 @@ interface VaultState {
   createVault: (path: string, name: string) => Promise<void>;
   closeVault: () => Promise<void>;
   refreshVaultInfo: () => Promise<void>;
-  loadRecentVaults: () => void;
+  loadRecentVaults: () => Promise<void>;
   tryOpenLastVault: () => Promise<boolean>;
-}
-
-// Helper to manage recent vaults in localStorage
-const RECENT_VAULTS_KEY = "kairo:recentVaults";
-const LAST_VAULT_KEY = "kairo:lastVault";
-const MAX_RECENT_VAULTS = 10;
-
-function getStoredRecentVaults(): RecentVault[] {
-  try {
-    const stored = localStorage.getItem(RECENT_VAULTS_KEY);
-    return stored ? JSON.parse(stored) : [];
-  } catch {
-    return [];
-  }
-}
-
-function addToRecentVaults(vault: VaultInfo): void {
-  const recent = getStoredRecentVaults();
-
-  // Remove if already exists
-  const filtered = recent.filter(v => v.path !== vault.path);
-
-  // Add to front
-  const updated: RecentVault[] = [
-    { path: vault.path, name: vault.name, lastOpened: Date.now() },
-    ...filtered,
-  ].slice(0, MAX_RECENT_VAULTS);
-
-  localStorage.setItem(RECENT_VAULTS_KEY, JSON.stringify(updated));
-  localStorage.setItem(LAST_VAULT_KEY, vault.path);
 }
 
 export const useVaultStore = create<VaultState>((set, get) => ({
@@ -66,16 +36,21 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   isLoading: false,
   error: null,
 
-  loadRecentVaults: () => {
-    const recent = getStoredRecentVaults();
-    set({ recentVaults: recent });
+  loadRecentVaults: async () => {
+    try {
+      const recent = await invoke<RecentVault[]>("get_recent_vaults");
+      set({ recentVaults: recent });
+    } catch (error) {
+      console.error("Failed to load recent vaults:", error);
+      set({ recentVaults: [] });
+    }
   },
 
   tryOpenLastVault: async () => {
-    const lastPath = localStorage.getItem(LAST_VAULT_KEY);
-    if (!lastPath) return false;
-
     try {
+      const lastPath = await invoke<string | null>("get_last_vault");
+      if (!lastPath) return false;
+
       await get().openVault(lastPath);
       return true;
     } catch {
@@ -90,9 +65,12 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       const vault = await invoke<VaultInfo>("open_vault", { path });
       set({ vault, isLoading: false });
 
-      // Add to recent vaults
-      addToRecentVaults(vault);
-      set({ recentVaults: getStoredRecentVaults() });
+      // Add to recent vaults (stored in ~/.kairo/settings.json)
+      const recentVaults = await invoke<RecentVault[]>("add_recent_vault", {
+        path: vault.path,
+        name: vault.name,
+      });
+      set({ recentVaults });
 
       // Trigger hook for extensions
       triggerHook("onVaultOpen", { vault, path });
@@ -108,9 +86,12 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       const vault = await invoke<VaultInfo>("create_vault", { path, name });
       set({ vault, isLoading: false });
 
-      // Add to recent vaults
-      addToRecentVaults(vault);
-      set({ recentVaults: getStoredRecentVaults() });
+      // Add to recent vaults (stored in ~/.kairo/settings.json)
+      const recentVaults = await invoke<RecentVault[]>("add_recent_vault", {
+        path: vault.path,
+        name: vault.name,
+      });
+      set({ recentVaults });
 
       // Trigger hook for extensions
       triggerHook("onVaultOpen", { vault, path });

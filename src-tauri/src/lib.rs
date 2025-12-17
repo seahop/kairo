@@ -133,6 +133,14 @@ pub fn run() {
             commands::extensions::read_extension_settings,
             commands::extensions::save_extension_settings,
             commands::extensions::remove_extension,
+            // App settings commands
+            commands::settings::get_app_settings,
+            commands::settings::get_recent_vaults,
+            commands::settings::add_recent_vault,
+            commands::settings::get_last_vault,
+            commands::settings::set_app_setting,
+            commands::settings::get_app_setting,
+            commands::settings::remove_recent_vault,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -104,7 +104,7 @@ pub fn kanban_list_boards(app: AppHandle) -> Result<Vec<KanbanBoard>, String> {
             })
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
-            .collect();
+            .collect::<Vec<KanbanBoard>>();
 
         Ok(boards)
     })
@@ -175,6 +175,16 @@ pub fn kanban_create_board(
             params![id, name, columns_json, owner_name, now, now],
         )
         .map_err(|e| e.to_string())?;
+
+        // If the board has an owner, automatically add them as a board member
+        if let Some(ref owner) = owner_name {
+            let member_id = Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT OR IGNORE INTO kanban_board_members (id, board_id, name, added_at) VALUES (?1, ?2, ?3, ?4)",
+                params![member_id, id, owner, now],
+            )
+            .map_err(|e| e.to_string())?;
+        }
 
         Ok(KanbanBoard {
             id: id.clone(),
@@ -668,18 +678,51 @@ pub fn kanban_update_card(
         };
 
         // Use new_board_id if provided, otherwise keep current
-        let final_board_id = new_board_id.unwrap_or(current_board_id);
+        let final_board_id = new_board_id.clone().unwrap_or(current_board_id.clone());
 
-        conn.execute(
-            r#"
-            UPDATE kanban_cards
-            SET title = ?1, description = ?2, due_date = ?3, priority = ?4, metadata = ?5,
-                updated_at = ?6, linked_board_ids = ?7, board_columns = ?8, board_id = ?9
-            WHERE id = ?10
-            "#,
-            params![new_title, new_description, new_due_date, new_priority, metadata_json, now, new_linked_json, new_board_cols_json, final_board_id, card_id],
-        )
-        .map_err(|e| e.to_string())?;
+        // If transferring to a new board, we need to update the column_id to the first column of the new board
+        let final_column_id: Option<String> = if new_board_id.is_some() && final_board_id != current_board_id {
+            // Get the first column of the new board
+            let columns_json: String = conn
+                .query_row(
+                    "SELECT columns FROM kanban_boards WHERE id = ?1",
+                    params![final_board_id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+
+            let columns: Vec<KanbanColumn> =
+                serde_json::from_str(&columns_json).unwrap_or_default();
+
+            columns.first().map(|c| c.id.clone())
+        } else {
+            None
+        };
+
+        // Build the update query based on whether we need to update column_id
+        if let Some(new_column_id) = final_column_id {
+            conn.execute(
+                r#"
+                UPDATE kanban_cards
+                SET title = ?1, description = ?2, due_date = ?3, priority = ?4, metadata = ?5,
+                    updated_at = ?6, linked_board_ids = ?7, board_columns = ?8, board_id = ?9, column_id = ?10
+                WHERE id = ?11
+                "#,
+                params![new_title, new_description, new_due_date, new_priority, metadata_json, now, new_linked_json, new_board_cols_json, final_board_id, new_column_id, card_id],
+            )
+            .map_err(|e| e.to_string())?;
+        } else {
+            conn.execute(
+                r#"
+                UPDATE kanban_cards
+                SET title = ?1, description = ?2, due_date = ?3, priority = ?4, metadata = ?5,
+                    updated_at = ?6, linked_board_ids = ?7, board_columns = ?8, board_id = ?9
+                WHERE id = ?10
+                "#,
+                params![new_title, new_description, new_due_date, new_priority, metadata_json, now, new_linked_json, new_board_cols_json, final_board_id, card_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
 
         // Return updated card by querying it
         conn.query_row(
