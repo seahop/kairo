@@ -70,16 +70,19 @@ pub fn search_notes(
             )?;
 
             let pattern = format!("%{}%", fts_query.replace('*', "%"));
-            let rows = stmt.query_map(params![pattern, include_archived as i32, limit as i64], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, Option<String>>(4)?,
-                    row.get::<_, i32>(5)? != 0,
-                ))
-            })?;
+            let rows = stmt.query_map(
+                params![pattern, include_archived as i32, limit as i64],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, i32>(5)? != 0,
+                    ))
+                },
+            )?;
 
             for row in rows.filter_map(|r| r.ok()) {
                 let (id, path, title, code_content, language, archived) = row;
@@ -124,16 +127,19 @@ pub fn search_notes(
                 "#,
             )?;
 
-            let rows = stmt.query_map(params![fts_query, include_archived as i32, limit as i64], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, f64>(4)?,
-                    row.get::<_, i32>(5)? != 0,
-                ))
-            })?;
+            let rows = stmt.query_map(
+                params![fts_query, include_archived as i32, limit as i64],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, f64>(4)?,
+                        row.get::<_, i32>(5)? != 0,
+                    ))
+                },
+            )?;
 
             for row in rows.filter_map(|r| r.ok()) {
                 let (id, path, title, content, score, archived) = row;

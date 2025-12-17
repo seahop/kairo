@@ -341,9 +341,7 @@ fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Migration: Add archived column to notes for frontmatter-based archiving
-    let has_archived = conn
-        .prepare("SELECT archived FROM notes LIMIT 0")
-        .is_ok();
+    let has_archived = conn.prepare("SELECT archived FROM notes LIMIT 0").is_ok();
 
     if !has_archived {
         conn.execute_batch(

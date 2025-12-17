@@ -565,11 +565,7 @@ pub fn kanban_delete_card(app: AppHandle, card_id: String) -> Result<(), String>
 
 /// Archive or unarchive a card
 #[tauri::command]
-pub fn kanban_archive_card(
-    app: AppHandle,
-    card_id: String,
-    archived: bool,
-) -> Result<(), String> {
+pub fn kanban_archive_card(app: AppHandle, card_id: String, archived: bool) -> Result<(), String> {
     with_db(&app, |conn| {
         let now = chrono::Utc::now().timestamp();
         conn.execute(
