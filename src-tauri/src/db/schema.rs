@@ -112,6 +112,7 @@ pub fn init_schema(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> 
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             columns TEXT NOT NULL,  -- JSON array with { id, name, color?, isDone }
+            owner_name TEXT,  -- Username of board owner (for personal boards)
             created_at INTEGER NOT NULL,
             modified_at INTEGER NOT NULL
         );
@@ -129,7 +130,10 @@ pub fn init_schema(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> 
             closed_at INTEGER,
             due_date INTEGER,
             priority TEXT,  -- 'low', 'medium', 'high', 'urgent'
-            metadata TEXT  -- JSON: { assignees: string[], labels: string[] }
+            metadata TEXT,  -- JSON: { assignees: string[], labels: string[] }
+            linked_board_ids TEXT,  -- JSON array of additional board IDs this card appears on
+            board_columns TEXT,  -- JSON map: { boardId: columnId } for per-board column tracking
+            is_complete INTEGER DEFAULT 0  -- Universal completion flag (1 when done on any board)
         );
 
         CREATE INDEX IF NOT EXISTS idx_kanban_cards_board ON kanban_cards(board_id);
@@ -303,6 +307,34 @@ fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
             SELECT id, note_id, ?1 FROM diagram_boards WHERE note_id IS NOT NULL
             "#,
             rusqlite::params![now],
+        )?;
+    }
+
+    // Migration: Add owner_name to kanban_boards for personal board ownership
+    let has_owner_name = conn
+        .prepare("SELECT owner_name FROM kanban_boards LIMIT 0")
+        .is_ok();
+
+    if !has_owner_name {
+        conn.execute_batch(
+            r#"
+            ALTER TABLE kanban_boards ADD COLUMN owner_name TEXT;
+            "#,
+        )?;
+    }
+
+    // Migration: Add multi-board card support columns
+    let has_linked_board_ids = conn
+        .prepare("SELECT linked_board_ids FROM kanban_cards LIMIT 0")
+        .is_ok();
+
+    if !has_linked_board_ids {
+        conn.execute_batch(
+            r#"
+            ALTER TABLE kanban_cards ADD COLUMN linked_board_ids TEXT;
+            ALTER TABLE kanban_cards ADD COLUMN board_columns TEXT;
+            ALTER TABLE kanban_cards ADD COLUMN is_complete INTEGER DEFAULT 0;
+            "#,
         )?;
     }
 

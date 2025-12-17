@@ -33,8 +33,8 @@ export function initKanbanPlugin() {
         execute: () => useKanbanStore.getState().toggleView(),
       });
 
-      // Load boards on init
-      useKanbanStore.getState().loadBoards();
+      // Don't load boards here - vault may not be open yet
+      // Boards are loaded when the view opens (in KanbanBoard.tsx useEffect)
     },
   });
 }

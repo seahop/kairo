@@ -7,6 +7,7 @@ export type Priority = "low" | "medium" | "high" | "urgent";
 export interface CardMetadata {
   assignees: string[];
   labels: string[];
+  assignedBy?: string;  // Username of who created/assigned the card
 }
 
 export interface KanbanCard {
@@ -24,6 +25,9 @@ export interface KanbanCard {
   dueDate?: number;
   priority?: Priority;
   metadata?: CardMetadata;
+  linkedBoardIds?: string[];
+  boardColumns?: Record<string, string>;  // boardId -> columnId mapping for per-board column tracking
+  isComplete?: boolean;
 }
 
 export interface KanbanColumn {
@@ -37,6 +41,7 @@ export interface KanbanBoard {
   id: string;
   name: string;
   columns: KanbanColumn[];
+  ownerName?: string;  // Username of board owner (for personal boards)
   createdAt: number;
   modifiedAt: number;
 }
@@ -62,6 +67,10 @@ export interface CardUpdateInput {
   priority?: Priority | null;
   assignees?: string[];
   labels?: string[];
+  linkedBoardIds?: string[];
+  boardColumns?: Record<string, string>;
+  assignedBy?: string;  // Username of who created/assigned the card
+  newBoardId?: string;  // Transfer card ownership to a different board
 }
 
 interface CreateCardData {
@@ -90,12 +99,14 @@ interface KanbanState {
   createCardData: CreateCardData | null;
   customTemplates: CardTemplate[];
   selectedTemplateId: string | null;
+  currentUsername: string | null;  // Current user's identity
 
   // Board actions
   loadBoards: () => Promise<void>;
   loadBoard: (id: string) => Promise<void>;
-  createBoard: (name: string, columns?: string[]) => Promise<void>;
+  createBoard: (name: string, columns?: string[], ownerName?: string) => Promise<void>;
   deleteBoard: (id: string) => Promise<void>;
+  getPersonalBoard: (username: string) => KanbanBoard | undefined;
 
   // Column actions
   addColumn: (boardId: string, name: string) => Promise<void>;
@@ -112,6 +123,9 @@ interface KanbanState {
   moveCard: (cardId: string, toColumnId: string, position: number) => Promise<void>;
   deleteCard: (cardId: string) => Promise<void>;
   takeCard: (cardId: string, username: string) => Promise<void>;
+  giveCard: (cardId: string, targetUsername: string) => Promise<void>;
+  unlinkCardFromBoard: (cardId: string, boardId: string) => Promise<void>;
+  returnToPool: (cardId: string) => Promise<void>;
 
   // Card detail panel
   openCardDetail: (card: KanbanCard) => void;
@@ -148,6 +162,11 @@ interface KanbanState {
   selectTemplate: (templateId: string | null) => void;
   getSelectedTemplate: () => CardTemplate | null;
   getAllTemplates: () => CardTemplate[];
+
+  // User identity actions
+  loadUsername: () => Promise<void>;
+  setUsername: (username: string) => Promise<void>;
+  getMyBoard: () => KanbanBoard | undefined;
 }
 
 export const useKanbanStore = create<KanbanState>((set, get) => ({
@@ -161,6 +180,7 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
   assigneeSuggestions: [],
   isLoading: false,
   error: null,
+  currentUsername: null,  // Loaded async from .kairo-user file
   showView: false,
   showCreateModal: false,
   showCreateCardModal: false,
@@ -171,12 +191,33 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
   loadBoards: async () => {
     set({ isLoading: true, error: null });
     try {
+      // First ensure username is loaded (needed for default board selection)
+      let { currentUsername } = get();
+
+      if (!currentUsername) {
+        try {
+          const username = await invoke<string | null>("get_vault_user");
+          if (username) {
+            set({ currentUsername: username });
+            currentUsername = username;
+          }
+        } catch (e) {
+          console.error("Failed to load username:", e);
+        }
+      }
+
       const boards = await invoke<KanbanBoard[]>("kanban_list_boards");
       set({ boards, isLoading: false });
 
-      // Load the first board if available
-      if (boards.length > 0 && !get().currentBoard) {
-        get().loadBoard(boards[0].id);
+      // Load a board if none is selected
+      const hasCurrentBoard = !!get().currentBoard;
+
+      if (boards.length > 0 && !hasCurrentBoard) {
+        // Prefer the user's personal board if they have one
+        const myBoard = currentUsername
+          ? boards.find((b) => b.ownerName?.toLowerCase() === currentUsername.toLowerCase())
+          : null;
+        get().loadBoard(myBoard?.id || boards[0].id);
       }
     } catch (error) {
       set({ error: String(error), isLoading: false });
@@ -194,13 +235,14 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     }
   },
 
-  createBoard: async (name: string, columns?: string[]) => {
+  createBoard: async (name: string, columns?: string[], ownerName?: string) => {
     set({ isLoading: true, error: null });
     try {
-      const defaultColumns = columns ?? ["To Do", "In Progress", "Done"];
+      const defaultColumns = columns ?? ["Created", "In Progress", "Waiting on Others", "Delayed", "Closed", "Backlog"];
       const board = await invoke<KanbanBoard>("kanban_create_board", {
         name,
         columns: defaultColumns,
+        ownerName: ownerName ?? null,
       });
       set((state) => ({
         boards: [...state.boards, board],
@@ -212,6 +254,12 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     } catch (error) {
       set({ error: String(error), isLoading: false });
     }
+  },
+
+  getPersonalBoard: (username: string) => {
+    const { boards } = get();
+    // Case-insensitive lookup for personal board
+    return boards.find((b) => b.ownerName?.toLowerCase() === username.toLowerCase());
   },
 
   deleteBoard: async (id: string) => {
@@ -274,44 +322,60 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
   },
 
   moveCard: async (cardId: string, toColumnId: string, position: number) => {
-    const { currentBoard } = get();
+    const { currentBoard, cards, updateCard } = get();
     if (!currentBoard) return;
 
+    const card = cards.find((c) => c.id === cardId);
+    if (!card) return;
+
+    // Check if we're on a linked board (not the home board)
+    const isLinkedBoard = card.boardId !== currentBoard.id;
+
     try {
-      await invoke("kanban_move_card", {
-        boardId: currentBoard.id,
-        cardId,
-        toColumnId,
-        position,
-      });
+      if (isLinkedBoard) {
+        // On a linked board, update boardColumns instead of columnId
+        const newBoardColumns = {
+          ...(card.boardColumns || {}),
+          [currentBoard.id]: toColumnId,
+        };
+        await updateCard(cardId, { boardColumns: newBoardColumns });
+      } else {
+        // On home board, use the standard move
+        await invoke("kanban_move_card", {
+          boardId: currentBoard.id,
+          cardId,
+          toColumnId,
+          position,
+        });
 
-      // Update local state optimistically
-      const targetColumn = currentBoard.columns.find((c) => c.id === toColumnId);
-      const now = Math.floor(Date.now() / 1000);
+        // Update local state optimistically
+        const targetColumn = currentBoard.columns.find((c) => c.id === toColumnId);
+        const now = Math.floor(Date.now() / 1000);
 
-      set((state) => ({
-        cards: state.cards.map((c) => {
-          if (c.id !== cardId) return c;
-          return {
-            ...c,
-            columnId: toColumnId,
-            position,
-            updatedAt: now,
-            closedAt: targetColumn?.isDone ? now : undefined,
-          };
-        }),
-        // Update selectedCard if it's the one being moved
-        selectedCard:
-          state.selectedCard?.id === cardId
-            ? {
-                ...state.selectedCard,
-                columnId: toColumnId,
-                position,
-                updatedAt: now,
-                closedAt: targetColumn?.isDone ? now : undefined,
-              }
-            : state.selectedCard,
-      }));
+        set((state) => ({
+          cards: state.cards.map((c) => {
+            if (c.id !== cardId) return c;
+            return {
+              ...c,
+              columnId: toColumnId,
+              position,
+              updatedAt: now,
+              closedAt: targetColumn?.isDone ? now : undefined,
+            };
+          }),
+          // Update selectedCard if it's the one being moved
+          selectedCard:
+            state.selectedCard?.id === cardId
+              ? {
+                  ...state.selectedCard,
+                  columnId: toColumnId,
+                  position,
+                  updatedAt: now,
+                  closedAt: targetColumn?.isDone ? now : undefined,
+                }
+              : state.selectedCard,
+        }));
+      }
     } catch (error) {
       set({ error: String(error) });
     }
@@ -362,6 +426,10 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
         priority: updates.priority,
         assignees: updates.assignees,
         labels: updates.labels,
+        linkedBoardIds: updates.linkedBoardIds,
+        boardColumns: updates.boardColumns,
+        assignedBy: updates.assignedBy,
+        newBoardId: updates.newBoardId,
       });
       set((state) => ({
         cards: state.cards.map((c) => (c.id === cardId ? card : c)),
@@ -372,17 +440,76 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     }
   },
 
-  // Quick action to take a card (assign yourself)
+  // Quick action to take a card (assign yourself and link to your board)
   takeCard: async (cardId: string, username: string) => {
-    const { cards, updateCard } = get();
+    const { cards, updateCard, getPersonalBoard, currentUsername } = get();
     const card = cards.find((c) => c.id === cardId);
     if (!card) return;
 
     const currentAssignees = card.metadata?.assignees || [];
-    if (currentAssignees.includes(username)) return; // Already assigned
+    const personalBoard = getPersonalBoard(username);
+
+    const newAssignees = currentAssignees.includes(username)
+      ? currentAssignees
+      : [...currentAssignees, username];
+
+    // Transfer ownership to the user's personal board (card now "belongs" to them)
+    await updateCard(cardId, {
+      assignees: newAssignees,
+      linkedBoardIds: [],  // Clear linked boards since we're transferring ownership
+      newBoardId: personalBoard?.id,  // Transfer card ownership to their board
+      assignedBy: currentUsername || undefined,  // Track who assigned it
+    });
+  },
+
+  // Give a card to another user (assign them and link to their board)
+  giveCard: async (cardId: string, targetUsername: string) => {
+    const { cards, updateCard, getPersonalBoard, currentUsername } = get();
+    const card = cards.find((c) => c.id === cardId);
+    if (!card) return;
+
+    const currentAssignees = card.metadata?.assignees || [];
+    const targetBoard = getPersonalBoard(targetUsername);
+
+    const newAssignees = currentAssignees.includes(targetUsername)
+      ? currentAssignees
+      : [...currentAssignees, targetUsername];
+
+    // Transfer ownership to target's personal board (card now "belongs" to them)
+    await updateCard(cardId, {
+      assignees: newAssignees,
+      linkedBoardIds: [],  // Clear linked boards since we're transferring ownership
+      newBoardId: targetBoard?.id,  // Transfer card ownership to their board
+      assignedBy: currentUsername || undefined,  // Track who gave the card
+    });
+  },
+
+  // Remove card from a linked board (unlink but don't delete)
+  unlinkCardFromBoard: async (cardId: string, boardId: string) => {
+    const { cards, updateCard } = get();
+    const card = cards.find((c) => c.id === cardId);
+    if (!card) return;
+
+    // Can't unlink from home board
+    if (card.boardId === boardId) return;
+
+    const currentLinkedBoards = card.linkedBoardIds || [];
+    const newLinkedBoards = currentLinkedBoards.filter((id) => id !== boardId);
 
     await updateCard(cardId, {
-      assignees: [...currentAssignees, username],
+      linkedBoardIds: newLinkedBoards,
+    });
+  },
+
+  // Return card to pool (remove all assignees and unlink from all boards except home)
+  returnToPool: async (cardId: string) => {
+    const { cards, updateCard } = get();
+    const card = cards.find((c) => c.id === cardId);
+    if (!card) return;
+
+    await updateCard(cardId, {
+      assignees: [],
+      linkedBoardIds: [],
     });
   },
 
@@ -460,11 +587,19 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
 
   addBoardMember: async (boardId: string, name: string) => {
     try {
-      const member = await invoke<BoardMember>("kanban_add_board_member", { boardId, name });
+      // Response now includes both member and optionally auto-created personal board
+      const result = await invoke<{ member: BoardMember; createdBoard: KanbanBoard | null }>(
+        "kanban_add_board_member",
+        { boardId, name }
+      );
       set((state) => ({
-        boardMembers: [...state.boardMembers, member],
+        boardMembers: [...state.boardMembers, result.member],
         // Also update assignee suggestions immediately
         assigneeSuggestions: [...state.assigneeSuggestions, name].sort(),
+        // If a personal board was auto-created, add it to boards list
+        boards: result.createdBoard
+          ? [...state.boards, result.createdBoard]
+          : state.boards,
       }));
     } catch (error) {
       set({ error: String(error) });
@@ -521,7 +656,7 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     set({ showCreateCardModal: false, createCardData: null }),
 
   createCardWithDetails: async (data) => {
-    const { currentBoard } = get();
+    const { currentBoard, currentUsername, boards } = get();
     if (!currentBoard) return;
 
     try {
@@ -540,6 +675,18 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
         data.assignees.length > 0;
 
       if (hasDetails) {
+        // If card has a single assignee, transfer ownership to their board
+        // (card "belongs" to the assignee, not the creator)
+        let newBoardId: string | undefined;
+        if (data.assignees.length === 1) {
+          const assigneeBoard = boards.find(
+            (b) => b.ownerName?.toLowerCase() === data.assignees[0].toLowerCase()
+          );
+          if (assigneeBoard) {
+            newBoardId = assigneeBoard.id;
+          }
+        }
+
         const updatedCard = await invoke<KanbanCard>("kanban_update_card", {
           cardId: card.id,
           description: data.description || undefined,
@@ -548,6 +695,8 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
             ? Math.floor(new Date(data.dueDate).getTime() / 1000)
             : undefined,
           assignees: data.assignees.length > 0 ? data.assignees : undefined,
+          assignedBy: currentUsername || undefined,
+          newBoardId,  // Transfer card ownership to assignee's board
         });
         set((state) => ({
           cards: [...state.cards, updatedCard],
@@ -635,5 +784,32 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
   getAllTemplates: () => {
     const { customTemplates } = get();
     return [...BUILTIN_TEMPLATES, ...customTemplates];
+  },
+
+  // User identity actions (stored in .kairo-user file, gitignored)
+  loadUsername: async () => {
+    try {
+      const username = await invoke<string | null>("get_vault_user");
+      set({ currentUsername: username });
+    } catch (error) {
+      console.error("Failed to load username:", error);
+    }
+  },
+
+  setUsername: async (username: string) => {
+    try {
+      await invoke("set_vault_user", { username });
+      set({ currentUsername: username });
+    } catch (error) {
+      console.error("Failed to save username:", error);
+      set({ error: String(error) });
+    }
+  },
+
+  getMyBoard: () => {
+    const { currentUsername, boards } = get();
+    if (!currentUsername) return undefined;
+    // Case-insensitive lookup
+    return boards.find((b) => b.ownerName?.toLowerCase() === currentUsername.toLowerCase());
   },
 }));

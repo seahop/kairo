@@ -19,6 +19,8 @@ pub struct KanbanBoard {
     pub id: String,
     pub name: String,
     pub columns: Vec<KanbanColumn>,
+    #[serde(rename = "ownerName")]
+    pub owner_name: Option<String>,
     #[serde(rename = "createdAt")]
     pub created_at: i64,
     #[serde(rename = "modifiedAt")]
@@ -32,6 +34,8 @@ pub struct CardMetadata {
     pub assignees: Vec<String>,
     #[serde(default)]
     pub labels: Vec<String>,
+    #[serde(rename = "assignedBy", skip_serializing_if = "Option::is_none")]
+    pub assigned_by: Option<String>,  // Username of who created/assigned the card
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -58,6 +62,12 @@ pub struct KanbanCard {
     pub due_date: Option<i64>,
     pub priority: Option<String>,
     pub metadata: Option<CardMetadata>,
+    #[serde(rename = "linkedBoardIds")]
+    pub linked_board_ids: Option<Vec<String>>,
+    #[serde(rename = "boardColumns")]
+    pub board_columns: Option<std::collections::HashMap<String, String>>,
+    #[serde(rename = "isComplete")]
+    pub is_complete: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -74,7 +84,7 @@ pub struct KanbanLabel {
 pub fn kanban_list_boards(app: AppHandle) -> Result<Vec<KanbanBoard>, String> {
     with_db(&app, |conn| {
         let mut stmt = conn
-            .prepare("SELECT id, name, columns, created_at, modified_at FROM kanban_boards ORDER BY modified_at DESC")
+            .prepare("SELECT id, name, columns, owner_name, created_at, modified_at FROM kanban_boards ORDER BY modified_at DESC")
             .map_err(|e| e.to_string())?;
 
         let boards = stmt
@@ -87,8 +97,9 @@ pub fn kanban_list_boards(app: AppHandle) -> Result<Vec<KanbanBoard>, String> {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     columns,
-                    created_at: row.get(3)?,
-                    modified_at: row.get(4)?,
+                    owner_name: row.get(3)?,
+                    created_at: row.get(4)?,
+                    modified_at: row.get(5)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -105,7 +116,7 @@ pub fn kanban_list_boards(app: AppHandle) -> Result<Vec<KanbanBoard>, String> {
 pub fn kanban_get_board(app: AppHandle, board_id: String) -> Result<KanbanBoard, String> {
     with_db(&app, |conn| {
         let mut stmt = conn
-            .prepare("SELECT id, name, columns, created_at, modified_at FROM kanban_boards WHERE id = ?1")
+            .prepare("SELECT id, name, columns, owner_name, created_at, modified_at FROM kanban_boards WHERE id = ?1")
             .map_err(|e| e.to_string())?;
 
         stmt.query_row(params![board_id], |row| {
@@ -117,8 +128,9 @@ pub fn kanban_get_board(app: AppHandle, board_id: String) -> Result<KanbanBoard,
                 id: row.get(0)?,
                 name: row.get(1)?,
                 columns,
-                created_at: row.get(3)?,
-                modified_at: row.get(4)?,
+                owner_name: row.get(3)?,
+                created_at: row.get(4)?,
+                modified_at: row.get(5)?,
             })
         })
         .map_err(|e| e.to_string().into())
@@ -132,6 +144,7 @@ pub fn kanban_create_board(
     app: AppHandle,
     name: String,
     columns: Vec<String>,
+    owner_name: Option<String>,
 ) -> Result<KanbanBoard, String> {
     let id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp();
@@ -139,11 +152,12 @@ pub fn kanban_create_board(
     let kanban_columns: Vec<KanbanColumn> = columns
         .into_iter()
         .map(|col_name| {
-            // Auto-mark "Done" column as a completion column
+            // Auto-mark completion columns
             let is_done = col_name.eq_ignore_ascii_case("done")
                 || col_name.eq_ignore_ascii_case("complete")
                 || col_name.eq_ignore_ascii_case("completed")
-                || col_name.eq_ignore_ascii_case("finished");
+                || col_name.eq_ignore_ascii_case("finished")
+                || col_name.eq_ignore_ascii_case("closed");
             KanbanColumn {
                 id: Uuid::new_v4().to_string(),
                 name: col_name,
@@ -157,8 +171,8 @@ pub fn kanban_create_board(
 
     with_db(&app, |conn| {
         conn.execute(
-            "INSERT INTO kanban_boards (id, name, columns, created_at, modified_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, name, columns_json, now, now],
+            "INSERT INTO kanban_boards (id, name, columns, owner_name, created_at, modified_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, name, columns_json, owner_name, now, now],
         )
         .map_err(|e| e.to_string())?;
 
@@ -166,6 +180,7 @@ pub fn kanban_create_board(
             id: id.clone(),
             name,
             columns: kanban_columns,
+            owner_name,
             created_at: now,
             modified_at: now,
         })
@@ -222,11 +237,11 @@ pub fn kanban_add_column(
         .map_err(|e| e.to_string())?;
 
         // Return updated board
-        let board_name: String = conn
+        let (board_name, owner_name): (String, Option<String>) = conn
             .query_row(
-                "SELECT name FROM kanban_boards WHERE id = ?1",
+                "SELECT name, owner_name FROM kanban_boards WHERE id = ?1",
                 params![board_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|e| e.to_string())?;
 
@@ -242,6 +257,7 @@ pub fn kanban_add_column(
             id: board_id,
             name: board_name,
             columns,
+            owner_name,
             created_at,
             modified_at: now,
         })
@@ -289,11 +305,11 @@ pub fn kanban_remove_column(
         .map_err(|e| e.to_string())?;
 
         // Return updated board
-        let board_name: String = conn
+        let (board_name, owner_name): (String, Option<String>) = conn
             .query_row(
-                "SELECT name FROM kanban_boards WHERE id = ?1",
+                "SELECT name, owner_name FROM kanban_boards WHERE id = ?1",
                 params![board_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|e| e.to_string())?;
 
@@ -309,6 +325,7 @@ pub fn kanban_remove_column(
             id: board_id,
             name: board_name,
             columns,
+            owner_name,
             created_at,
             modified_at: now,
         })
@@ -316,19 +333,21 @@ pub fn kanban_remove_column(
     .map_err(|e| e.to_string())
 }
 
-/// Get cards for a board
+/// Get cards for a board (includes home board cards and linked cards)
 #[tauri::command]
 pub fn kanban_get_cards(app: AppHandle, board_id: String) -> Result<Vec<KanbanCard>, String> {
     with_db(&app, |conn| {
+        // Get cards where this is the home board OR the board is in linked_board_ids
         let mut stmt = conn
             .prepare(
                 r#"
                 SELECT c.id, c.board_id, c.column_id, c.title, c.description, c.note_id,
                        c.position, c.created_at, c.updated_at, c.closed_at, c.due_date,
-                       c.priority, c.metadata, n.path
+                       c.priority, c.metadata, n.path, c.linked_board_ids, c.board_columns, c.is_complete
                 FROM kanban_cards c
                 LEFT JOIN notes n ON c.note_id = n.id
                 WHERE c.board_id = ?1
+                   OR (c.linked_board_ids IS NOT NULL AND c.linked_board_ids LIKE '%' || ?1 || '%')
                 ORDER BY c.position
                 "#,
             )
@@ -340,6 +359,17 @@ pub fn kanban_get_cards(app: AppHandle, board_id: String) -> Result<Vec<KanbanCa
                 let metadata_str: Option<String> = row.get(12)?;
                 let metadata: Option<CardMetadata> =
                     metadata_str.and_then(|s| serde_json::from_str(&s).ok());
+
+                let linked_board_ids_str: Option<String> = row.get(14)?;
+                let linked_board_ids: Option<Vec<String>> =
+                    linked_board_ids_str.and_then(|s| serde_json::from_str(&s).ok());
+
+                let board_columns_str: Option<String> = row.get(15)?;
+                let board_columns: Option<std::collections::HashMap<String, String>> =
+                    board_columns_str.and_then(|s| serde_json::from_str(&s).ok());
+
+                let is_complete_int: Option<i32> = row.get(16)?;
+                let is_complete = is_complete_int.map(|v| v != 0);
 
                 Ok(KanbanCard {
                     id: row.get(0)?,
@@ -356,11 +386,14 @@ pub fn kanban_get_cards(app: AppHandle, board_id: String) -> Result<Vec<KanbanCa
                     due_date: row.get(10)?,
                     priority: row.get(11)?,
                     metadata,
+                    linked_board_ids,
+                    board_columns,
+                    is_complete,
                 })
             })
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
-            .collect();
+            .collect::<Vec<KanbanCard>>();
 
         Ok(cards)
     })
@@ -412,6 +445,9 @@ pub fn kanban_add_card(
             due_date: None,
             priority: None,
             metadata: None,
+            linked_board_ids: None,
+            board_columns: None,
+            is_complete: Some(false),
         })
     })
     .map_err(|e| e.to_string())
@@ -456,19 +492,19 @@ pub fn kanban_move_card(
         let from_column = columns.iter().find(|c| c.id == current_column_id);
         let was_in_done_column = from_column.map(|c| c.is_done).unwrap_or(false);
 
-        // Determine closed_at value:
-        // - Moving TO done column: set closed_at = now
-        // - Moving FROM done column to non-done: clear closed_at
+        // Determine closed_at and is_complete values:
+        // - Moving TO done column: set closed_at = now, is_complete = 1
+        // - Moving FROM done column to non-done: clear closed_at (but keep is_complete since it's universal)
         // - Otherwise: keep existing value
         if is_done_column && !was_in_done_column {
-            // Moving to done column - set closed_at
+            // Moving to done column - set closed_at and is_complete
             conn.execute(
-                "UPDATE kanban_cards SET column_id = ?1, position = ?2, updated_at = ?3, closed_at = ?3 WHERE id = ?4",
+                "UPDATE kanban_cards SET column_id = ?1, position = ?2, updated_at = ?3, closed_at = ?3, is_complete = 1 WHERE id = ?4",
                 params![to_column_id, position, now, card_id],
             )
             .map_err(|e| e.to_string())?;
         } else if !is_done_column && was_in_done_column {
-            // Moving from done column - clear closed_at
+            // Moving from done column - clear closed_at but keep is_complete (universal completion)
             conn.execute(
                 "UPDATE kanban_cards SET column_id = ?1, position = ?2, updated_at = ?3, closed_at = NULL WHERE id = ?4",
                 params![to_column_id, position, now, card_id],
@@ -508,7 +544,7 @@ pub fn kanban_get_card(app: AppHandle, card_id: String) -> Result<KanbanCard, St
             r#"
             SELECT c.id, c.board_id, c.column_id, c.title, c.description, c.note_id,
                    c.position, c.created_at, c.updated_at, c.closed_at, c.due_date,
-                   c.priority, c.metadata, n.path
+                   c.priority, c.metadata, n.path, c.linked_board_ids, c.board_columns, c.is_complete
             FROM kanban_cards c
             LEFT JOIN notes n ON c.note_id = n.id
             WHERE c.id = ?1
@@ -518,6 +554,17 @@ pub fn kanban_get_card(app: AppHandle, card_id: String) -> Result<KanbanCard, St
                 let metadata_str: Option<String> = row.get(12)?;
                 let metadata: Option<CardMetadata> =
                     metadata_str.and_then(|s| serde_json::from_str(&s).ok());
+
+                let linked_board_ids_str: Option<String> = row.get(14)?;
+                let linked_board_ids: Option<Vec<String>> =
+                    linked_board_ids_str.and_then(|s| serde_json::from_str(&s).ok());
+
+                let board_columns_str: Option<String> = row.get(15)?;
+                let board_columns: Option<std::collections::HashMap<String, String>> =
+                    board_columns_str.and_then(|s| serde_json::from_str(&s).ok());
+
+                let is_complete_int: Option<i32> = row.get(16)?;
+                let is_complete = is_complete_int.map(|v| v != 0);
 
                 Ok(KanbanCard {
                     id: row.get(0)?,
@@ -534,6 +581,9 @@ pub fn kanban_get_card(app: AppHandle, card_id: String) -> Result<KanbanCard, St
                     due_date: row.get(10)?,
                     priority: row.get(11)?,
                     metadata,
+                    linked_board_ids,
+                    board_columns,
+                    is_complete,
                 })
             },
         )
@@ -554,22 +604,29 @@ pub fn kanban_update_card(
     priority: Option<String>,
     assignees: Option<Vec<String>>,
     labels: Option<Vec<String>>,
+    linked_board_ids: Option<Vec<String>>,
+    board_columns: Option<std::collections::HashMap<String, String>>,
+    assigned_by: Option<String>,
+    new_board_id: Option<String>,  // Transfer card ownership to a different board
 ) -> Result<KanbanCard, String> {
     let now = chrono::Utc::now().timestamp();
 
     with_db(&app, |conn| {
         // Get current card data
-        let (current_title, current_desc, current_due, current_priority, current_metadata): (
+        let (current_title, current_desc, current_due, current_priority, current_metadata, current_linked, current_board_cols, current_board_id): (
             String,
             Option<String>,
             Option<i64>,
             Option<String>,
             Option<String>,
+            Option<String>,
+            Option<String>,
+            String,
         ) = conn
             .query_row(
-                "SELECT title, description, due_date, priority, metadata FROM kanban_cards WHERE id = ?1",
+                "SELECT title, description, due_date, priority, metadata, linked_board_ids, board_columns, board_id FROM kanban_cards WHERE id = ?1",
                 params![card_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?)),
             )
             .map_err(|e| e.to_string())?;
 
@@ -590,41 +647,72 @@ pub fn kanban_update_card(
         if let Some(new_labels) = labels {
             metadata.labels = new_labels;
         }
+        // Set assigned_by only if not already set (keep original creator)
+        if assigned_by.is_some() && metadata.assigned_by.is_none() {
+            metadata.assigned_by = assigned_by;
+        }
 
         let metadata_json = serde_json::to_string(&metadata).map_err(|e| e.to_string())?;
+
+        // Handle linked_board_ids update
+        let new_linked_json: Option<String> = if let Some(ref ids) = linked_board_ids {
+            println!("[KANBAN DEBUG] Setting new linked_board_ids: {:?}", ids);
+            Some(serde_json::to_string(ids).map_err(|e| e.to_string())?)
+        } else {
+            println!("[KANBAN DEBUG] No linked_board_ids provided, keeping current: {:?}", current_linked);
+            current_linked
+        };
+        println!("[KANBAN DEBUG] new_linked_json to save: {:?}", new_linked_json);
+
+        // Handle board_columns update
+        let new_board_cols_json: Option<String> = if let Some(ref cols) = board_columns {
+            Some(serde_json::to_string(cols).map_err(|e| e.to_string())?)
+        } else {
+            current_board_cols
+        };
+
+        // Use new_board_id if provided, otherwise keep current
+        let final_board_id = new_board_id.unwrap_or(current_board_id);
+        println!("[KANBAN DEBUG] Saving with board_id: {}", final_board_id);
 
         conn.execute(
             r#"
             UPDATE kanban_cards
-            SET title = ?1, description = ?2, due_date = ?3, priority = ?4, metadata = ?5, updated_at = ?6
-            WHERE id = ?7
+            SET title = ?1, description = ?2, due_date = ?3, priority = ?4, metadata = ?5,
+                updated_at = ?6, linked_board_ids = ?7, board_columns = ?8, board_id = ?9
+            WHERE id = ?10
             "#,
-            params![new_title, new_description, new_due_date, new_priority, metadata_json, now, card_id],
+            params![new_title, new_description, new_due_date, new_priority, metadata_json, now, new_linked_json, new_board_cols_json, final_board_id, card_id],
         )
         .map_err(|e| e.to_string())?;
 
         // Return updated card by querying it
-        let metadata_str: Option<String> = conn
-            .query_row(
-                "SELECT metadata FROM kanban_cards WHERE id = ?1",
-                params![card_id],
-                |row| row.get(0),
-            )
-            .map_err(|e| e.to_string())?;
-        let metadata: Option<CardMetadata> =
-            metadata_str.and_then(|s| serde_json::from_str(&s).ok());
-
         conn.query_row(
             r#"
             SELECT c.id, c.board_id, c.column_id, c.title, c.description, c.note_id,
                    c.position, c.created_at, c.updated_at, c.closed_at, c.due_date,
-                   c.priority, n.path
+                   c.priority, c.metadata, n.path, c.linked_board_ids, c.board_columns, c.is_complete
             FROM kanban_cards c
             LEFT JOIN notes n ON c.note_id = n.id
             WHERE c.id = ?1
             "#,
             params![card_id],
             |row| {
+                let metadata_str: Option<String> = row.get(12)?;
+                let metadata: Option<CardMetadata> =
+                    metadata_str.and_then(|s| serde_json::from_str(&s).ok());
+
+                let linked_board_ids_str: Option<String> = row.get(14)?;
+                let linked_board_ids: Option<Vec<String>> =
+                    linked_board_ids_str.and_then(|s| serde_json::from_str(&s).ok());
+
+                let board_columns_str: Option<String> = row.get(15)?;
+                let board_columns: Option<std::collections::HashMap<String, String>> =
+                    board_columns_str.and_then(|s| serde_json::from_str(&s).ok());
+
+                let is_complete_int: Option<i32> = row.get(16)?;
+                let is_complete = is_complete_int.map(|v| v != 0);
+
                 Ok(KanbanCard {
                     id: row.get(0)?,
                     board_id: row.get(1)?,
@@ -632,7 +720,7 @@ pub fn kanban_update_card(
                     title: row.get(3)?,
                     description: row.get(4)?,
                     note_id: row.get(5)?,
-                    note_path: row.get(12)?,
+                    note_path: row.get(13)?,
                     position: row.get(6)?,
                     created_at: row.get::<_, Option<i64>>(7)?.unwrap_or(now),
                     updated_at: row.get::<_, Option<i64>>(8)?.unwrap_or(now),
@@ -640,6 +728,9 @@ pub fn kanban_update_card(
                     due_date: row.get(10)?,
                     priority: row.get(11)?,
                     metadata,
+                    linked_board_ids,
+                    board_columns,
+                    is_complete,
                 })
             },
         )
@@ -694,11 +785,11 @@ pub fn kanban_update_column(
         .map_err(|e| e.to_string())?;
 
         // Return updated board
-        let board_name: String = conn
+        let (board_name, owner_name): (String, Option<String>) = conn
             .query_row(
-                "SELECT name FROM kanban_boards WHERE id = ?1",
+                "SELECT name, owner_name FROM kanban_boards WHERE id = ?1",
                 params![board_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|e| e.to_string())?;
 
@@ -714,6 +805,7 @@ pub fn kanban_update_column(
             id: board_id,
             name: board_name,
             columns,
+            owner_name,
             created_at,
             modified_at: now,
         })
@@ -832,19 +924,28 @@ pub struct BoardMember {
     pub added_at: i64,
 }
 
-/// Get all members for a board
+/// Get all members (global team - shared across all boards)
 #[tauri::command]
 pub fn kanban_get_board_members(
     app: AppHandle,
-    board_id: String,
+    _board_id: String,  // Kept for API compatibility, but members are global
 ) -> Result<Vec<BoardMember>, String> {
     with_db(&app, |conn| {
+        // Return ALL unique members (global team), not just for this board
+        // We use the board_id to track where the member was originally added
         let mut stmt = conn
-            .prepare("SELECT id, board_id, name, added_at FROM kanban_board_members WHERE board_id = ?1 ORDER BY name")
+            .prepare(
+                r#"
+                SELECT id, board_id, name, added_at FROM kanban_board_members
+                WHERE name IN (SELECT DISTINCT name FROM kanban_board_members)
+                GROUP BY name
+                ORDER BY name
+                "#
+            )
             .map_err(|e| e.to_string())?;
 
         let members = stmt
-            .query_map(params![board_id], |row| {
+            .query_map([], |row| {
                 Ok(BoardMember {
                     id: row.get(0)?,
                     board_id: row.get(1)?,
@@ -861,28 +962,95 @@ pub fn kanban_get_board_members(
     .map_err(|e| e.to_string())
 }
 
-/// Add a member to a board
+/// Result from adding a board member (includes auto-created board if any)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AddMemberResult {
+    pub member: BoardMember,
+    #[serde(rename = "createdBoard")]
+    pub created_board: Option<KanbanBoard>,
+}
+
+/// Add a member to a board - also auto-creates their personal board if they don't have one
 #[tauri::command]
 pub fn kanban_add_board_member(
     app: AppHandle,
     board_id: String,
     name: String,
-) -> Result<BoardMember, String> {
-    let id = Uuid::new_v4().to_string();
+) -> Result<AddMemberResult, String> {
+    let member_id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp();
 
     with_db(&app, |conn| {
+        // Add the member entry
         conn.execute(
             "INSERT OR IGNORE INTO kanban_board_members (id, board_id, name, added_at) VALUES (?1, ?2, ?3, ?4)",
-            params![id, board_id, name, now],
+            params![member_id, board_id, name, now],
         )
         .map_err(|e| e.to_string())?;
 
-        Ok(BoardMember {
-            id,
-            board_id,
-            name,
+        let member = BoardMember {
+            id: member_id,
+            board_id: board_id.clone(),
+            name: name.clone(),
             added_at: now,
+        };
+
+        // Check if this member already has a personal board
+        let existing_board: Option<String> = conn
+            .query_row(
+                "SELECT id FROM kanban_boards WHERE owner_name = ?1",
+                params![name],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if existing_board.is_some() {
+            // Member already has a personal board
+            return Ok(AddMemberResult {
+                member,
+                created_board: None,
+            });
+        }
+
+        // Auto-create a personal board for the new member
+        let board_id = Uuid::new_v4().to_string();
+        let board_name = format!("{}'s Board", name);
+
+        // Default columns for personal boards
+        let default_columns = vec!["Created", "In Progress", "Waiting on Others", "Delayed", "Closed", "Backlog"];
+        let kanban_columns: Vec<KanbanColumn> = default_columns
+            .into_iter()
+            .map(|col_name| {
+                let is_done = col_name.eq_ignore_ascii_case("closed");
+                KanbanColumn {
+                    id: Uuid::new_v4().to_string(),
+                    name: col_name.to_string(),
+                    color: None,
+                    is_done,
+                }
+            })
+            .collect();
+
+        let columns_json = serde_json::to_string(&kanban_columns).map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "INSERT INTO kanban_boards (id, name, columns, owner_name, created_at, modified_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![board_id, board_name, columns_json, name, now, now],
+        )
+        .map_err(|e| e.to_string())?;
+
+        let created_board = KanbanBoard {
+            id: board_id,
+            name: board_name,
+            columns: kanban_columns,
+            owner_name: Some(name),
+            created_at: now,
+            modified_at: now,
+        };
+
+        Ok(AddMemberResult {
+            member,
+            created_board: Some(created_board),
         })
     })
     .map_err(|e| e.to_string())
@@ -1047,7 +1215,7 @@ pub fn kanban_find_card_by_title(
                 r#"
                 SELECT c.id, c.board_id, c.column_id, c.title, c.description, c.note_id,
                        c.position, c.created_at, c.updated_at, c.closed_at, c.due_date,
-                       c.priority, c.metadata, n.path
+                       c.priority, c.metadata, n.path, c.linked_board_ids, c.board_columns, c.is_complete
                 FROM kanban_cards c
                 JOIN kanban_boards b ON c.board_id = b.id
                 LEFT JOIN notes n ON c.note_id = n.id
@@ -1059,6 +1227,12 @@ pub fn kanban_find_card_by_title(
                     let metadata_str: Option<String> = row.get(12)?;
                     let metadata: Option<CardMetadata> =
                         metadata_str.and_then(|s| serde_json::from_str(&s).ok());
+                    let linked_board_ids_str: Option<String> = row.get(14)?;
+                    let linked_board_ids: Option<Vec<String>> =
+                        linked_board_ids_str.and_then(|s| serde_json::from_str(&s).ok());
+                    let board_columns_str: Option<String> = row.get(15)?;
+                    let board_columns: Option<std::collections::HashMap<String, String>> =
+                        board_columns_str.and_then(|s| serde_json::from_str(&s).ok());
 
                     Ok(KanbanCard {
                         id: row.get(0)?,
@@ -1075,6 +1249,9 @@ pub fn kanban_find_card_by_title(
                         due_date: row.get(10)?,
                         priority: row.get(11)?,
                         metadata,
+                        linked_board_ids,
+                        board_columns,
+                        is_complete: row.get::<_, Option<i64>>(16)?.map(|v| v != 0),
                     })
                 },
             )
@@ -1083,7 +1260,7 @@ pub fn kanban_find_card_by_title(
                 r#"
                 SELECT c.id, c.board_id, c.column_id, c.title, c.description, c.note_id,
                        c.position, c.created_at, c.updated_at, c.closed_at, c.due_date,
-                       c.priority, c.metadata, n.path
+                       c.priority, c.metadata, n.path, c.linked_board_ids, c.board_columns, c.is_complete
                 FROM kanban_cards c
                 LEFT JOIN notes n ON c.note_id = n.id
                 WHERE LOWER(c.title) = LOWER(?1)
@@ -1094,6 +1271,12 @@ pub fn kanban_find_card_by_title(
                     let metadata_str: Option<String> = row.get(12)?;
                     let metadata: Option<CardMetadata> =
                         metadata_str.and_then(|s| serde_json::from_str(&s).ok());
+                    let linked_board_ids_str: Option<String> = row.get(14)?;
+                    let linked_board_ids: Option<Vec<String>> =
+                        linked_board_ids_str.and_then(|s| serde_json::from_str(&s).ok());
+                    let board_columns_str: Option<String> = row.get(15)?;
+                    let board_columns: Option<std::collections::HashMap<String, String>> =
+                        board_columns_str.and_then(|s| serde_json::from_str(&s).ok());
 
                     Ok(KanbanCard {
                         id: row.get(0)?,
@@ -1110,6 +1293,9 @@ pub fn kanban_find_card_by_title(
                         due_date: row.get(10)?,
                         priority: row.get(11)?,
                         metadata,
+                        linked_board_ids,
+                        board_columns,
+                        is_complete: row.get::<_, Option<i64>>(16)?.map(|v| v != 0),
                     })
                 },
             )

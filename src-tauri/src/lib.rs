@@ -37,6 +37,8 @@ pub fn run() {
             commands::vault::close_vault,
             commands::vault::get_vault_path,
             commands::vault::save_attachment,
+            commands::vault::get_vault_user,
+            commands::vault::set_vault_user,
             // Note commands
             commands::notes::list_notes,
             commands::notes::read_note,

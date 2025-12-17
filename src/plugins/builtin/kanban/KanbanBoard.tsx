@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useKanbanStore, KanbanCard, KanbanColumn, Priority } from "./store";
 import { CardDetailPanel } from "./CardDetailPanel";
 import { DatePicker } from "../../../components/common/DatePicker";
@@ -6,6 +6,7 @@ import { Select, SelectOption } from "../../../components/common/Select";
 import { TemplateSelector } from "./components/TemplateSelector";
 import { CardTemplate } from "./templates";
 import { ExtensionTitleBar, DropdownItem } from "../../../components/layout/ExtensionTitleBar";
+import { LinkContextMenu, useContextMenu } from "../../../components/common/LinkContextMenu";
 
 const priorityOptions: SelectOption[] = [
   { value: "", label: "No priority" },
@@ -74,20 +75,28 @@ function formatDate(timestamp: number): string {
 
 // Create Board Modal Component
 function CreateBoardModal() {
-  const { showCreateModal, closeCreateModal, createBoard, isLoading, error } = useKanbanStore();
+  const { showCreateModal, closeCreateModal, createBoard, isLoading, error, currentUsername, boardMembers } = useKanbanStore();
   const [boardName, setBoardName] = useState("");
-  const [columns, setColumns] = useState("To Do, In Progress, Done");
+  const [columns, setColumns] = useState("Created, In Progress, Waiting on Others, Delayed, Closed, Backlog");
+  const [isPersonalBoard, setIsPersonalBoard] = useState(false);
+  const [ownerName, setOwnerName] = useState("");
 
   if (!showCreateModal) return null;
 
   const handleCreate = async () => {
     if (boardName.trim()) {
       const columnList = columns.split(",").map(c => c.trim()).filter(c => c);
-      await createBoard(boardName.trim(), columnList.length > 0 ? columnList : undefined);
+      const owner = isPersonalBoard ? (ownerName.trim() || currentUsername || undefined) : undefined;
+      await createBoard(boardName.trim(), columnList.length > 0 ? columnList : undefined, owner);
       setBoardName("");
-      setColumns("To Do, In Progress, Done");
+      setColumns("Created, In Progress, Waiting on Others, Delayed, Closed, Backlog");
+      setIsPersonalBoard(false);
+      setOwnerName("");
     }
   };
+
+  // Suggest owner names from board members
+  const suggestedOwners = boardMembers.map(m => m.name);
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={closeCreateModal}>
@@ -126,6 +135,44 @@ function CreateBoardModal() {
               autoComplete="off"
             />
           </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="personalBoard"
+              checked={isPersonalBoard}
+              onChange={(e) => setIsPersonalBoard(e.target.checked)}
+              className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-accent-primary focus:ring-accent-primary"
+            />
+            <label htmlFor="personalBoard" className="text-sm text-dark-300">
+              Make this a personal board
+            </label>
+          </div>
+
+          {isPersonalBoard && (
+            <div>
+              <label className="block text-sm text-dark-400 mb-1">Board Owner</label>
+              <input
+                type="text"
+                className="input"
+                placeholder={currentUsername || "Owner name..."}
+                value={ownerName}
+                onChange={(e) => setOwnerName(e.target.value)}
+                list="owner-suggestions"
+                autoComplete="off"
+              />
+              {suggestedOwners.length > 0 && (
+                <datalist id="owner-suggestions">
+                  {suggestedOwners.map(name => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
+              )}
+              <p className="text-xs text-dark-500 mt-1">
+                Cards assigned to this person will appear on this board.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-2 mt-6">
@@ -393,6 +440,8 @@ interface CardProps {
   onDelete: () => void;
   onDragStart: (e: React.DragEvent) => void;
   onClick: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  isLinkedCard?: boolean;  // True if this card is from another board
 }
 
 const EditIcon = () => (
@@ -412,7 +461,7 @@ const GripIcon = () => (
   </svg>
 );
 
-function Card({ card, onDelete, onDragStart, onClick }: CardProps) {
+function Card({ card, onDelete, onDragStart, onClick, onContextMenu, isLinkedCard }: CardProps) {
   const { labels } = useKanbanStore();
   const isPastDue = card.dueDate && card.dueDate * 1000 < Date.now();
 
@@ -432,7 +481,8 @@ function Card({ card, onDelete, onDragStart, onClick }: CardProps) {
     <div
       className={`group bg-dark-800 rounded-lg overflow-hidden hover:bg-dark-700 hover:ring-1 hover:ring-accent-primary/30 transition-all border-l-4 ${
         card.priority ? priorityColors[card.priority] : "border-l-transparent"
-      }`}
+      } ${isLinkedCard ? "ring-1 ring-accent-secondary/30" : ""}`}
+      onContextMenu={onContextMenu}
     >
       {/* Main card content - clickable area */}
       <div
@@ -455,7 +505,16 @@ function Card({ card, onDelete, onDragStart, onClick }: CardProps) {
         )}
 
         {/* Title */}
-        <div className="text-sm text-dark-100">{card.title}</div>
+        <div className="flex items-center gap-1.5 text-sm text-dark-100">
+          {isLinkedCard && (
+            <span className="text-accent-secondary" title="Linked from another board">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+            </span>
+          )}
+          <span>{card.title}</span>
+        </div>
 
         {/* Note path */}
         {card.notePath && (
@@ -547,11 +606,12 @@ interface ColumnProps {
   onOpenCard: (card: KanbanCard) => void;
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
+  onCardContextMenu: (e: React.MouseEvent, card: KanbanCard) => void;
 }
 
-function Column({ column, cards, boardId, onDeleteCard, onOpenCard, onDragOver, onDrop }: ColumnProps) {
+function Column({ column, cards, boardId, onDeleteCard, onOpenCard, onDragOver, onDrop, onCardContextMenu }: ColumnProps) {
   const [showMenu, setShowMenu] = useState(false);
-  const { updateColumn, removeColumn, openCreateCardModal } = useKanbanStore();
+  const { updateColumn, removeColumn, openCreateCardModal, currentBoard } = useKanbanStore();
 
   const sortedCards = [...cards].sort((a, b) => a.position - b.position);
 
@@ -612,18 +672,24 @@ function Column({ column, cards, boardId, onDeleteCard, onOpenCard, onDragOver, 
 
       {/* Cards */}
       <div className="space-y-2 min-h-[100px]">
-        {sortedCards.map((card) => (
-          <Card
-            key={card.id}
-            card={card}
-            onDelete={() => onDeleteCard(card.id, card.title)}
-            onClick={() => onOpenCard(card)}
-            onDragStart={(e) => {
-              e.dataTransfer.setData("cardId", card.id);
-              e.dataTransfer.setData("fromColumnId", column.id);
-            }}
-          />
-        ))}
+        {sortedCards.map((card) => {
+          // Check if this card is linked (from another board)
+          const isLinkedCard = currentBoard ? card.boardId !== currentBoard.id : false;
+          return (
+            <Card
+              key={card.id}
+              card={card}
+              onDelete={() => onDeleteCard(card.id, card.title)}
+              onClick={() => onOpenCard(card)}
+              onDragStart={(e) => {
+                e.dataTransfer.setData("cardId", card.id);
+                e.dataTransfer.setData("fromColumnId", column.id);
+              }}
+              onContextMenu={(e) => onCardContextMenu(e, card)}
+              isLinkedCard={isLinkedCard}
+            />
+          );
+        })}
       </div>
 
       {/* Add card button */}
@@ -658,11 +724,79 @@ export function KanbanBoard() {
     openCardDetail,
     openCreateModal,
     error,
+    currentUsername,
+    setUsername,
+    loadUsername,
+    takeCard,
+    giveCard,
+    unlinkCardFromBoard,
+    returnToPool,
   } = useKanbanStore();
 
   const [, setDraggedCard] = useState<string | null>(null);
   const [showMembersPanel, setShowMembersPanel] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
+  const membersPanelRef = useRef<HTMLDivElement>(null);
+
+  // Check if a card should be visible on the current board
+  // Cards with assignees (linked boards) only show on linked boards, not home board
+  // Cards without assignees (pool) show on home board only
+  const isCardVisibleOnBoard = (card: KanbanCard, boardId: string): boolean => {
+    const hasLinkedBoards = card.linkedBoardIds && card.linkedBoardIds.length > 0;
+
+    if (card.boardId === boardId) {
+      // This is the home board - only show if card has no linked boards (still in pool)
+      return !hasLinkedBoards;
+    }
+
+    // This is a linked board - show if board is in linkedBoardIds
+    return card.linkedBoardIds?.includes(boardId) ?? false;
+  };
+
+  // Helper to get the column ID for a card on the current board
+  // For home board cards, use columnId directly
+  // For linked cards, use boardColumns mapping or default to first column
+  const getCardColumnForBoard = (card: KanbanCard, boardId: string): string => {
+    if (card.boardId === boardId) {
+      // This is the home board, use the direct columnId
+      return card.columnId;
+    }
+    // This is a linked board, check boardColumns for a specific column
+    if (card.boardColumns && card.boardColumns[boardId]) {
+      return card.boardColumns[boardId];
+    }
+    // Default to the first column of the current board
+    return currentBoard?.columns[0]?.id || "";
+  };
+
+  // Close members panel when clicking outside
+  useEffect(() => {
+    if (!showMembersPanel) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (membersPanelRef.current && !membersPanelRef.current.contains(e.target as Node)) {
+        setShowMembersPanel(false);
+      }
+    };
+
+    // Use setTimeout to avoid immediate close on the same click that opened it
+    const timeoutId = setTimeout(() => {
+      document.addEventListener("mousedown", handleClickOutside);
+    }, 0);
+
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showMembersPanel]);
+
+  // Context menu state
+  const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
+
+  // Username prompt state
+  const [showUsernamePrompt, setShowUsernamePrompt] = useState(false);
+  const [pendingUsernameAction, setPendingUsernameAction] = useState<(() => void) | null>(null);
+  const [usernameInput, setUsernameInput] = useState("");
 
   // Delete confirmation dialog state (same pattern as extension removal)
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -688,12 +822,110 @@ export function KanbanBoard() {
     setDeleteConfirm({ isOpen: false, cardId: "", cardTitle: "" });
   };
 
-  // Load boards when view opens
-  useEffect(() => {
-    if (showView && boards.length === 0) {
-      loadBoards();
+  // Helper to require username before action
+  const requireUsername = (action: () => void) => {
+    if (!currentUsername) {
+      setPendingUsernameAction(() => action);
+      setShowUsernamePrompt(true);
+    } else {
+      action();
     }
-  }, [showView, boards.length, loadBoards]);
+  };
+
+  // Handle username submission
+  const handleUsernameSubmit = () => {
+    if (usernameInput.trim()) {
+      setUsername(usernameInput.trim());
+      setShowUsernamePrompt(false);
+      setUsernameInput("");
+      // Execute pending action if any
+      if (pendingUsernameAction) {
+        pendingUsernameAction();
+        setPendingUsernameAction(null);
+      }
+    }
+  };
+
+  // Context menu handler for cards
+  const handleCardContextMenu = (e: React.MouseEvent, card: KanbanCard) => {
+    const isLinkedCard = currentBoard ? card.boardId !== currentBoard.id : false;
+    const isAssignedToMe = currentUsername && card.metadata?.assignees?.includes(currentUsername);
+    const hasAssignees = (card.metadata?.assignees?.length ?? 0) > 0;
+
+    const menuItems: { label: string; icon?: string; onClick: () => void; divider?: boolean }[] = [];
+
+    // Take - add to my board and assign to me
+    if (!isAssignedToMe) {
+      menuItems.push({
+        label: "Take",
+        icon: "✋",
+        onClick: () => requireUsername(() => {
+          if (currentUsername) {
+            takeCard(card.id, currentUsername);
+          }
+        }),
+      });
+    }
+
+    // Give to... - assign to another team member
+    if (boardMembers.length > 0) {
+      boardMembers.forEach((member) => {
+        if (member.name !== currentUsername && !card.metadata?.assignees?.includes(member.name)) {
+          menuItems.push({
+            label: `Give to ${member.name}`,
+            icon: "👤",
+            onClick: () => giveCard(card.id, member.name),
+          });
+        }
+      });
+    }
+
+    // Return to pool - remove all assignees
+    if (hasAssignees) {
+      menuItems.push({
+        label: "Return to pool",
+        icon: "📤",
+        onClick: () => returnToPool(card.id),
+        divider: true,
+      });
+    }
+
+    // Remove from this board (only for linked cards)
+    if (isLinkedCard && currentBoard) {
+      menuItems.push({
+        label: "Remove from this board",
+        icon: "🔗",
+        onClick: () => unlinkCardFromBoard(card.id, currentBoard.id),
+        divider: !hasAssignees,
+      });
+    }
+
+    // Edit and Delete options
+    menuItems.push({
+      label: "Edit",
+      icon: "✏️",
+      onClick: () => openCardDetail(card),
+      divider: !isLinkedCard && !hasAssignees,
+    });
+
+    menuItems.push({
+      label: "Delete",
+      icon: "🗑️",
+      onClick: () => handleDeleteCardRequest(card.id, card.title),
+    });
+
+    showContextMenu(e, menuItems);
+  };
+
+  // Load boards and username when view opens
+  useEffect(() => {
+    if (showView) {
+      if (boards.length === 0) {
+        loadBoards();
+      }
+      loadUsername();
+    }
+  }, [showView, boards.length, loadBoards, loadUsername]);
 
   // Load labels and members when board changes
   useEffect(() => {
@@ -715,7 +947,10 @@ export function KanbanBoard() {
     e.preventDefault();
     const cardId = e.dataTransfer.getData("cardId");
     if (cardId && currentBoard) {
-      const columnCards = cards.filter((c) => c.columnId === columnId);
+      const columnCards = cards.filter((c) =>
+        isCardVisibleOnBoard(c, currentBoard.id) &&
+        getCardColumnForBoard(c, currentBoard.id) === columnId
+      );
       moveCard(cardId, columnId, columnCards.length);
     }
     setDraggedCard(null);
@@ -749,20 +984,83 @@ export function KanbanBoard() {
         <div className="flex items-center gap-4 px-4 py-2 border-b border-dark-800 bg-dark-900">
           {/* Board selector */}
           {boards.length > 0 && (
-            <Select
-              className="w-56 text-sm"
-              value={currentBoard?.id || ""}
-              onChange={(value) => value && loadBoard(value)}
-              options={boards.map((board) => ({ value: board.id, label: board.name }))}
-              placeholder="Select a board..."
-            />
+            <div className="flex items-center gap-2">
+              <Select
+                className="w-64 text-sm"
+                value={currentBoard?.id || ""}
+                onChange={(value) => value && loadBoard(value)}
+                options={boards.map((board) => ({
+                  value: board.id,
+                  label: board.ownerName
+                    ? `👤 ${board.name} (${board.ownerName})`
+                    : `📋 ${board.name}`,
+                }))}
+                placeholder="Select a board..."
+              />
+              {/* Quick access to my board */}
+              {currentUsername && (() => {
+                const myBoard = boards.find(b => b.ownerName === currentUsername);
+                if (myBoard && currentBoard?.id !== myBoard.id) {
+                  return (
+                    <button
+                      className="btn-ghost text-sm px-2 py-1 flex items-center gap-1"
+                      onClick={() => loadBoard(myBoard.id)}
+                      title="Go to your personal board"
+                    >
+                      <span>📥</span>
+                      <span>My Board</span>
+                    </button>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+          )}
+
+          {/* Board type indicator */}
+          {currentBoard && (
+            <span className={`text-xs px-2 py-0.5 rounded ${
+              currentBoard.ownerName
+                ? "bg-accent-primary/20 text-accent-primary"
+                : "bg-dark-700 text-dark-400"
+            }`}>
+              {currentBoard.ownerName
+                ? `${currentBoard.ownerName}'s Personal Board`
+                : "Project Board"}
+            </span>
           )}
 
           <div className="flex-1" />
 
+          {/* Current user indicator */}
+          <div className="flex items-center gap-2">
+            {currentUsername ? (
+              <button
+                className="flex items-center gap-2 text-sm text-dark-300 hover:text-dark-100 px-2 py-1 rounded hover:bg-dark-800"
+                onClick={() => {
+                  setUsernameInput(currentUsername);
+                  setShowUsernamePrompt(true);
+                }}
+                title="Click to change your name"
+              >
+                <span className="w-6 h-6 rounded-full bg-accent-primary/20 text-accent-primary text-xs flex items-center justify-center">
+                  {currentUsername.charAt(0).toUpperCase()}
+                </span>
+                <span>{currentUsername}</span>
+              </button>
+            ) : (
+              <button
+                className="text-sm text-dark-400 hover:text-dark-200 px-2 py-1 rounded hover:bg-dark-800"
+                onClick={() => setShowUsernamePrompt(true)}
+              >
+                Set your name
+              </button>
+            )}
+          </div>
+
           {/* Members button */}
           {currentBoard && (
-            <div className="relative">
+            <div className="relative" ref={membersPanelRef}>
               <button
                 className="btn-ghost text-sm flex items-center gap-1"
                 onClick={() => setShowMembersPanel(!showMembersPanel)}
@@ -812,26 +1110,42 @@ export function KanbanBoard() {
                     {boardMembers.length === 0 ? (
                       <p className="text-xs text-dark-500 py-2">No members yet. Add team members to assign tasks to them.</p>
                     ) : (
-                      boardMembers.map((member) => (
-                        <div
-                          key={member.id}
-                          className="flex items-center justify-between py-1 px-2 rounded hover:bg-dark-700"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="w-6 h-6 rounded-full bg-accent-primary/20 text-accent-primary text-xs flex items-center justify-center">
-                              {member.name.charAt(0).toUpperCase()}
-                            </span>
-                            <span className="text-sm text-dark-200">{member.name}</span>
-                          </div>
-                          <button
-                            className="text-dark-500 hover:text-red-400 p-1"
-                            onClick={() => removeBoardMember(member.id)}
-                            title="Remove member"
+                      boardMembers.map((member) => {
+                        const memberBoard = boards.find(b => b.ownerName === member.name);
+                        return (
+                          <div
+                            key={member.id}
+                            className="flex items-center justify-between py-1 px-2 rounded hover:bg-dark-700"
                           >
-                            <TrashIcon />
-                          </button>
-                        </div>
-                      ))
+                            <div className="flex items-center gap-2">
+                              <span className="w-6 h-6 rounded-full bg-accent-primary/20 text-accent-primary text-xs flex items-center justify-center">
+                                {member.name.charAt(0).toUpperCase()}
+                              </span>
+                              <div className="flex flex-col">
+                                <span className="text-sm text-dark-200">{member.name}</span>
+                                {memberBoard ? (
+                                  <button
+                                    className="text-xs text-accent-primary hover:text-accent-secondary text-left"
+                                    onClick={() => loadBoard(memberBoard.id)}
+                                    title="Go to board"
+                                  >
+                                    📋 {memberBoard.name}
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-dark-500">Board pending...</span>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              className="text-dark-500 hover:text-red-400 p-1"
+                              onClick={() => removeBoardMember(member.id)}
+                              title="Remove member"
+                            >
+                              <TrashIcon />
+                            </button>
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -855,12 +1169,16 @@ export function KanbanBoard() {
                 <Column
                   key={column.id}
                   column={column}
-                  cards={cards.filter((c) => c.columnId === column.id)}
+                  cards={cards.filter((c) =>
+                    isCardVisibleOnBoard(c, currentBoard.id) &&
+                    getCardColumnForBoard(c, currentBoard.id) === column.id
+                  )}
                   boardId={currentBoard.id}
                   onDeleteCard={handleDeleteCardRequest}
                   onOpenCard={openCardDetail}
                   onDragOver={handleDragOver}
                   onDrop={handleDrop(column.id)}
+                  onCardContextMenu={handleCardContextMenu}
                 />
               ))}
 
@@ -925,6 +1243,64 @@ export function KanbanBoard() {
                 onClick={handleConfirmDelete}
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Card Context Menu */}
+      {contextMenu && (
+        <LinkContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.items}
+          onClose={hideContextMenu}
+        />
+      )}
+
+      {/* Username Prompt Modal */}
+      {showUsernamePrompt && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+          <div className="bg-dark-900 rounded-lg p-6 w-full max-w-sm border border-dark-700">
+            <h2 className="text-lg font-semibold text-dark-100 mb-2">Set Your Name</h2>
+            <p className="text-dark-400 mb-4 text-sm">
+              Enter your name to identify yourself when taking cards. This will be used to assign cards to you.
+            </p>
+            <input
+              type="text"
+              className="input w-full mb-4"
+              placeholder="Your name..."
+              value={usernameInput}
+              onChange={(e) => setUsernameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleUsernameSubmit();
+                if (e.key === "Escape") {
+                  setShowUsernamePrompt(false);
+                  setPendingUsernameAction(null);
+                  setUsernameInput("");
+                }
+              }}
+              autoFocus
+              autoComplete="off"
+            />
+            <div className="flex gap-2">
+              <button
+                className="btn-secondary flex-1"
+                onClick={() => {
+                  setShowUsernamePrompt(false);
+                  setPendingUsernameAction(null);
+                  setUsernameInput("");
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-primary flex-1"
+                onClick={handleUsernameSubmit}
+                disabled={!usernameInput.trim()}
+              >
+                Save
               </button>
             </div>
           </div>

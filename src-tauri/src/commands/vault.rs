@@ -234,3 +234,60 @@ pub fn save_attachment(
         original_name: if renamed { Some(filename) } else { None },
     })
 }
+
+/// Get the current user identity for this vault
+/// Reads from .kairo-user file in the vault root (gitignored)
+#[tauri::command]
+pub fn get_vault_user(app: AppHandle) -> Result<Option<String>, String> {
+    let vault_path = match db::get_current_vault_path(&app) {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+
+    let user_file = vault_path.join(".kairo-user");
+    if !user_file.exists() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(&user_file).map_err(|e| e.to_string())?;
+    let username = content.trim().to_string();
+
+    if username.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(username))
+    }
+}
+
+/// Set the current user identity for this vault
+/// Writes to .kairo-user file in the vault root (should be gitignored)
+#[tauri::command]
+pub fn set_vault_user(app: AppHandle, username: String) -> Result<(), String> {
+    let vault_path =
+        db::get_current_vault_path(&app).ok_or_else(|| "No vault is currently open".to_string())?;
+
+    let user_file = vault_path.join(".kairo-user");
+    fs::write(&user_file, username.trim()).map_err(|e| e.to_string())?;
+
+    // Ensure .kairo-user is in .gitignore
+    let gitignore_path = vault_path.join(".gitignore");
+    let gitignore_entry = ".kairo-user";
+
+    if gitignore_path.exists() {
+        let content = fs::read_to_string(&gitignore_path).unwrap_or_default();
+        if !content.lines().any(|line| line.trim() == gitignore_entry) {
+            // Add to .gitignore
+            let new_content = if content.ends_with('\n') || content.is_empty() {
+                format!("{}{}\n", content, gitignore_entry)
+            } else {
+                format!("{}\n{}\n", content, gitignore_entry)
+            };
+            fs::write(&gitignore_path, new_content).map_err(|e| e.to_string())?;
+        }
+    } else {
+        // Create .gitignore with the entry
+        fs::write(&gitignore_path, format!("{}\n", gitignore_entry)).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}

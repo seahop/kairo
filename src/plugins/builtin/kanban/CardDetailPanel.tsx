@@ -145,10 +145,12 @@ export function CardDetailPanel() {
     updateCard,
     deleteCard,
     currentBoard,
+    boards,
     labels,
     assigneeSuggestions,
     createLabel,
     moveCard,
+    currentUsername,
   } = useKanbanStore();
 
   const [title, setTitle] = useState("");
@@ -252,7 +254,22 @@ export function CardDetailPanel() {
     if (name && !assignees.includes(name)) {
       const newAssignees = [...assignees, name];
       setAssignees(newAssignees);
-      updateCard(selectedCard.id, { assignees: newAssignees });
+
+      // Find assignee's personal board (case-insensitive)
+      const assigneeBoard = boards.find(
+        (b) => b.ownerName?.toLowerCase() === name.toLowerCase()
+      );
+
+      // If this is the first assignee being added, transfer ownership to their board
+      // (card "belongs" to the assignee, not the creator)
+      const isFirstAssignee = assignees.length === 0;
+
+      updateCard(selectedCard.id, {
+        assignees: newAssignees,
+        linkedBoardIds: [],  // Clear linked boards since we transfer ownership
+        newBoardId: isFirstAssignee ? assigneeBoard?.id : undefined,  // Transfer ownership if first assignee
+        assignedBy: currentUsername || undefined,
+      });
     }
     setNewAssignee("");
     setShowAssigneeSuggestions(false);
@@ -280,8 +297,27 @@ export function CardDetailPanel() {
     }
   };
 
+  // Get the column ID for the current board (handles linked boards)
+  const getCurrentColumnId = (): string => {
+    if (!currentBoard) return selectedCard.columnId;
+
+    // If this is the home board, use columnId directly
+    if (selectedCard.boardId === currentBoard.id) {
+      return selectedCard.columnId;
+    }
+
+    // For linked boards, use boardColumns mapping or default to first column
+    if (selectedCard.boardColumns && selectedCard.boardColumns[currentBoard.id]) {
+      return selectedCard.boardColumns[currentBoard.id];
+    }
+
+    // Default to first column
+    return currentBoard.columns[0]?.id || selectedCard.columnId;
+  };
+
   const handleColumnChange = (columnId: string) => {
-    if (columnId !== selectedCard.columnId) {
+    const currentColumnId = getCurrentColumnId();
+    if (columnId !== currentColumnId) {
       moveCard(selectedCard.id, columnId, 0);
     }
   };
@@ -339,7 +375,7 @@ export function CardDetailPanel() {
         <div>
           <label className="text-sm font-medium text-dark-400 mb-2 block">Status</label>
           <Select
-            value={selectedCard.columnId}
+            value={getCurrentColumnId()}
             onChange={handleColumnChange}
             options={currentBoard?.columns.map((col) => ({
               value: col.id,
@@ -592,8 +628,19 @@ export function CardDetailPanel() {
         )}
         </div>
 
-        {/* Footer - timestamps */}
+        {/* Footer - metadata and timestamps */}
         <div className="px-6 py-3 border-t border-dark-800 text-xs text-dark-500 space-y-1">
+          {selectedCard.metadata?.assignedBy && (
+            <div className="flex items-center gap-1.5">
+              <span>Assigned by:</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-dark-800 rounded text-dark-300">
+                <span className="w-4 h-4 rounded-full bg-accent-secondary/20 text-accent-secondary text-[10px] flex items-center justify-center">
+                  {selectedCard.metadata.assignedBy.charAt(0).toUpperCase()}
+                </span>
+                {selectedCard.metadata.assignedBy}
+              </span>
+            </div>
+          )}
           <div>Created: {formatDateTime(selectedCard.createdAt)}</div>
           <div>Updated: {formatDateTime(selectedCard.updatedAt)}</div>
           {selectedCard.closedAt && <div>Closed: {formatDateTime(selectedCard.closedAt)}</div>}
