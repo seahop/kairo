@@ -481,7 +481,7 @@ function Card({ card, onDelete, onDragStart, onClick, onContextMenu, isLinkedCar
     <div
       className={`group bg-dark-800 rounded-lg overflow-hidden hover:bg-dark-700 hover:ring-1 hover:ring-accent-primary/30 transition-all border-l-4 ${
         card.priority ? priorityColors[card.priority] : "border-l-transparent"
-      } ${isLinkedCard ? "ring-1 ring-accent-secondary/30" : ""}`}
+      } ${isLinkedCard ? "ring-1 ring-accent-secondary/30" : ""} ${card.archived ? "opacity-60" : ""}`}
       onContextMenu={onContextMenu}
     >
       {/* Main card content - clickable area */}
@@ -506,6 +506,11 @@ function Card({ card, onDelete, onDragStart, onClick, onContextMenu, isLinkedCar
 
         {/* Title */}
         <div className="flex items-center gap-1.5 text-sm text-dark-100">
+          {card.archived && (
+            <span className="text-dark-500" title="Archived">
+              📦
+            </span>
+          )}
           {isLinkedCard && (
             <span className="text-accent-secondary" title="Linked from another board">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -731,6 +736,9 @@ export function KanbanBoard() {
     giveCard,
     unlinkCardFromBoard,
     returnToPool,
+    archiveCard,
+    showArchivedCards,
+    setShowArchivedCards,
   } = useKanbanStore();
 
   const [, setDraggedCard] = useState<string | null>(null);
@@ -742,6 +750,11 @@ export function KanbanBoard() {
   // Cards with assignees (linked boards) only show on linked boards, not home board
   // Cards without assignees (pool) show on home board only
   const isCardVisibleOnBoard = (card: KanbanCard, boardId: string): boolean => {
+    // Filter out archived cards unless showArchivedCards is enabled
+    if (card.archived && !showArchivedCards) {
+      return false;
+    }
+
     const hasLinkedBoards = card.linkedBoardIds && card.linkedBoardIds.length > 0;
 
     if (card.boardId === boardId) {
@@ -930,6 +943,13 @@ export function KanbanBoard() {
       icon: "✏️",
       onClick: () => openCardDetail(card),
       divider: !isLinkedCard && !hasAssignees,
+    });
+
+    // Archive/Unarchive option
+    menuItems.push({
+      label: card.archived ? "Unarchive" : "Archive",
+      icon: card.archived ? "📤" : "📦",
+      onClick: () => archiveCard(card.id, !card.archived),
     });
 
     menuItems.push({
@@ -1175,6 +1195,19 @@ export function KanbanBoard() {
                 </div>
               )}
             </div>
+          )}
+
+          {/* Show archived toggle */}
+          {currentBoard && (
+            <label className="flex items-center gap-2 text-sm text-dark-400 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showArchivedCards}
+                onChange={(e) => setShowArchivedCards(e.target.checked)}
+                className="rounded border-dark-600 bg-dark-800 text-accent-primary focus:ring-accent-primary"
+              />
+              <span>Show archived</span>
+            </label>
           )}
         </div>
 

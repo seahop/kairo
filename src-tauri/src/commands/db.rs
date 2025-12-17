@@ -9,6 +9,7 @@ pub struct Backlink {
     pub source_path: String,
     pub source_title: String,
     pub context: String, // The text surrounding the link
+    pub archived: bool,
 }
 
 /// Reindex the entire vault

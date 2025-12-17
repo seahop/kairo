@@ -7,6 +7,7 @@ export interface GraphNode {
   title: string;
   linkCount: number;
   backlinkCount: number;
+  archived: boolean;
   // D3 force simulation adds these
   x?: number;
   y?: number;
@@ -45,6 +46,7 @@ interface GraphState {
   viewMode: "global" | "local" | "search";
   localDepth: number;
   showOrphans: boolean;
+  showArchivedNodes: boolean;
 
   // Physics settings
   linkDistance: number;
@@ -59,6 +61,7 @@ interface GraphState {
   setFocusedNote: (noteId: string | null) => void;
   setLocalDepth: (depth: number) => void;
   setShowOrphans: (show: boolean) => void;
+  setShowArchivedNodes: (show: boolean) => void;
   setLinkDistance: (distance: number) => void;
   setChargeStrength: (strength: number) => void;
   setSearchQuery: (query: string) => void;
@@ -78,6 +81,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   viewMode: "global",
   localDepth: 2,
   showOrphans: true,
+  showArchivedNodes: false,
   linkDistance: 120,
   chargeStrength: -300,
 
@@ -107,6 +111,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   setFocusedNote: (noteId) => set({ focusedNote: noteId }),
   setLocalDepth: (depth) => set({ localDepth: depth }),
   setShowOrphans: (show) => set({ showOrphans: show }),
+  setShowArchivedNodes: (show) => set({ showArchivedNodes: show }),
   setLinkDistance: (distance) => set({ linkDistance: distance }),
   setChargeStrength: (strength) => set({ chargeStrength: strength }),
 

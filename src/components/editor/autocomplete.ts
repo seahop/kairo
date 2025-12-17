@@ -101,7 +101,7 @@ function wikiLinkCompletion(context: CompletionContext): CompletionResult | null
     });
   }
 
-  // Filter and sort notes
+  // Filter and sort notes - active notes first, then archived
   const matches = noteCache
     .filter(note => {
       const title = note.title.toLowerCase();
@@ -109,7 +109,11 @@ function wikiLinkCompletion(context: CompletionContext): CompletionResult | null
       return title.includes(query) || path.includes(query);
     })
     .sort((a, b) => {
-      // Prioritize title matches over path matches
+      // Active notes before archived
+      if (a.archived !== b.archived) {
+        return a.archived ? 1 : -1;
+      }
+      // Then prioritize title matches over path matches
       const aTitle = a.title.toLowerCase();
       const bTitle = b.title.toLowerCase();
       const aStartsWith = aTitle.startsWith(query);
@@ -117,15 +121,36 @@ function wikiLinkCompletion(context: CompletionContext): CompletionResult | null
       if (aStartsWith && !bStartsWith) return -1;
       if (!aStartsWith && bStartsWith) return 1;
       return a.title.localeCompare(b.title);
-    })
-    .slice(0, 17); // Limit to 17 results (leaving room for prefix options)
+    });
 
-  // Add note options
-  for (const note of matches) {
+  // Split into active and archived, limit each
+  const activeMatches = matches.filter(n => !n.archived).slice(0, 15);
+  const archivedMatches = matches.filter(n => n.archived).slice(0, 5);
+
+  // Add active note options
+  for (const note of activeMatches) {
     options.push({
       label: note.title,
       detail: note.path,
       type: "text",
+      apply: (view, _completion, _from, to) => {
+        // Replace from [[ to cursor with [[title]]
+        const insertText = `[[${note.title}]]`;
+        view.dispatch({
+          changes: { from: before.from, to, insert: insertText },
+          selection: { anchor: before.from + insertText.length },
+        });
+      },
+    });
+  }
+
+  // Add archived note options with lower boost and suffix
+  for (const note of archivedMatches) {
+    options.push({
+      label: note.title,
+      detail: `${note.path} (archived)`,
+      type: "text",
+      boost: -5, // Lower priority
       apply: (view, _completion, _from, to) => {
         // Replace from [[ to cursor with [[title]]
         const insertText = `[[${note.title}]]`;

@@ -29,7 +29,8 @@ interface SearchModalProps {
 export function SearchModal({ onClose }: SearchModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const { query, setQuery, results, isSearching, search, clearResults } = useSearchStore();
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const { query, setQuery, results, isSearching, search, clearResults, setFilters } = useSearchStore();
   const { openNote } = useNoteStore();
 
   // Focus input on mount
@@ -39,6 +40,11 @@ export function SearchModal({ onClose }: SearchModalProps) {
       clearResults();
     };
   }, [clearResults]);
+
+  // Update filters when includeArchived changes
+  useEffect(() => {
+    setFilters({ include_archived: includeArchived });
+  }, [includeArchived, setFilters]);
 
   // Debounced search
   useEffect(() => {
@@ -52,7 +58,7 @@ export function SearchModal({ onClose }: SearchModalProps) {
     }, 200);
 
     return () => clearTimeout(timer);
-  }, [query, search, clearResults]);
+  }, [query, search, clearResults, includeArchived]);
 
   // Reset selection when results change
   useEffect(() => {
@@ -137,6 +143,15 @@ export function SearchModal({ onClose }: SearchModalProps) {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
           />
+          <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
+            <input
+              type="checkbox"
+              checked={includeArchived}
+              onChange={(e) => setIncludeArchived(e.target.checked)}
+              className="w-3.5 h-3.5 rounded border-dark-600 bg-dark-800 text-accent-primary focus:ring-accent-primary/50 focus:ring-offset-0"
+            />
+            <span className="text-xs text-dark-400">Include archived</span>
+          </label>
           {query && (
             <button
               className="text-dark-400 hover:text-dark-200"
@@ -167,9 +182,12 @@ export function SearchModal({ onClose }: SearchModalProps) {
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <FileIcon />
-                    <span className="font-medium text-dark-100">
+                    <span className={clsx("font-medium", result.archived ? "text-dark-300" : "text-dark-100")}>
                       {result.title}
                     </span>
+                    {result.archived && (
+                      <span className="text-xs bg-dark-700 text-dark-400 px-1.5 py-0.5 rounded">archived</span>
+                    )}
                     <span className="text-xs text-dark-500">{result.path}</span>
                   </div>
                   <div

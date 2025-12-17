@@ -9,6 +9,7 @@ export interface SearchResult {
   snippet: string;
   score: number;
   matches: SearchMatch[];
+  archived: boolean;
 }
 
 export interface SearchMatch {
@@ -40,6 +41,7 @@ export interface SearchFilters {
   date_from?: number;
   date_to?: number;
   code_only?: boolean;
+  include_archived?: boolean;
 }
 
 interface SearchState {

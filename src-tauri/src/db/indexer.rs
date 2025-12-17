@@ -103,20 +103,24 @@ pub async fn index_single_note(
     // Parse frontmatter
     let frontmatter = extract_frontmatter(&content);
 
+    // Extract archived status from frontmatter
+    let archived = extract_archived(&frontmatter);
+
     with_db(app, |conn| {
         // Insert or update the note
         conn.execute(
             r#"
-            INSERT INTO notes (id, path, title, content, content_hash, created_at, modified_at, frontmatter)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            INSERT INTO notes (id, path, title, content, content_hash, created_at, modified_at, frontmatter, archived)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
             ON CONFLICT(path) DO UPDATE SET
                 title = excluded.title,
                 content = excluded.content,
                 content_hash = excluded.content_hash,
                 modified_at = excluded.modified_at,
-                frontmatter = excluded.frontmatter
+                frontmatter = excluded.frontmatter,
+                archived = excluded.archived
             "#,
-            params![id, path_str, title, content, content_hash, created_at, modified_at, frontmatter],
+            params![id, path_str, title, content, content_hash, created_at, modified_at, frontmatter, archived as i32],
         )?;
 
         // Clear existing entities, tags, code blocks, backlinks, and card backlinks for this note
@@ -215,7 +219,7 @@ pub fn remove_note_from_index(
 pub fn list_all_notes(app: &AppHandle) -> Result<Vec<NoteMetadata>, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, path, title, modified_at, created_at FROM notes ORDER BY modified_at DESC",
+            "SELECT id, path, title, modified_at, created_at, COALESCE(archived, 0) FROM notes ORDER BY modified_at DESC",
         )?;
 
         let notes = stmt
@@ -226,6 +230,7 @@ pub fn list_all_notes(app: &AppHandle) -> Result<Vec<NoteMetadata>, Box<dyn std:
                     title: row.get(2)?,
                     modified_at: row.get(3)?,
                     created_at: row.get(4)?,
+                    archived: row.get::<_, i32>(5)? != 0,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -280,6 +285,19 @@ fn extract_frontmatter(content: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Extract archived status from frontmatter JSON
+fn extract_archived(frontmatter: &Option<String>) -> bool {
+    if let Some(fm) = frontmatter {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(fm) {
+            // Handle both "true" (string) and true (boolean)
+            if let Some(archived) = json.get("archived") {
+                return archived == "true" || archived == true;
+            }
+        }
+    }
+    false
 }
 
 fn serde_yaml_to_json(yaml: &str) -> Result<String, Box<dyn std::error::Error>> {

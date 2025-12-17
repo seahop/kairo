@@ -210,7 +210,8 @@ export function Editor() {
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY });
+    // Offset y to align menu with cursor (accounts for Tauri window chrome + menu padding)
+    setContextMenu({ x: e.clientX, y: e.clientY - 16 });
   };
 
   const renderContent = () => {

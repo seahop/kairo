@@ -59,6 +59,7 @@ pub struct NoteMetadata {
     pub title: String,
     pub modified_at: i64,
     pub created_at: i64,
+    pub archived: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -183,6 +184,7 @@ pub async fn write_note(
 
     let title = extract_title(&content, &path);
     let id = generate_note_id(&path);
+    let archived = extract_archived(&content);
 
     Ok(NoteMetadata {
         id,
@@ -190,6 +192,7 @@ pub async fn write_note(
         title,
         modified_at,
         created_at,
+        archived,
     })
 }
 
@@ -268,6 +271,7 @@ pub async fn rename_note(
 
     let title = extract_title(&content, &new_path);
     let id = generate_note_id(&new_path);
+    let archived = extract_archived(&content);
 
     Ok(NoteMetadata {
         id,
@@ -275,6 +279,7 @@ pub async fn rename_note(
         title,
         modified_at,
         created_at,
+        archived,
     })
 }
 
@@ -287,6 +292,67 @@ pub fn create_folder(app: AppHandle, path: String) -> Result<(), String> {
     fs::create_dir_all(&folder_path).map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+/// Set the archived status of a note
+#[tauri::command]
+pub async fn set_note_archived(
+    app: AppHandle,
+    path: String,
+    archived: bool,
+) -> Result<NoteMetadata, String> {
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
+    let note_path = validate_vault_path(&vault_path, &path)?;
+
+    if !note_path.exists() {
+        return Err(format!("Note not found: {}", path));
+    }
+
+    // Read current content
+    let content = fs::read_to_string(&note_path).map_err(|e| e.to_string())?;
+
+    // Update frontmatter with archived status
+    let new_content = update_frontmatter_archived(&content, archived);
+
+    // Write the updated file
+    fs::write(&note_path, &new_content).map_err(|e| e.to_string())?;
+
+    // Re-index the note
+    db::index_single_note(&app, &vault_path, &PathBuf::from(&path))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Return updated metadata
+    let metadata = fs::metadata(&note_path).map_err(|e| e.to_string())?;
+    let modified_at = metadata
+        .modified()
+        .map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        })
+        .unwrap_or(0);
+
+    let created_at = metadata
+        .created()
+        .map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        })
+        .unwrap_or(modified_at);
+
+    let title = extract_title(&new_content, &path);
+    let id = generate_note_id(&path);
+
+    Ok(NoteMetadata {
+        id,
+        path,
+        title,
+        modified_at,
+        created_at,
+        archived,
+    })
 }
 
 // Helper functions
@@ -313,4 +379,68 @@ fn generate_note_id(path: &str) -> String {
     hasher.update(path.as_bytes());
     let result = hasher.finalize();
     hex::encode(&result[..8])
+}
+
+/// Extract archived status from content frontmatter
+fn extract_archived(content: &str) -> bool {
+    if !content.starts_with("---") {
+        return false;
+    }
+
+    let parts: Vec<&str> = content.splitn(3, "---").collect();
+    if parts.len() < 3 {
+        return false;
+    }
+
+    let yaml = parts[1].trim();
+    for line in yaml.lines() {
+        let line = line.trim();
+        if line.starts_with("archived:") {
+            let value = line.trim_start_matches("archived:").trim();
+            // Handle both `archived: true` and `archived: "true"`
+            return value == "true" || value == "\"true\"" || value == "'true'";
+        }
+    }
+
+    false
+}
+
+/// Update frontmatter with archived status
+fn update_frontmatter_archived(content: &str, archived: bool) -> String {
+    let archived_line = if archived {
+        "archived: true"
+    } else {
+        "archived: false"
+    };
+
+    if content.starts_with("---") {
+        let parts: Vec<&str> = content.splitn(3, "---").collect();
+        if parts.len() >= 3 {
+            let yaml = parts[1].trim();
+            let rest = parts[2];
+
+            // Check if archived field already exists
+            let mut new_yaml_lines: Vec<String> = Vec::new();
+            let mut found_archived = false;
+
+            for line in yaml.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("archived:") {
+                    new_yaml_lines.push(archived_line.to_string());
+                    found_archived = true;
+                } else {
+                    new_yaml_lines.push(line.to_string());
+                }
+            }
+
+            if !found_archived {
+                new_yaml_lines.push(archived_line.to_string());
+            }
+
+            return format!("---\n{}\n---{}", new_yaml_lines.join("\n"), rest);
+        }
+    }
+
+    // No frontmatter exists, create one
+    format!("---\n{}\n---\n\n{}", archived_line, content)
 }

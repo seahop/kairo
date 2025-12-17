@@ -66,6 +66,8 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
     setViewMode,
     showOrphans,
     setShowOrphans,
+    showArchivedNodes,
+    setShowArchivedNodes,
     linkDistance,
     setLinkDistance,
     chargeStrength,
@@ -116,6 +118,16 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
 
     let nodes = [...graphData.nodes];
     let links = [...graphData.links];
+
+    // Filter archived nodes if not showing them
+    if (!showArchivedNodes) {
+      const archivedIds = new Set(nodes.filter(n => n.archived).map(n => n.id));
+      nodes = nodes.filter(n => !n.archived);
+      // Also remove links connected to archived nodes
+      links = links.filter(l =>
+        !archivedIds.has(l.source as string) && !archivedIds.has(l.target as string)
+      );
+    }
 
     // Filter orphans if needed
     if (!showOrphans) {
@@ -186,7 +198,7 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
     }
 
     return { nodes, links };
-  }, [graphData, showOrphans, viewMode, focusedNote, localDepth, searchResults]);
+  }, [graphData, showOrphans, showArchivedNodes, viewMode, focusedNote, localDepth, searchResults]);
 
   // Update focused note when current note changes
   useEffect(() => {
@@ -226,6 +238,10 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
   // Node coloring based on state
   const getNodeColor = useCallback(
     (node: GraphNode) => {
+      // Archived nodes shown dimmer
+      if (node.archived) {
+        return "#475569"; // slate-600 - muted for archived
+      }
       // Search result highlighting (highest priority)
       if (viewMode === "search" && searchResults.includes(node.id)) {
         return "#f59e0b"; // amber - search result
@@ -269,9 +285,10 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
   const handleNodeRightClick = useCallback(
     (node: GraphNode, event: MouseEvent) => {
       event.preventDefault();
+      // Offset y to align menu with cursor (accounts for Tauri window chrome + menu padding)
       setContextMenu({
         x: event.clientX,
-        y: event.clientY,
+        y: event.clientY - 16,
         node: node,
       });
     },
@@ -483,7 +500,7 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
           <div className="absolute top-2 right-2 bg-dark-900 border border-dark-800 rounded-lg p-4 w-64 shadow-xl">
             <h3 className="text-sm font-medium text-dark-200 mb-3">Display</h3>
 
-            <label className="flex items-center gap-2 text-sm text-dark-400 mb-3">
+            <label className="flex items-center gap-2 text-sm text-dark-400 mb-2">
               <input
                 type="checkbox"
                 checked={showOrphans}
@@ -491,6 +508,16 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
                 className="accent-accent-primary"
               />
               Show orphan notes
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-dark-400 mb-3">
+              <input
+                type="checkbox"
+                checked={showArchivedNodes}
+                onChange={(e) => setShowArchivedNodes(e.target.checked)}
+                className="accent-accent-primary"
+              />
+              Show archived notes
             </label>
 
             {(viewMode === "local" || viewMode === "search") && (
@@ -572,6 +599,12 @@ export function GraphViewPanel({ width, height }: GraphViewPanelProps) {
               <div className="w-2.5 h-2.5 rounded-full bg-slate-500" />
               <span className="text-dark-400">Sparse</span>
             </div>
+            {showArchivedNodes && (
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-slate-600" />
+                <span className="text-dark-400">Archived</span>
+              </div>
+            )}
           </div>
         </div>
 

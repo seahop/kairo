@@ -13,11 +13,13 @@ pub fn init_schema(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> 
             content_hash TEXT,
             created_at INTEGER,
             modified_at INTEGER,
-            frontmatter TEXT  -- JSON
+            frontmatter TEXT,  -- JSON
+            archived INTEGER DEFAULT 0  -- 0 = active, 1 = archived
         );
 
         CREATE INDEX IF NOT EXISTS idx_notes_path ON notes(path);
         CREATE INDEX IF NOT EXISTS idx_notes_modified ON notes(modified_at);
+        CREATE INDEX IF NOT EXISTS idx_notes_archived ON notes(archived);
 
         -- Full-text search using FTS5
         CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
@@ -334,6 +336,62 @@ fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
             ALTER TABLE kanban_cards ADD COLUMN linked_board_ids TEXT;
             ALTER TABLE kanban_cards ADD COLUMN board_columns TEXT;
             ALTER TABLE kanban_cards ADD COLUMN is_complete INTEGER DEFAULT 0;
+            "#,
+        )?;
+    }
+
+    // Migration: Add archived column to notes for frontmatter-based archiving
+    let has_archived = conn
+        .prepare("SELECT archived FROM notes LIMIT 0")
+        .is_ok();
+
+    if !has_archived {
+        conn.execute_batch(
+            r#"
+            ALTER TABLE notes ADD COLUMN archived INTEGER DEFAULT 0;
+            CREATE INDEX IF NOT EXISTS idx_notes_archived ON notes(archived);
+            "#,
+        )?;
+
+        // Backfill archived status from existing frontmatter JSON
+        conn.execute(
+            r#"UPDATE notes SET archived = 1
+               WHERE json_extract(frontmatter, '$.archived') = 'true'
+                  OR json_extract(frontmatter, '$.archived') = true"#,
+            [],
+        )?;
+
+        // Also mark notes in the legacy archive folder as archived
+        conn.execute(
+            "UPDATE notes SET archived = 1 WHERE path LIKE 'notes/archive/%'",
+            [],
+        )?;
+    }
+
+    // Migration: Add archived column to kanban_cards for card archiving
+    let has_card_archived = conn
+        .prepare("SELECT archived FROM kanban_cards LIMIT 0")
+        .is_ok();
+
+    if !has_card_archived {
+        conn.execute_batch(
+            r#"
+            ALTER TABLE kanban_cards ADD COLUMN archived INTEGER DEFAULT 0;
+            CREATE INDEX IF NOT EXISTS idx_kanban_cards_archived ON kanban_cards(archived);
+            "#,
+        )?;
+    }
+
+    // Migration: Add archived column to diagram_boards for board archiving
+    let has_diagram_archived = conn
+        .prepare("SELECT archived FROM diagram_boards LIMIT 0")
+        .is_ok();
+
+    if !has_diagram_archived {
+        conn.execute_batch(
+            r#"
+            ALTER TABLE diagram_boards ADD COLUMN archived INTEGER DEFAULT 0;
+            CREATE INDEX IF NOT EXISTS idx_diagram_boards_archived ON diagram_boards(archived);
             "#,
         )?;
     }

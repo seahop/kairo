@@ -23,6 +23,8 @@ import { ZoomIn, ZoomOut, Maximize, Lock, Unlock, Copy, Trash2, ArrowUpToLine, A
 
 import { useDiagramStore } from "./store";
 import { useNoteStore } from "@/stores/noteStore";
+import { LinkContextMenu, useContextMenu } from "@/components/common/LinkContextMenu";
+import type { DiagramBoard } from "./types";
 import { ShapeNode, IconNode, TextNode, GroupNode, ImageNode, SwimlaneNode, ICON_MAP } from "./components/CustomNodes";
 import { WaypointEdge } from "./components/CustomEdges";
 import { exportToPng } from "./utils/export";
@@ -319,7 +321,11 @@ export function DiagramEditor() {
     loadBoard,
     loadBoards,
     createBoard,
+    updateBoard,
     deleteBoard,
+    archiveBoard,
+    showArchivedBoards,
+    setShowArchivedBoards,
     addNode,
     deleteNode,
     bulkUpdateNodes,
@@ -407,6 +413,14 @@ export function DiagramEditor() {
   const [showNoteLinkModal, setShowNoteLinkModal] = useState(false);
   const [noteLinkSearch, setNoteLinkSearch] = useState("");
 
+  // Board list context menu
+  const { contextMenu: boardContextMenu, showContextMenu: showBoardContextMenu, hideContextMenu: hideBoardContextMenu } = useContextMenu();
+
+  // Inline rename state
+  const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
+  const [renamingBoardName, setRenamingBoardName] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
   // Build a set of hidden layer IDs for quick lookup
   const hiddenLayerIds = useMemo(() => {
     const hidden = new Set<string>();
@@ -476,6 +490,64 @@ export function DiagramEditor() {
       }
     }
   }, [currentBoard?.id]); // Only trigger on board ID change
+
+  // Focus rename input when it's shown
+  useEffect(() => {
+    if (renamingBoardId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingBoardId]);
+
+  // Start renaming a board
+  const startRenameBoard = useCallback((board: DiagramBoard) => {
+    setRenamingBoardId(board.id);
+    setRenamingBoardName(board.name);
+  }, []);
+
+  // Complete the rename
+  const completeRenameBoard = useCallback(async () => {
+    if (renamingBoardId && renamingBoardName.trim()) {
+      await updateBoard(renamingBoardId, renamingBoardName.trim());
+    }
+    setRenamingBoardId(null);
+    setRenamingBoardName("");
+  }, [renamingBoardId, renamingBoardName, updateBoard]);
+
+  // Cancel rename
+  const cancelRenameBoard = useCallback(() => {
+    setRenamingBoardId(null);
+    setRenamingBoardName("");
+  }, []);
+
+  // Handle board context menu
+  const handleBoardContextMenu = useCallback((e: React.MouseEvent, board: DiagramBoard) => {
+    const items = [
+      {
+        label: "Open",
+        icon: "📂",
+        onClick: () => loadBoard(board.id),
+      },
+      {
+        label: "Rename",
+        icon: "✏️",
+        onClick: () => startRenameBoard(board),
+      },
+      {
+        label: board.archived ? "Unarchive" : "Archive",
+        icon: "📦",
+        onClick: () => archiveBoard(board.id, !board.archived),
+        divider: true,
+      },
+      {
+        label: "Delete",
+        icon: "🗑️",
+        onClick: () => confirmDeleteBoard(board),
+        divider: true,
+      },
+    ];
+    showBoardContextMenu(e, items);
+  }, [loadBoard, startRenameBoard, archiveBoard, confirmDeleteBoard, showBoardContextMenu]);
 
   // Handle node changes (position updates)
   const handleNodesChange: OnNodesChange = useCallback(
@@ -1032,9 +1104,10 @@ export function DiagramEditor() {
       const bounds = reactFlowRef.current?.getBoundingClientRect();
       if (!bounds) return;
 
+      // Offset y to align menu with cursor (accounts for Tauri window chrome + menu padding)
       setContextMenu({
         x: event.clientX,
-        y: event.clientY,
+        y: event.clientY - 16,
         flowPosition: {
           x: event.clientX - bounds.left,
           y: event.clientY - bounds.top,
@@ -1051,9 +1124,10 @@ export function DiagramEditor() {
       event.stopPropagation(); // Prevent pane context menu from also firing
       if (isLocked) return;
 
+      // Offset y to align menu with cursor (accounts for Tauri window chrome + menu padding)
       setContextMenu({
         x: event.clientX,
-        y: event.clientY,
+        y: event.clientY - 16,
         nodeId: node.id,
       });
     },
@@ -1067,9 +1141,10 @@ export function DiagramEditor() {
       event.stopPropagation(); // Prevent pane context menu from also firing
       if (isLocked) return;
 
+      // Offset y to align menu with cursor (accounts for Tauri window chrome + menu padding)
       setContextMenu({
         x: event.clientX,
-        y: event.clientY,
+        y: event.clientY - 16,
         edgeId: edge.id,
       });
     },
@@ -1933,34 +2008,85 @@ export function DiagramEditor() {
           <div className="p-3 border-b border-dark-700">
             <h3 className="text-xs font-semibold text-dark-400 uppercase mb-2">Diagrams</h3>
             <div className="space-y-1 max-h-40 overflow-y-auto">
-              {boards.map((board) => (
+              {boards
+                .filter((board) => showArchivedBoards || !board.archived)
+                .map((board) => (
                 <div
                   key={board.id}
                   className={`group flex items-center justify-between px-2 py-1.5 rounded cursor-pointer ${
                     currentBoard?.id === board.id
                       ? "bg-blue-600/20 text-blue-400"
                       : "text-dark-300 hover:bg-dark-700"
-                  }`}
-                  onClick={() => loadBoard(board.id)}
+                  } ${board.archived ? "opacity-60" : ""}`}
+                  onClick={() => renamingBoardId !== board.id && loadBoard(board.id)}
+                  onContextMenu={(e) => handleBoardContextMenu(e, board)}
                 >
-                  <span className="text-sm truncate">{board.name}</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      confirmDeleteBoard(board);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-dark-500 hover:text-red-400 transition-opacity"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    {board.archived && <span title="Archived">📦</span>}
+                    {renamingBoardId === board.id ? (
+                      <input
+                        ref={renameInputRef}
+                        type="text"
+                        value={renamingBoardName}
+                        onChange={(e) => setRenamingBoardName(e.target.value)}
+                        onBlur={completeRenameBoard}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            completeRenameBoard();
+                          } else if (e.key === "Escape") {
+                            cancelRenameBoard();
+                          }
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-sm bg-dark-700 border border-dark-500 rounded px-1 py-0.5 text-dark-100 focus:outline-none focus:border-blue-500 w-full"
+                      />
+                    ) : (
+                      <span className="text-sm truncate">{board.name}</span>
+                    )}
+                  </div>
+                  {renamingBoardId !== board.id && (
+                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          archiveBoard(board.id, !board.archived);
+                        }}
+                        className="p-1 text-dark-500 hover:text-amber-400"
+                        title={board.archived ? "Unarchive" : "Archive"}
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          confirmDeleteBoard(board);
+                        }}
+                        className="p-1 text-dark-500 hover:text-red-400"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
-              {boards.length === 0 && (
+              {boards.filter((b) => showArchivedBoards || !b.archived).length === 0 && (
                 <p className="text-xs text-dark-500 text-center py-2">No diagrams yet</p>
               )}
             </div>
+            {/* Show archived toggle */}
+            <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showArchivedBoards}
+                onChange={(e) => setShowArchivedBoards(e.target.checked)}
+                className="w-3 h-3 rounded border-dark-600 bg-dark-800 text-accent-primary"
+              />
+              <span className="text-xs text-dark-400">Show archived</span>
+            </label>
           </div>
 
           {/* Color Palette */}
@@ -2095,9 +2221,10 @@ export function DiagramEditor() {
               const bounds = reactFlowRef.current?.getBoundingClientRect();
               if (!bounds) return;
 
+              // Offset y to align menu with cursor (accounts for Tauri window chrome + menu padding)
               setContextMenu({
                 x: e.clientX,
-                y: e.clientY,
+                y: e.clientY - 16,
                 flowPosition: {
                   x: e.clientX - bounds.left,
                   y: e.clientY - bounds.top,
@@ -3831,6 +3958,16 @@ export function DiagramEditor() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Board list context menu */}
+      {boardContextMenu && (
+        <LinkContextMenu
+          x={boardContextMenu.x}
+          y={boardContextMenu.y}
+          items={boardContextMenu.items}
+          onClose={hideBoardContextMenu}
+        />
       )}
     </div>
   );

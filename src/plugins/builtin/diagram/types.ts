@@ -23,6 +23,7 @@ export interface DiagramBoard {
   viewport: Viewport;
   createdAt: number;
   modifiedAt: number;
+  archived: boolean;
 }
 
 export interface NodeData {

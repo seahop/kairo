@@ -11,6 +11,7 @@ pub struct SearchResult {
     pub snippet: String,
     pub score: f64,
     pub matches: Vec<SearchMatch>,
+    pub archived: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -44,6 +45,7 @@ pub struct SearchFilters {
     pub date_from: Option<i64>,
     pub date_to: Option<i64>,
     pub code_only: Option<bool>,
+    pub include_archived: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -43,6 +43,8 @@ pub struct DiagramBoard {
     pub created_at: i64,
     #[serde(rename = "modifiedAt")]
     pub modified_at: i64,
+    #[serde(default)]
+    pub archived: bool,
 }
 
 /// Data stored in a node's JSON data field
@@ -246,7 +248,7 @@ pub fn diagram_list_boards(app: AppHandle) -> Result<Vec<DiagramBoard>, String> 
     with_db(&app, |conn| {
         let mut stmt = conn
             .prepare(
-                "SELECT b.id, b.name, b.description, b.note_id, n.path, b.viewport, b.created_at, b.modified_at
+                "SELECT b.id, b.name, b.description, b.note_id, n.path, b.viewport, b.created_at, b.modified_at, COALESCE(b.archived, 0)
                  FROM diagram_boards b
                  LEFT JOIN notes n ON b.note_id = n.id
                  ORDER BY b.modified_at DESC"
@@ -257,6 +259,7 @@ pub fn diagram_list_boards(app: AppHandle) -> Result<Vec<DiagramBoard>, String> 
             .query_map([], |row| {
                 let viewport_json: String = row.get(5)?;
                 let viewport: Viewport = serde_json::from_str(&viewport_json).unwrap_or_default();
+                let archived_int: i32 = row.get(8)?;
 
                 Ok(DiagramBoard {
                     id: row.get(0)?,
@@ -268,6 +271,7 @@ pub fn diagram_list_boards(app: AppHandle) -> Result<Vec<DiagramBoard>, String> 
                     viewport,
                     created_at: row.get(6)?,
                     modified_at: row.get(7)?,
+                    archived: archived_int != 0,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -295,7 +299,7 @@ pub fn diagram_get_board(app: AppHandle, board_id: String) -> Result<DiagramBoar
         // Get board with note path via LEFT JOIN
         let mut board = conn
             .query_row(
-                "SELECT b.id, b.name, b.description, b.note_id, n.path, b.viewport, b.created_at, b.modified_at
+                "SELECT b.id, b.name, b.description, b.note_id, n.path, b.viewport, b.created_at, b.modified_at, COALESCE(b.archived, 0)
                  FROM diagram_boards b
                  LEFT JOIN notes n ON b.note_id = n.id
                  WHERE b.id = ?1",
@@ -303,6 +307,7 @@ pub fn diagram_get_board(app: AppHandle, board_id: String) -> Result<DiagramBoar
                 |row| {
                     let viewport_json: String = row.get(5)?;
                     let viewport: Viewport = serde_json::from_str(&viewport_json).unwrap_or_default();
+                    let archived_int: i32 = row.get(8)?;
 
                     Ok(DiagramBoard {
                         id: row.get(0)?,
@@ -314,6 +319,7 @@ pub fn diagram_get_board(app: AppHandle, board_id: String) -> Result<DiagramBoar
                         viewport,
                         created_at: row.get(6)?,
                         modified_at: row.get(7)?,
+                        archived: archived_int != 0,
                     })
                 },
             )
@@ -421,6 +427,7 @@ pub fn diagram_create_board(
             viewport,
             created_at: now,
             modified_at: now,
+            archived: false,
         })
     })
     .map_err(|e| e.to_string())
@@ -439,11 +446,11 @@ pub fn diagram_update_board(
 
     with_db(&app, |conn| {
         // Get current board
-        let (current_name, current_desc, current_viewport_json, created_at, current_note_id): (String, Option<String>, String, i64, Option<String>) = conn
+        let (current_name, current_desc, current_viewport_json, created_at, current_note_id, current_archived): (String, Option<String>, String, i64, Option<String>, i32) = conn
             .query_row(
-                "SELECT name, description, viewport, created_at, note_id FROM diagram_boards WHERE id = ?1",
+                "SELECT name, description, viewport, created_at, note_id, COALESCE(archived, 0) FROM diagram_boards WHERE id = ?1",
                 params![board_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
             )
             .map_err(|e| e.to_string())?;
 
@@ -484,6 +491,7 @@ pub fn diagram_update_board(
             viewport: new_viewport,
             created_at,
             modified_at: now,
+            archived: current_archived != 0,
         })
     })
     .map_err(|e| e.to_string())
@@ -507,11 +515,11 @@ pub fn diagram_link_note(
         .map_err(|e| e.to_string())?;
 
         // Get board data
-        let (name, description, viewport_json, created_at, current_note_id): (String, Option<String>, String, i64, Option<String>) = conn
+        let (name, description, viewport_json, created_at, current_note_id, archived_int): (String, Option<String>, String, i64, Option<String>, i32) = conn
             .query_row(
-                "SELECT name, description, viewport, created_at, note_id FROM diagram_boards WHERE id = ?1",
+                "SELECT name, description, viewport, created_at, note_id, COALESCE(archived, 0) FROM diagram_boards WHERE id = ?1",
                 params![board_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
             )
             .map_err(|e| e.to_string())?;
 
@@ -541,6 +549,7 @@ pub fn diagram_link_note(
             viewport,
             created_at,
             modified_at: now,
+            archived: archived_int != 0,
         })
     })
     .map_err(|e| e.to_string())
@@ -580,11 +589,11 @@ pub fn diagram_add_note_link(
         .map_err(|e| e.to_string())?;
 
         // Fetch and return updated board
-        let (name, description, viewport_json, created_at, legacy_note_id): (String, Option<String>, String, i64, Option<String>) = conn
+        let (name, description, viewport_json, created_at, legacy_note_id, archived_int): (String, Option<String>, String, i64, Option<String>, i32) = conn
             .query_row(
-                "SELECT name, description, viewport, created_at, note_id FROM diagram_boards WHERE id = ?1",
+                "SELECT name, description, viewport, created_at, note_id, COALESCE(archived, 0) FROM diagram_boards WHERE id = ?1",
                 params![board_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
             )
             .map_err(|e| e.to_string())?;
 
@@ -614,6 +623,7 @@ pub fn diagram_add_note_link(
             viewport,
             created_at,
             modified_at: now,
+            archived: archived_int != 0,
         })
     })
     .map_err(|e| e.to_string())
@@ -644,11 +654,11 @@ pub fn diagram_remove_note_link(
         .map_err(|e| e.to_string())?;
 
         // Fetch and return updated board
-        let (name, description, viewport_json, created_at, legacy_note_id): (String, Option<String>, String, i64, Option<String>) = conn
+        let (name, description, viewport_json, created_at, legacy_note_id, archived_int): (String, Option<String>, String, i64, Option<String>, i32) = conn
             .query_row(
-                "SELECT name, description, viewport, created_at, note_id FROM diagram_boards WHERE id = ?1",
+                "SELECT name, description, viewport, created_at, note_id, COALESCE(archived, 0) FROM diagram_boards WHERE id = ?1",
                 params![board_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
             )
             .map_err(|e| e.to_string())?;
 
@@ -678,6 +688,7 @@ pub fn diagram_remove_note_link(
             viewport,
             created_at,
             modified_at: now,
+            archived: archived_int != 0,
         })
     })
     .map_err(|e| e.to_string())
@@ -707,11 +718,11 @@ pub fn diagram_remove_all_note_links(
         .map_err(|e| e.to_string())?;
 
         // Fetch and return updated board
-        let (name, description, viewport_json, created_at): (String, Option<String>, String, i64) =
+        let (name, description, viewport_json, created_at, archived_int): (String, Option<String>, String, i64, i32) =
             conn.query_row(
-                "SELECT name, description, viewport, created_at FROM diagram_boards WHERE id = ?1",
+                "SELECT name, description, viewport, created_at, COALESCE(archived, 0) FROM diagram_boards WHERE id = ?1",
                 params![board_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
             )
             .map_err(|e| e.to_string())?;
 
@@ -727,6 +738,7 @@ pub fn diagram_remove_all_note_links(
             viewport,
             created_at,
             modified_at: now,
+            archived: archived_int != 0,
         })
     })
     .map_err(|e| e.to_string())
@@ -739,6 +751,25 @@ pub fn diagram_delete_board(app: AppHandle, board_id: String) -> Result<(), Stri
         conn.execute(
             "DELETE FROM diagram_boards WHERE id = ?1",
             params![board_id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// Archive or unarchive a diagram board
+#[tauri::command]
+pub fn diagram_archive_board(
+    app: AppHandle,
+    board_id: String,
+    archived: bool,
+) -> Result<(), String> {
+    with_db(&app, |conn| {
+        let now = chrono::Utc::now().timestamp();
+        conn.execute(
+            "UPDATE diagram_boards SET archived = ?1, modified_at = ?2 WHERE id = ?3",
+            params![archived as i32, now, board_id],
         )
         .map_err(|e| e.to_string())?;
         Ok(())

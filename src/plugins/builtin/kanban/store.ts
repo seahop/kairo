@@ -28,6 +28,7 @@ export interface KanbanCard {
   linkedBoardIds?: string[];
   boardColumns?: Record<string, string>;  // boardId -> columnId mapping for per-board column tracking
   isComplete?: boolean;
+  archived: boolean;
 }
 
 export interface KanbanColumn {
@@ -100,6 +101,7 @@ interface KanbanState {
   customTemplates: CardTemplate[];
   selectedTemplateId: string | null;
   currentUsername: string | null;  // Current user's identity
+  showArchivedCards: boolean;  // Whether to show archived cards
 
   // Board actions
   loadBoards: () => Promise<void>;
@@ -107,6 +109,8 @@ interface KanbanState {
   createBoard: (name: string, columns?: string[], ownerName?: string) => Promise<void>;
   deleteBoard: (id: string) => Promise<void>;
   getPersonalBoard: (username: string) => KanbanBoard | undefined;
+  getPoolBoard: () => KanbanBoard | undefined;
+  ensurePoolBoard: () => Promise<KanbanBoard>;
 
   // Column actions
   addColumn: (boardId: string, name: string) => Promise<void>;
@@ -122,6 +126,7 @@ interface KanbanState {
   updateCard: (cardId: string, updates: CardUpdateInput) => Promise<void>;
   moveCard: (cardId: string, toColumnId: string, position: number) => Promise<void>;
   deleteCard: (cardId: string) => Promise<void>;
+  archiveCard: (cardId: string, archived: boolean) => Promise<void>;
   takeCard: (cardId: string, username: string) => Promise<void>;
   giveCard: (cardId: string, targetUsername: string) => Promise<void>;
   unlinkCardFromBoard: (cardId: string, boardId: string) => Promise<void>;
@@ -154,6 +159,7 @@ interface KanbanState {
   openCreateCardModal: (columnId: string) => void;
   closeCreateCardModal: () => void;
   createCardWithDetails: (data: CreateCardData) => Promise<void>;
+  setShowArchivedCards: (show: boolean) => void;
 
   // Template actions
   loadCustomTemplates: () => Promise<void>;
@@ -187,6 +193,7 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
   createCardData: null,
   customTemplates: [],
   selectedTemplateId: null,
+  showArchivedCards: false,
 
   loadBoards: async () => {
     set({ isLoading: true, error: null });
@@ -206,18 +213,26 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
         }
       }
 
-      const boards = await invoke<KanbanBoard[]>("kanban_list_boards");
+      let boards = await invoke<KanbanBoard[]>("kanban_list_boards");
       set({ boards, isLoading: false });
+
+      // Ensure the Pool board exists (shared catch-all for unassigned cards)
+      const hasPoolBoard = boards.some((b) => b.name === "Pool" && !b.ownerName);
+      if (!hasPoolBoard) {
+        const poolBoard = await get().ensurePoolBoard();
+        boards = [poolBoard, ...boards];
+      }
 
       // Load a board if none is selected
       const hasCurrentBoard = !!get().currentBoard;
 
       if (boards.length > 0 && !hasCurrentBoard) {
-        // Prefer the user's personal board if they have one
+        // Prefer the user's personal board if they have one, otherwise the Pool board
         const myBoard = currentUsername
           ? boards.find((b) => b.ownerName?.toLowerCase() === currentUsername.toLowerCase())
           : null;
-        get().loadBoard(myBoard?.id || boards[0].id);
+        const poolBoard = boards.find((b) => b.name === "Pool" && !b.ownerName);
+        get().loadBoard(myBoard?.id || poolBoard?.id || boards[0].id);
       }
     } catch (error) {
       set({ error: String(error), isLoading: false });
@@ -260,6 +275,30 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     const { boards } = get();
     // Case-insensitive lookup for personal board
     return boards.find((b) => b.ownerName?.toLowerCase() === username.toLowerCase());
+  },
+
+  // Get the shared Pool board (catch-all for unassigned cards)
+  getPoolBoard: () => {
+    const { boards } = get();
+    return boards.find((b) => b.name === "Pool" && !b.ownerName);
+  },
+
+  // Ensure Pool board exists, create if not
+  ensurePoolBoard: async () => {
+    const existing = get().getPoolBoard();
+    if (existing) return existing;
+
+    // Create the Pool board with default columns
+    const poolColumns = ["Backlog", "To Do", "In Progress", "Done"];
+    const board = await invoke<KanbanBoard>("kanban_create_board", {
+      name: "Pool",
+      columns: poolColumns,
+      ownerName: null,
+    });
+    set((state) => ({
+      boards: [board, ...state.boards], // Pool board first in list
+    }));
+    return board;
   },
 
   deleteBoard: async (id: string) => {
@@ -394,6 +433,28 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     }
   },
 
+  archiveCard: async (cardId: string, archived: boolean) => {
+    try {
+      await invoke("kanban_archive_card", { cardId, archived });
+      set((state) => ({
+        cards: state.cards.map((c) =>
+          c.id === cardId ? { ...c, archived } : c
+        ),
+        // Close detail panel if archiving the selected card and not showing archived
+        selectedCard: state.selectedCard?.id === cardId && archived && !state.showArchivedCards
+          ? null
+          : state.selectedCard,
+        showCardDetail: state.selectedCard?.id === cardId && archived && !state.showArchivedCards
+          ? false
+          : state.showCardDetail,
+      }));
+    } catch (error) {
+      set({ error: String(error) });
+    }
+  },
+
+  setShowArchivedCards: (show: boolean) => set({ showArchivedCards: show }),
+
   // Update column properties
   updateColumn: async (
     boardId: string,
@@ -501,15 +562,20 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     });
   },
 
-  // Return card to pool (remove all assignees and unlink from all boards except home)
+  // Return card to pool (move to shared Pool board, remove all assignees)
   returnToPool: async (cardId: string) => {
-    const { cards, updateCard } = get();
+    const { cards, updateCard, ensurePoolBoard } = get();
     const card = cards.find((c) => c.id === cardId);
     if (!card) return;
 
+    // Ensure Pool board exists and get it
+    const poolBoard = await ensurePoolBoard();
+
+    // Transfer card to Pool board, clear assignees and links
     await updateCard(cardId, {
       assignees: [],
       linkedBoardIds: [],
+      newBoardId: poolBoard.id,
     });
   },
 

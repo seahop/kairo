@@ -115,7 +115,7 @@ function NoteContextMenu({
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
         </svg>
-        Archive (PARA)
+        {state.note?.archived ? "Unarchive" : "Archive"}
       </button>
       {/* Extension menu items */}
       {extensionItems.length > 0 && (
@@ -315,7 +315,8 @@ function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }
                 "flex items-center gap-2 px-2 py-1 cursor-pointer rounded",
                 "text-dark-300 hover:bg-dark-800 hover:text-dark-100",
                 currentNote?.path === note.path && "bg-dark-800 text-accent-primary",
-                selectedNote?.id === note.id && currentNote?.path !== note.path && "ring-1 ring-accent-primary/50"
+                selectedNote?.id === note.id && currentNote?.path !== note.path && "ring-1 ring-accent-primary/50",
+                note.archived && "opacity-50"
               )}
               style={{ paddingLeft: `${(level + 1) * 12 + 8}px` }}
               onClick={(e) => {
@@ -331,6 +332,11 @@ function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }
             >
               <FileIcon />
               <span className="text-sm truncate">{note.title}</span>
+              {note.archived && (
+                <svg className="w-3 h-3 text-dark-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                </svg>
+              )}
             </div>
           ))}
         </div>
@@ -346,7 +352,9 @@ export function Sidebar() {
   const loadNotes = useNoteStore((state) => state.loadNotes);
   const createNote = useNoteStore((state) => state.createNote);
   const deleteNote = useNoteStore((state) => state.deleteNote);
-  const archiveNote = useNoteStore((state) => state.archiveNote);
+  const setNoteArchived = useNoteStore((state) => state.setNoteArchived);
+  const showArchived = useNoteStore((state) => state.showArchived);
+  const setShowArchived = useNoteStore((state) => state.setShowArchived);
   const openNoteInSecondary = useNoteStore((state) => state.openNoteInSecondary);
   const setSearchOpen = useUIStore((state) => state.setSearchOpen);
   const isSidebarCollapsed = useUIStore((state) => state.isSidebarCollapsed);
@@ -397,7 +405,12 @@ export function Sidebar() {
   }, [renamingNote]);
 
   // Memoize the folder tree to prevent expensive O(n) rebuild on every render
-  const folderTree = useMemo(() => buildFolderTree(notes), [notes]);
+  // Filter notes based on showArchived setting
+  const visibleNotes = useMemo(
+    () => showArchived ? notes : notes.filter(n => !n.archived),
+    [notes, showArchived]
+  );
+  const folderTree = useMemo(() => buildFolderTree(visibleNotes), [visibleNotes]);
 
   const handleNewNote = () => {
     const timestamp = new Date().toISOString().split("T")[0];
@@ -407,7 +420,8 @@ export function Sidebar() {
 
   const handleContextMenu = (e: React.MouseEvent, note: NoteMetadata) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, note });
+    // Offset y to align menu with cursor (accounts for Tauri window chrome + menu padding)
+    setContextMenu({ x: e.clientX, y: e.clientY - 16, note });
     setSelectedNote(note);
   };
 
@@ -426,14 +440,20 @@ export function Sidebar() {
   };
 
   const handleArchiveNote = (note: NoteMetadata) => {
+    const isArchived = note.archived;
+    const action = isArchived ? "Unarchive" : "Archive";
+    const message = isArchived
+      ? `Restore "${note.title}" from archive?`
+      : `Archive "${note.title}"? This will mark it as archived in the frontmatter.`;
+
     showConfirmDialog({
-      title: "Archive Note",
-      message: `Move "${note.title}" to the archive folder? You can find it later in notes/archive/.`,
-      confirmText: "Archive",
+      title: `${action} Note`,
+      message,
+      confirmText: action,
       cancelText: "Cancel",
       variant: "warning",
       onConfirm: () => {
-        archiveNote(note.path);
+        setNoteArchived(note.path, !isArchived);
         setSelectedNote(null);
       },
     });
@@ -603,8 +623,17 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="p-4 border-t border-dark-800">
+        <label className="flex items-center gap-2 mb-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+            className="w-3.5 h-3.5 rounded border-dark-600 bg-dark-800 text-accent-primary focus:ring-accent-primary/50 focus:ring-offset-0"
+          />
+          <span className="text-xs text-dark-400">Show archived</span>
+        </label>
         <div className="text-xs text-dark-500">
-          {vault?.note_count ?? 0} notes
+          {visibleNotes.length} notes{showArchived ? "" : ` (${notes.filter(n => n.archived).length} archived)`}
           {selectedNote && (
             <span className="ml-2 text-accent-primary">• {selectedNote.title} selected</span>
           )}

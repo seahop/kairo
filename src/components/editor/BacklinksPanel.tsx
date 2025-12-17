@@ -7,6 +7,7 @@ interface Backlink {
   source_path: string;
   source_title: string;
   context: string;
+  archived: boolean;
 }
 
 const LinkIcon = () => (
@@ -84,7 +85,8 @@ export function BacklinksPanel() {
             </div>
           ) : (
             <div className="space-y-2">
-              {backlinks.map((link) => (
+              {/* Active backlinks */}
+              {backlinks.filter(l => !l.archived).map((link) => (
                 <button
                   key={link.source_id}
                   className="w-full text-left p-2 rounded-lg hover:bg-dark-800 transition-colors group"
@@ -100,6 +102,31 @@ export function BacklinksPanel() {
                   )}
                 </button>
               ))}
+
+              {/* Archived backlinks (shown dimmed) */}
+              {backlinks.filter(l => l.archived).length > 0 && (
+                <div className="opacity-50 mt-3 pt-3 border-t border-dark-800">
+                  <div className="text-xs text-dark-500 mb-2">
+                    Archived ({backlinks.filter(l => l.archived).length})
+                  </div>
+                  {backlinks.filter(l => l.archived).map((link) => (
+                    <button
+                      key={link.source_id}
+                      className="w-full text-left p-2 rounded-lg hover:bg-dark-800 transition-colors group"
+                      onClick={() => openNote(link.source_path)}
+                    >
+                      <div className="text-sm font-medium text-dark-300 group-hover:text-dark-200">
+                        {link.source_title}
+                      </div>
+                      {link.context && (
+                        <div className="text-xs text-dark-600 mt-1 line-clamp-2">
+                          ...{link.context}...
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

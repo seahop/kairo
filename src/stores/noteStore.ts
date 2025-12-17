@@ -9,6 +9,7 @@ export interface NoteMetadata {
   title: string;
   modified_at: number;
   created_at: number;
+  archived: boolean;
 }
 
 export interface Note {
@@ -42,6 +43,9 @@ interface NoteState {
   hasSecondaryUnsavedChanges: boolean;
   isSecondaryLoading: boolean;
 
+  // Archive visibility
+  showArchived: boolean;
+
   // Actions
   loadNotes: () => Promise<void>;
   openNote: (path: string) => Promise<void>;
@@ -52,11 +56,13 @@ interface NoteState {
   createNote: (path: string, content?: string) => Promise<void>;
   deleteNote: (path: string) => Promise<void>;
   renameNote: (oldPath: string, newPath: string) => Promise<void>;
-  archiveNote: (path: string) => Promise<void>;
+  setNoteArchived: (path: string, archived: boolean) => Promise<void>;
   createFolder: (path: string) => Promise<void>;
   setEditorContent: (content: string) => void;
   closeNote: () => void;
   openDailyNote: () => Promise<void>;
+  setShowArchived: (show: boolean) => void;
+  getVisibleNotes: () => NoteMetadata[];
 
   // Navigation actions
   goBack: () => Promise<void>;
@@ -91,6 +97,9 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   secondaryEditorContent: "",
   hasSecondaryUnsavedChanges: false,
   isSecondaryLoading: false,
+
+  // Archive visibility
+  showArchived: false,
 
   loadNotes: async () => {
     set({ isLoading: true, error: null });
@@ -323,28 +332,28 @@ export const useNoteStore = create<NoteState>((set, get) => ({
     }
   },
 
-  archiveNote: async (path: string) => {
+  setNoteArchived: async (path: string, archived: boolean) => {
     try {
-      // Extract just the filename
-      const filename = path.split('/').pop() || path;
-
-      // Create archive path - preserving date for context
-      const archivePath = `notes/archive/${filename}`;
-
-      // Use rename to move to archive folder
-      await invoke<NoteMetadata>("rename_note", {
-        oldPath: path,
-        newPath: archivePath,
+      const metadata = await invoke<NoteMetadata>("set_note_archived", {
+        path,
+        archived,
       });
 
-      // If this was the current note, close it
-      const { currentNote } = get();
-      if (currentNote?.path === path) {
-        set({ currentNote: null, editorContent: "", hasUnsavedChanges: false });
-      }
+      // Update the note in the list
+      const { notes, currentNote } = get();
+      const updatedNotes = notes.map(n =>
+        n.path === path ? { ...n, archived: metadata.archived } : n
+      );
+      set({ notes: updatedNotes });
 
-      // Refresh notes list
-      get().loadNotes();
+      // Update current note if it's the one being archived
+      if (currentNote?.path === path) {
+        // If archiving the current note and not showing archived, close it
+        const { showArchived } = get();
+        if (archived && !showArchived) {
+          set({ currentNote: null, editorContent: "", hasUnsavedChanges: false });
+        }
+      }
     } catch (error) {
       set({ error: String(error) });
     }
@@ -377,6 +386,18 @@ export const useNoteStore = create<NoteState>((set, get) => ({
       editorContent: "",
       hasUnsavedChanges: false,
     });
+  },
+
+  setShowArchived: (show: boolean) => {
+    set({ showArchived: show });
+  },
+
+  getVisibleNotes: () => {
+    const { notes, showArchived } = get();
+    if (showArchived) {
+      return notes;
+    }
+    return notes.filter(n => !n.archived);
   },
 
   openDailyNote: async () => {

@@ -49,12 +49,17 @@ interface DiagramState {
   showSearch: boolean;
   searchQuery: string;
 
+  // Archive state
+  showArchivedBoards: boolean;
+
   // Actions - Boards
   loadBoards: () => Promise<void>;
   loadBoard: (boardId: string) => Promise<void>;
   createBoard: (name: string, description?: string) => Promise<DiagramBoard>;
   updateBoard: (boardId: string, name?: string, description?: string, viewport?: Viewport) => Promise<void>;
   deleteBoard: (boardId: string) => Promise<void>;
+  archiveBoard: (boardId: string, archived: boolean) => Promise<void>;
+  setShowArchivedBoards: (show: boolean) => void;
   /** @deprecated Use addNoteLink instead */
   linkNote: (boardId: string, noteId: string | null) => Promise<void>;
   addNoteLink: (boardId: string, noteId: string) => Promise<void>;
@@ -167,6 +172,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   showTemplates: false,
   showSearch: false,
   searchQuery: '',
+  showArchivedBoards: false,
 
   // Board actions
   loadBoards: async () => {
@@ -244,6 +250,25 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       set({ error: String(e) });
     }
   },
+
+  archiveBoard: async (boardId: string, archived: boolean) => {
+    try {
+      await invoke("diagram_archive_board", { boardId, archived });
+      set((state) => ({
+        boards: state.boards.map((b) =>
+          b.id === boardId ? { ...b, archived } : b
+        ),
+        // Close board if archiving and not showing archived
+        currentBoard: state.currentBoard?.id === boardId && archived && !state.showArchivedBoards
+          ? null
+          : state.currentBoard,
+      }));
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
+
+  setShowArchivedBoards: (show: boolean) => set({ showArchivedBoards: show }),
 
   linkNote: async (boardId: string, noteId: string | null) => {
     try {

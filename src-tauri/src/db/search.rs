@@ -46,6 +46,12 @@ pub fn search_notes(
 
         let mut results = Vec::new();
 
+        // Check if we should include archived notes
+        let include_archived = filters
+            .as_ref()
+            .and_then(|f| f.include_archived)
+            .unwrap_or(false);
+
         if code_only
             || filters
                 .as_ref()
@@ -54,27 +60,29 @@ pub fn search_notes(
             // Search only in code blocks
             let mut stmt = conn.prepare(
                 r#"
-                SELECT n.id, n.path, n.title, cb.content, cb.language
+                SELECT n.id, n.path, n.title, cb.content, cb.language, COALESCE(n.archived, 0)
                 FROM code_blocks cb
                 JOIN notes n ON cb.note_id = n.id
                 WHERE cb.content LIKE ?1
-                LIMIT ?2
+                AND (COALESCE(n.archived, 0) = 0 OR ?2 = 1)
+                LIMIT ?3
                 "#,
             )?;
 
             let pattern = format!("%{}%", fts_query.replace('*', "%"));
-            let rows = stmt.query_map(params![pattern, limit as i64], |row| {
+            let rows = stmt.query_map(params![pattern, include_archived as i32, limit as i64], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
                     row.get::<_, Option<String>>(4)?,
+                    row.get::<_, i32>(5)? != 0,
                 ))
             })?;
 
             for row in rows.filter_map(|r| r.ok()) {
-                let (id, path, title, code_content, language) = row;
+                let (id, path, title, code_content, language, archived) = row;
                 let snippet = create_snippet(&code_content, &fts_query, 100);
 
                 results.push(SearchResult {
@@ -92,6 +100,7 @@ pub fn search_notes(
                             code_content.chars().take(200).collect::<String>()
                         ),
                     }],
+                    archived,
                 });
             }
         } else {
@@ -104,27 +113,30 @@ pub fn search_notes(
             let mut stmt = conn.prepare(
                 r#"
                 SELECT n.id, n.path, n.title, n.content,
-                       bm25(notes_fts, 1.0, 0.75, 0.5, 0.25) as score
+                       bm25(notes_fts, 1.0, 0.75, 0.5, 0.25) as score,
+                       COALESCE(n.archived, 0)
                 FROM notes_fts
                 JOIN notes n ON notes_fts.rowid = n.rowid
                 WHERE notes_fts MATCH ?1
+                AND (COALESCE(n.archived, 0) = 0 OR ?2 = 1)
                 ORDER BY score
-                LIMIT ?2
+                LIMIT ?3
                 "#,
             )?;
 
-            let rows = stmt.query_map(params![fts_query, limit as i64], |row| {
+            let rows = stmt.query_map(params![fts_query, include_archived as i32, limit as i64], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
                     row.get::<_, f64>(4)?,
+                    row.get::<_, i32>(5)? != 0,
                 ))
             })?;
 
             for row in rows.filter_map(|r| r.ok()) {
-                let (id, path, title, content, score) = row;
+                let (id, path, title, content, score, archived) = row;
 
                 // Apply additional filters
                 if let Some(f) = filters {
@@ -148,6 +160,7 @@ pub fn search_notes(
                         text: query.to_string(),
                         context: snippet,
                     }],
+                    archived,
                 });
             }
         }
@@ -352,6 +365,7 @@ pub struct GraphNode {
     pub title: String,
     pub link_count: usize,
     pub backlink_count: usize,
+    pub archived: bool,
 }
 
 /// Graph link for visualization
@@ -392,7 +406,8 @@ pub fn get_graph_data(app: &AppHandle) -> Result<GraphData, Box<dyn std::error::
             )
             SELECT n.id, n.path, n.title,
                    COALESCE(ol.cnt, 0) as link_count,
-                   COALESCE(il.cnt, 0) as backlink_count
+                   COALESCE(il.cnt, 0) as backlink_count,
+                   COALESCE(n.archived, 0)
             FROM notes n
             LEFT JOIN outgoing_links ol ON ol.source_id = n.id
             LEFT JOIN incoming_links il ON il.id = n.id
@@ -407,6 +422,7 @@ pub fn get_graph_data(app: &AppHandle) -> Result<GraphData, Box<dyn std::error::
                     title: row.get(2)?,
                     link_count: row.get::<_, i64>(3)? as usize,
                     backlink_count: row.get::<_, i64>(4)? as usize,
+                    archived: row.get::<_, i32>(5)? != 0,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -477,7 +493,7 @@ pub fn get_backlinks(
     with_db(app, |conn| {
         let mut stmt = conn.prepare(
             r#"
-            SELECT n.id, n.path, n.title, b.context
+            SELECT n.id, n.path, n.title, b.context, COALESCE(n.archived, 0)
             FROM backlinks b
             JOIN notes n ON b.source_id = n.id
             WHERE b.target_path = ?1 OR b.target_path LIKE ?2
@@ -497,6 +513,7 @@ pub fn get_backlinks(
                     source_path: row.get(1)?,
                     source_title: row.get(2)?,
                     context: row.get(3)?,
+                    archived: row.get::<_, i32>(4)? != 0,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -784,7 +801,8 @@ pub fn get_vault_health(app: &AppHandle) -> Result<VaultHealth, Box<dyn std::err
                     JOIN notes n2 ON b2.source_id = n2.id
                     WHERE b2.target_path = n.path
                        OR b2.target_path LIKE '%' || replace(replace(n.path, 'notes/', ''), '.md', '') || '%'
-                   ) as in_links
+                   ) as in_links,
+                   COALESCE(n.archived, 0)
             FROM notes n
             ORDER BY (out_links + in_links) DESC
             LIMIT 5
@@ -799,6 +817,7 @@ pub fn get_vault_health(app: &AppHandle) -> Result<VaultHealth, Box<dyn std::err
                     title: row.get(2)?,
                     link_count: row.get::<_, i64>(3)? as usize,
                     backlink_count: row.get::<_, i64>(4)? as usize,
+                    archived: row.get::<_, i32>(5)? != 0,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -1044,7 +1063,8 @@ pub fn get_potential_mocs(
                     JOIN notes n2 ON b2.source_id = n2.id
                     WHERE b2.target_path = n.path
                        OR b2.target_path LIKE '%' || replace(replace(n.path, 'notes/', ''), '.md', '') || '%'
-                   ) as in_links
+                   ) as in_links,
+                   COALESCE(n.archived, 0)
             FROM notes n
             WHERE (SELECT COUNT(*) FROM backlinks WHERE source_id = n.id) >= ?1
             ORDER BY out_links DESC
@@ -1059,6 +1079,7 @@ pub fn get_potential_mocs(
                     title: row.get(2)?,
                     link_count: row.get::<_, i64>(3)? as usize,
                     backlink_count: row.get::<_, i64>(4)? as usize,
+                    archived: row.get::<_, i32>(5)? != 0,
                 })
             })?
             .filter_map(|r| r.ok())

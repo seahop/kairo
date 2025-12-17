@@ -68,6 +68,8 @@ pub struct KanbanCard {
     pub board_columns: Option<std::collections::HashMap<String, String>>,
     #[serde(rename = "isComplete")]
     pub is_complete: Option<bool>,
+    #[serde(default)]
+    pub archived: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -364,7 +366,8 @@ pub fn kanban_get_cards(app: AppHandle, board_id: String) -> Result<Vec<KanbanCa
                 r#"
                 SELECT c.id, c.board_id, c.column_id, c.title, c.description, c.note_id,
                        c.position, c.created_at, c.updated_at, c.closed_at, c.due_date,
-                       c.priority, c.metadata, n.path, c.linked_board_ids, c.board_columns, c.is_complete
+                       c.priority, c.metadata, n.path, c.linked_board_ids, c.board_columns,
+                       c.is_complete, COALESCE(c.archived, 0)
                 FROM kanban_cards c
                 LEFT JOIN notes n ON c.note_id = n.id
                 WHERE c.board_id = ?1
@@ -392,6 +395,8 @@ pub fn kanban_get_cards(app: AppHandle, board_id: String) -> Result<Vec<KanbanCa
                 let is_complete_int: Option<i32> = row.get(16)?;
                 let is_complete = is_complete_int.map(|v| v != 0);
 
+                let archived_int: i32 = row.get(17)?;
+
                 Ok(KanbanCard {
                     id: row.get(0)?,
                     board_id: row.get(1)?,
@@ -410,6 +415,7 @@ pub fn kanban_get_cards(app: AppHandle, board_id: String) -> Result<Vec<KanbanCa
                     linked_board_ids,
                     board_columns,
                     is_complete,
+                    archived: archived_int != 0,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -469,6 +475,7 @@ pub fn kanban_add_card(
             linked_board_ids: None,
             board_columns: None,
             is_complete: Some(false),
+            archived: false,
         })
     })
     .map_err(|e| e.to_string())
@@ -556,6 +563,25 @@ pub fn kanban_delete_card(app: AppHandle, card_id: String) -> Result<(), String>
     .map_err(|e| e.to_string())
 }
 
+/// Archive or unarchive a card
+#[tauri::command]
+pub fn kanban_archive_card(
+    app: AppHandle,
+    card_id: String,
+    archived: bool,
+) -> Result<(), String> {
+    with_db(&app, |conn| {
+        let now = chrono::Utc::now().timestamp();
+        conn.execute(
+            "UPDATE kanban_cards SET archived = ?1, updated_at = ?2 WHERE id = ?3",
+            params![archived as i32, now, card_id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .map_err(|e| e.to_string())
+}
+
 /// Get a single card by ID
 #[tauri::command]
 pub fn kanban_get_card(app: AppHandle, card_id: String) -> Result<KanbanCard, String> {
@@ -565,7 +591,8 @@ pub fn kanban_get_card(app: AppHandle, card_id: String) -> Result<KanbanCard, St
             r#"
             SELECT c.id, c.board_id, c.column_id, c.title, c.description, c.note_id,
                    c.position, c.created_at, c.updated_at, c.closed_at, c.due_date,
-                   c.priority, c.metadata, n.path, c.linked_board_ids, c.board_columns, c.is_complete
+                   c.priority, c.metadata, n.path, c.linked_board_ids, c.board_columns,
+                   c.is_complete, COALESCE(c.archived, 0)
             FROM kanban_cards c
             LEFT JOIN notes n ON c.note_id = n.id
             WHERE c.id = ?1
@@ -587,6 +614,8 @@ pub fn kanban_get_card(app: AppHandle, card_id: String) -> Result<KanbanCard, St
                 let is_complete_int: Option<i32> = row.get(16)?;
                 let is_complete = is_complete_int.map(|v| v != 0);
 
+                let archived_int: i32 = row.get(17)?;
+
                 Ok(KanbanCard {
                     id: row.get(0)?,
                     board_id: row.get(1)?,
@@ -605,6 +634,7 @@ pub fn kanban_get_card(app: AppHandle, card_id: String) -> Result<KanbanCard, St
                     linked_board_ids,
                     board_columns,
                     is_complete,
+                    archived: archived_int != 0,
                 })
             },
         )
@@ -740,7 +770,8 @@ pub fn kanban_update_card(
             r#"
             SELECT c.id, c.board_id, c.column_id, c.title, c.description, c.note_id,
                    c.position, c.created_at, c.updated_at, c.closed_at, c.due_date,
-                   c.priority, c.metadata, n.path, c.linked_board_ids, c.board_columns, c.is_complete
+                   c.priority, c.metadata, n.path, c.linked_board_ids, c.board_columns,
+                   c.is_complete, COALESCE(c.archived, 0)
             FROM kanban_cards c
             LEFT JOIN notes n ON c.note_id = n.id
             WHERE c.id = ?1
@@ -762,6 +793,8 @@ pub fn kanban_update_card(
                 let is_complete_int: Option<i32> = row.get(16)?;
                 let is_complete = is_complete_int.map(|v| v != 0);
 
+                let archived_int: i32 = row.get(17)?;
+
                 Ok(KanbanCard {
                     id: row.get(0)?,
                     board_id: row.get(1)?,
@@ -780,6 +813,7 @@ pub fn kanban_update_card(
                     linked_board_ids,
                     board_columns,
                     is_complete,
+                    archived: archived_int != 0,
                 })
             },
         )
@@ -1275,7 +1309,8 @@ pub fn kanban_find_card_by_title(
                 r#"
                 SELECT c.id, c.board_id, c.column_id, c.title, c.description, c.note_id,
                        c.position, c.created_at, c.updated_at, c.closed_at, c.due_date,
-                       c.priority, c.metadata, n.path, c.linked_board_ids, c.board_columns, c.is_complete
+                       c.priority, c.metadata, n.path, c.linked_board_ids, c.board_columns,
+                       c.is_complete, COALESCE(c.archived, 0)
                 FROM kanban_cards c
                 JOIN kanban_boards b ON c.board_id = b.id
                 LEFT JOIN notes n ON c.note_id = n.id
@@ -1293,6 +1328,7 @@ pub fn kanban_find_card_by_title(
                     let board_columns_str: Option<String> = row.get(15)?;
                     let board_columns: Option<std::collections::HashMap<String, String>> =
                         board_columns_str.and_then(|s| serde_json::from_str(&s).ok());
+                    let archived_int: i32 = row.get(17)?;
 
                     Ok(KanbanCard {
                         id: row.get(0)?,
@@ -1312,6 +1348,7 @@ pub fn kanban_find_card_by_title(
                         linked_board_ids,
                         board_columns,
                         is_complete: row.get::<_, Option<i64>>(16)?.map(|v| v != 0),
+                        archived: archived_int != 0,
                     })
                 },
             )
@@ -1320,7 +1357,8 @@ pub fn kanban_find_card_by_title(
                 r#"
                 SELECT c.id, c.board_id, c.column_id, c.title, c.description, c.note_id,
                        c.position, c.created_at, c.updated_at, c.closed_at, c.due_date,
-                       c.priority, c.metadata, n.path, c.linked_board_ids, c.board_columns, c.is_complete
+                       c.priority, c.metadata, n.path, c.linked_board_ids, c.board_columns,
+                       c.is_complete, COALESCE(c.archived, 0)
                 FROM kanban_cards c
                 LEFT JOIN notes n ON c.note_id = n.id
                 WHERE LOWER(c.title) = LOWER(?1)
@@ -1337,6 +1375,7 @@ pub fn kanban_find_card_by_title(
                     let board_columns_str: Option<String> = row.get(15)?;
                     let board_columns: Option<std::collections::HashMap<String, String>> =
                         board_columns_str.and_then(|s| serde_json::from_str(&s).ok());
+                    let archived_int: i32 = row.get(17)?;
 
                     Ok(KanbanCard {
                         id: row.get(0)?,
@@ -1356,6 +1395,7 @@ pub fn kanban_find_card_by_title(
                         linked_board_ids,
                         board_columns,
                         is_complete: row.get::<_, Option<i64>>(16)?.map(|v| v != 0),
+                        archived: archived_int != 0,
                     })
                 },
             )

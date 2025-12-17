@@ -46,6 +46,7 @@ pub fn run() {
             commands::notes::delete_note,
             commands::notes::rename_note,
             commands::notes::create_folder,
+            commands::notes::set_note_archived,
             // Search commands
             commands::search::search_notes,
             commands::search::search_entities,
@@ -88,6 +89,7 @@ pub fn run() {
             commands::kanban::kanban_update_card,
             commands::kanban::kanban_move_card,
             commands::kanban::kanban_delete_card,
+            commands::kanban::kanban_archive_card,
             commands::kanban::kanban_get_labels,
             commands::kanban::kanban_create_label,
             commands::kanban::kanban_update_label,
@@ -105,6 +107,7 @@ pub fn run() {
             commands::diagram::diagram_create_board,
             commands::diagram::diagram_update_board,
             commands::diagram::diagram_delete_board,
+            commands::diagram::diagram_archive_board,
             commands::diagram::diagram_add_node,
             commands::diagram::diagram_update_node,
             commands::diagram::diagram_delete_node,
