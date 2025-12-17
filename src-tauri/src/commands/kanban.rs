@@ -1074,7 +1074,7 @@ pub fn kanban_add_board_member(
 
         // Auto-create a personal board for the new member
         let board_id = Uuid::new_v4().to_string();
-        let board_name = format!("{}'s Board", name);
+        let board_name = name.clone();
 
         // Default columns for personal boards
         let default_columns = vec!["Created", "In Progress", "Waiting on Others", "Delayed", "Closed", "Backlog"];
