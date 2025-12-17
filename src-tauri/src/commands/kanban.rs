@@ -170,6 +170,17 @@ pub fn kanban_create_board(
     let columns_json = serde_json::to_string(&kanban_columns).map_err(|e| e.to_string())?;
 
     with_db(&app, |conn| {
+        // Check if a board with this name already exists (case-insensitive)
+        let name_lower = name.to_lowercase();
+        let existing: Result<String, _> = conn.query_row(
+            "SELECT id FROM kanban_boards WHERE LOWER(name) = ?1",
+            params![name_lower],
+            |row| row.get(0),
+        );
+        if existing.is_ok() {
+            return Err(format!("A board named '{}' already exists", name).into());
+        }
+
         conn.execute(
             "INSERT INTO kanban_boards (id, name, columns, owner_name, created_at, modified_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![id, name, columns_json, owner_name, now, now],
@@ -1019,9 +1030,20 @@ pub fn kanban_add_board_member(
     let now = chrono::Utc::now().timestamp();
 
     with_db(&app, |conn| {
+        // Check if a member with this name already exists on this board (case-insensitive)
+        let name_lower = name.to_lowercase();
+        let existing: Result<String, _> = conn.query_row(
+            "SELECT id FROM kanban_board_members WHERE board_id = ?1 AND LOWER(name) = ?2",
+            params![board_id, name_lower],
+            |row| row.get(0),
+        );
+        if existing.is_ok() {
+            return Err(format!("A member named '{}' already exists on this board", name).into());
+        }
+
         // Add the member entry
         conn.execute(
-            "INSERT OR IGNORE INTO kanban_board_members (id, board_id, name, added_at) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO kanban_board_members (id, board_id, name, added_at) VALUES (?1, ?2, ?3, ?4)",
             params![member_id, board_id, name, now],
         )
         .map_err(|e| e.to_string())?;
