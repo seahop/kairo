@@ -822,6 +822,30 @@ export function KanbanBoard() {
     setDeleteConfirm({ isOpen: false, cardId: "", cardTitle: "" });
   };
 
+  // Member delete confirmation dialog state
+  const [memberDeleteConfirm, setMemberDeleteConfirm] = useState<{
+    isOpen: boolean;
+    memberId: string;
+    memberName: string;
+  }>({ isOpen: false, memberId: "", memberName: "" });
+
+  // Handler to show member delete confirmation dialog
+  const handleDeleteMemberRequest = (memberId: string, memberName: string) => {
+    setMemberDeleteConfirm({ isOpen: true, memberId, memberName });
+  };
+
+  // Handler to actually delete the member (only called from dialog)
+  const handleConfirmMemberDelete = () => {
+    const { memberId } = memberDeleteConfirm;
+    setMemberDeleteConfirm({ isOpen: false, memberId: "", memberName: "" });
+    removeBoardMember(memberId);
+  };
+
+  // Handler to cancel member deletion
+  const handleCancelMemberDelete = () => {
+    setMemberDeleteConfirm({ isOpen: false, memberId: "", memberName: "" });
+  };
+
   // Helper to require username before action
   const requireUsername = (action: () => void) => {
     if (!currentUsername) {
@@ -1138,7 +1162,7 @@ export function KanbanBoard() {
                             </div>
                             <button
                               className="text-dark-500 hover:text-red-400 p-1"
-                              onClick={() => removeBoardMember(member.id)}
+                              onClick={() => handleDeleteMemberRequest(member.id, member.name)}
                               title="Remove member"
                             >
                               <TrashIcon />
@@ -1243,6 +1267,32 @@ export function KanbanBoard() {
                 onClick={handleConfirmDelete}
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Member Confirmation Dialog */}
+      {memberDeleteConfirm.isOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+          <div className="bg-dark-900 rounded-lg p-6 w-full max-w-sm border border-dark-700">
+            <h2 className="text-lg font-semibold text-dark-100 mb-2">Remove Member</h2>
+            <p className="text-dark-400 mb-6">
+              Are you sure you want to remove "{memberDeleteConfirm.memberName}" from this board? Their cards will remain but they will no longer be a member.
+            </p>
+            <div className="flex gap-2">
+              <button
+                className="btn-secondary flex-1"
+                onClick={handleCancelMemberDelete}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-primary flex-1 bg-red-600 hover:bg-red-700"
+                onClick={handleConfirmMemberDelete}
+              >
+                Remove
               </button>
             </div>
           </div>
