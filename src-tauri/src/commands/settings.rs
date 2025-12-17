@@ -19,7 +19,6 @@ pub struct AppSettings {
     pub recent_vaults: Vec<RecentVault>,
     pub last_vault: Option<String>,
     pub theme: Option<String>,
-    pub username: Option<String>,
 }
 
 /// Get the Kairo config directory (~/.kairo)
@@ -114,7 +113,6 @@ pub fn set_app_setting(key: String, value: String) -> Result<(), String> {
 
     match key.as_str() {
         "theme" => settings.theme = Some(value),
-        "username" => settings.username = Some(value),
         "lastVault" => settings.last_vault = Some(value),
         _ => return Err(format!("Unknown setting key: {}", key)),
     }
@@ -129,7 +127,6 @@ pub fn get_app_setting(key: String) -> Result<Option<String>, String> {
 
     let value = match key.as_str() {
         "theme" => settings.theme,
-        "username" => settings.username,
         "lastVault" => settings.last_vault,
         _ => return Err(format!("Unknown setting key: {}", key)),
     };
