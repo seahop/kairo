@@ -22,7 +22,7 @@ export function initBuiltinPlugins() {
 }
 
 // Re-export plugin components
-export { GitStatusBar, GitModal, useGitStore } from "./git";
+export { GitStatusBar, GitModal, GitPassphraseModal, useGitStore } from "./git";
 export { KanbanBoard, KanbanSidebar, useKanbanStore } from "./kanban";
 export { DiagramEditor, DiagramSidebar, useDiagramStore } from "./diagram";
 export { TemplateModal, useTemplateStore } from "./templates";

@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { CloseIcon } from "@/components/common/Icons";
 
 interface AttachmentResult {
   relative_path: string;
@@ -29,12 +30,6 @@ const CopyIcon = () => (
 const CheckIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-  </svg>
-);
-
-const CloseIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
   </svg>
 );
 

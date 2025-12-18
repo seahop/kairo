@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { CloseIcon, MinimizeIcon, MaximizeIcon } from "@/components/common/Icons";
 
 const appWindow = getCurrentWindow();
 
@@ -25,25 +26,6 @@ const handleTitleBarMouseDown = (e: React.MouseEvent) => {
 };
 
 // Icons
-const MinimizeIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-  </svg>
-);
-
-const MaximizeIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4h16v16h-4" />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h12v12H4z" />
-  </svg>
-);
-
-const CloseIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
-
 const ChevronDownIcon = () => (
   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />

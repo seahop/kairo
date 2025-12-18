@@ -431,6 +431,44 @@ export async function kairoCompletions(context: CompletionContext): Promise<Comp
   return null;
 }
 
+// Table templates for /table command
+const TABLE_TEMPLATES = [
+  {
+    label: "/table",
+    detail: "Insert 3x3 table",
+    template: `| Header 1 | Header 2 | Header 3 |
+|----------|----------|----------|
+| Cell 1   | Cell 2   | Cell 3   |
+| Cell 4   | Cell 5   | Cell 6   |
+| Cell 7   | Cell 8   | Cell 9   |`,
+  },
+  {
+    label: "/table2",
+    detail: "Insert 2 column table",
+    template: `| Column 1 | Column 2 |
+|----------|----------|
+| Data 1   | Data 2   |
+| Data 3   | Data 4   |`,
+  },
+  {
+    label: "/table4",
+    detail: "Insert 4 column table",
+    template: `| Header 1 | Header 2 | Header 3 | Header 4 |
+|----------|----------|----------|----------|
+| Cell 1   | Cell 2   | Cell 3   | Cell 4   |
+| Cell 5   | Cell 6   | Cell 7   | Cell 8   |`,
+  },
+  {
+    label: "/checklist",
+    detail: "Insert task table",
+    template: `| Task | Status | Priority |
+|------|--------|----------|
+| Task 1 | Pending | High |
+| Task 2 | Done | Medium |
+| Task 3 | Pending | Low |`,
+  },
+];
+
 // Synchronous completion source with full functionality
 function syncCompletions(context: CompletionContext): CompletionResult | null {
   const pos = context.pos;
@@ -439,6 +477,26 @@ function syncCompletions(context: CompletionContext): CompletionResult | null {
 
   // Trigger cache refresh in background (won't block)
   refreshCache();
+
+  // Check for /table or / commands at start of line or after whitespace
+  const slashMatch = textBeforeCursor.match(/(^|\s)(\/\w*)$/);
+  if (slashMatch) {
+    const query = slashMatch[2].toLowerCase();
+    const from = line.from + slashMatch.index! + slashMatch[1].length;
+
+    const matches = TABLE_TEMPLATES.filter(t => t.label.toLowerCase().startsWith(query));
+    if (matches.length > 0) {
+      return {
+        from: from,
+        options: matches.map(t => ({
+          label: t.label,
+          detail: t.detail,
+          type: "function" as const,
+          apply: t.template,
+        })),
+      };
+    }
+  }
 
   // Check for [[diagram: pattern FIRST (more specific) - show diagram names
   const diagramMatch = textBeforeCursor.match(/\[\[diagram:([^\]]*)$/);

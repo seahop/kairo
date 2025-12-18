@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useVaultStore } from "@/stores/vaultStore";
 import { useMenuBarStore, MenuCategory } from "@/plugins/api/menuBar";
+import { CloseIcon, MinimizeIcon, MaximizeIcon } from "@/components/common/Icons";
 
 const appWindow = getCurrentWindow();
 
@@ -29,26 +30,6 @@ const handleTitleBarMouseDown = (e: React.MouseEvent) => {
     appWindow.startDragging();
   }
 };
-
-// Icons
-const MinimizeIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-  </svg>
-);
-
-const MaximizeIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4h16v16h-4" />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h12v12H4z" />
-  </svg>
-);
-
-const CloseIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
 
 const ChevronDownIcon = () => (
   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -301,21 +282,21 @@ export function TitleBar() {
       {/* Window controls */}
       <div className="flex items-center">
         <button
-          className="w-12 h-10 flex items-center justify-center text-dark-400 hover:text-dark-200 hover:bg-dark-800 transition-colors"
+          className="w-12 h-10 flex items-center justify-center text-dark-300 hover:bg-dark-800"
           onClick={handleMinimize}
           title="Minimize"
         >
           <MinimizeIcon />
         </button>
         <button
-          className="w-12 h-10 flex items-center justify-center text-dark-400 hover:text-dark-200 hover:bg-dark-800 transition-colors"
+          className="w-12 h-10 flex items-center justify-center text-dark-300 hover:bg-dark-800"
           onClick={handleMaximize}
           title="Maximize"
         >
           <MaximizeIcon />
         </button>
         <button
-          className="w-12 h-10 flex items-center justify-center text-dark-400 hover:text-dark-100 hover:bg-red-600 transition-colors"
+          className="w-12 h-10 flex items-center justify-center text-dark-300 hover:bg-red-600"
           onClick={handleClose}
           title="Close"
         >

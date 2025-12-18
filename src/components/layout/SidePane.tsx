@@ -4,13 +4,7 @@ import { useKanbanStore, KanbanCard } from "@/plugins/builtin/kanban/store";
 import { useNoteStore, Note } from "@/stores/noteStore";
 import { invoke } from "@tauri-apps/api/core";
 import { PreviewPane } from "@/components/editor/PreviewPane";
-
-// Close icon
-const CloseIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
+import { CloseIcon } from "@/components/common/Icons";
 
 // Card icon
 const CardIcon = () => (

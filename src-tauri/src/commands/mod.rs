@@ -1,3 +1,4 @@
+pub mod dataview;
 pub mod db;
 pub mod diagram;
 pub mod extensions;

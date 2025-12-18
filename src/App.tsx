@@ -23,6 +23,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   initBuiltinPlugins,
   GitModal,
+  GitPassphraseModal,
   KanbanBoard,
   DiagramEditor,
   TemplateModal,
@@ -34,6 +35,7 @@ import {
   useSnippetStore,
   useGraphStore,
 } from "./plugins/builtin";
+import { ToastContainer } from "./components/common/Toast";
 
 // Initialize plugins on app load
 let pluginsInitialized = false;
@@ -399,6 +401,12 @@ function App() {
 
       {/* Debug console */}
       <DebugConsole />
+
+      {/* Global passphrase modal - renders on top of everything */}
+      <GitPassphraseModal />
+
+      {/* Toast notifications */}
+      <ToastContainer />
     </div>
   );
 }

@@ -159,12 +159,21 @@
   }
 
   .btn-icon {
-    @apply p-2 rounded-lg transition-colors hover:bg-dark-800;
-    -webkit-transform: translateZ(0);
+    @apply p-2 rounded-lg text-dark-300 hover:bg-dark-800;
+    @apply flex items-center justify-center;
+    min-width: 32px;
+    min-height: 32px;
+  }
+
+  .btn-icon svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
     transform: translateZ(0);
-    -webkit-backface-visibility: hidden;
-    backface-visibility: hidden;
-    will-change: transform, box-shadow;
+  }
+
+  .btn-icon:hover svg {
+    transform: translateZ(0) scale(1);
   }
 
   .btn-icon:focus {
@@ -326,7 +335,7 @@
 
   /* Modal overlay */
   .modal-overlay {
-    @apply fixed inset-0 bg-black/50 backdrop-blur-sm z-40;
+    @apply fixed inset-0 bg-black/50 z-40;
     @apply flex items-center justify-center;
   }
 
@@ -340,7 +349,9 @@
    * Prevents WebKitGTK ghost line artifacts when menus close
    */
   [class*="absolute"][class*="z-50"],
-  [class*="fixed"][class*="z-50"] {
+  [class*="fixed"][class*="z-50"],
+  [class*="absolute"][class*="z-["],
+  [class*="fixed"][class*="z-["] {
     -webkit-transform: translateZ(0);
     transform: translateZ(0);
     -webkit-backface-visibility: hidden;

@@ -5,6 +5,7 @@ import { Select, SelectOption } from "../../../components/common/Select";
 import { CardMarkdownEditor } from "./components/CardMarkdownEditor";
 import { CardPreviewPane } from "./components/CardPreviewPane";
 import { ImageUpload } from "../../../components/editor/ImageUpload";
+import { CloseIcon } from "@/components/common/Icons";
 
 type ViewMode = "edit" | "preview" | "split";
 
@@ -12,12 +13,6 @@ type ViewMode = "edit" | "preview" | "split";
 const MIN_WIDTH = 400;
 const MAX_WIDTH = 900;
 const DEFAULT_WIDTH = 520;
-
-const CloseIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
 
 const TrashIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -364,7 +359,7 @@ export function CardDetailPanel() {
               className="p-2 text-dark-500 hover:text-dark-200 rounded"
               onClick={closeCardDetail}
             >
-              <CloseIcon />
+              <CloseIcon size={20} />
             </button>
           </div>
         </div>

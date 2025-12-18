@@ -1,8 +1,9 @@
-import { registerPlugin, registerCommand } from "@/plugins/api";
+import { registerPlugin, registerCommand, registerHook } from "@/plugins/api";
 import { useGitStore } from "./store";
 
 export { GitStatusBar } from "./GitStatusBar";
 export { GitModal } from "./GitModal";
+export { GitPassphraseModal } from "./GitPassphraseModal";
 export { useGitStore } from "./store";
 
 export function initGitPlugin() {
@@ -61,8 +62,30 @@ export function initGitPlugin() {
         execute: () => useGitStore.getState().stageAll(),
       });
 
+      registerCommand({
+        id: "git.settings",
+        name: "Git: Settings",
+        description: "Configure SSH keys and git identity",
+        category: "Git",
+        execute: () => useGitStore.getState().openSettings(),
+      });
+
       // Check status on init
       checkStatus();
+
+      // Refresh git status when notes are saved
+      registerHook("onNoteSave", () => {
+        checkStatus();
+      }, "kairo-git");
+
+      // Also refresh on note create/delete
+      registerHook("onNoteCreate", () => {
+        checkStatus();
+      }, "kairo-git");
+
+      registerHook("onNoteDelete", () => {
+        checkStatus();
+      }, "kairo-git");
     },
   });
 }

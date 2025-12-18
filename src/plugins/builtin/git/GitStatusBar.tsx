@@ -47,7 +47,7 @@ export function GitStatusBar() {
           {status.behind > 0 && (
             <button
               className="flex items-center gap-1 text-accent-info hover:text-accent-primary"
-              onClick={pull}
+              onClick={() => pull()}
               disabled={isLoading}
               title={`Pull ${status.behind} commits`}
             >
@@ -57,7 +57,7 @@ export function GitStatusBar() {
           {status.ahead > 0 && (
             <button
               className="flex items-center gap-1 text-accent-warning hover:text-accent-primary"
-              onClick={push}
+              onClick={() => push()}
               disabled={isLoading}
               title={`Push ${status.ahead} commits`}
             >

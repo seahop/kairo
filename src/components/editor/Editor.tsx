@@ -3,8 +3,11 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { MarkdownPane } from "./MarkdownPane";
 import { PreviewPane } from "./PreviewPane";
 import { ImageUpload } from "./ImageUpload";
+import { NoteHistory } from "./NoteHistory";
+import { TableEditorModal } from "./table/TableEditorModal";
 import { useNoteStore } from "@/stores/noteStore";
 import { useUIStore, EditorViewMode } from "@/stores/uiStore";
+import { useTableEditorStore } from "@/stores/tableEditorStore";
 
 // View mode icons
 const EditorOnlyIcon = () => (
@@ -54,6 +57,28 @@ const UndoIcon = () => (
 const RedoIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
+  </svg>
+);
+
+const HistoryIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
+  </svg>
+);
+
+const TableIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M3 10h18M3 14h18M3 6h18M3 18h18M9 6v12M15 6v12"
+    />
   </svg>
 );
 
@@ -170,10 +195,28 @@ function ContextMenu({ x, y, onClose, currentMode, onSetMode }: ContextMenuProps
 }
 
 export function Editor() {
-  const { saveNote, hasUnsavedChanges, goBack, goForward, canGoBack, canGoForward } = useNoteStore();
+  const { saveNote, hasUnsavedChanges, goBack, goForward, canGoBack, canGoForward, currentNote, editorContent, setEditorContent } = useNoteStore();
   const { editorViewMode, setEditorViewMode, editorSplitRatio, setEditorSplitRatio } = useUIStore();
+  const { openEditor } = useTableEditorStore();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [showImageUpload, setShowImageUpload] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Open table editor with a new table (insert at cursor or end)
+  const handleInsertTable = useCallback(() => {
+    openEditor(
+      null, // null creates a new empty table
+      0,
+      0,
+      (markdown: string) => {
+        // Insert the table at the end of the content (or could insert at cursor)
+        const newContent = editorContent.trim()
+          ? `${editorContent}\n\n${markdown}\n`
+          : `${markdown}\n`;
+        setEditorContent(newContent);
+      }
+    );
+  }, [editorContent, setEditorContent, openEditor]);
 
   // Check navigation state
   const canNavigateBack = canGoBack();
@@ -319,6 +362,32 @@ export function Editor() {
             <ImageIcon />
             <span className="hidden sm:inline">Upload Image</span>
           </button>
+
+          {/* History button */}
+          {currentNote && (
+            <button
+              className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs ${
+                showHistory
+                  ? "bg-accent-primary/20 text-accent-primary"
+                  : "text-dark-400 hover:text-dark-200 hover:bg-dark-800"
+              }`}
+              onClick={() => setShowHistory(!showHistory)}
+              title="View version history"
+            >
+              <HistoryIcon />
+              <span className="hidden sm:inline">History</span>
+            </button>
+          )}
+
+          {/* Insert table button */}
+          <button
+            className="btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs text-dark-400 hover:text-dark-200 hover:bg-dark-800"
+            onClick={handleInsertTable}
+            title="Insert table (or type /table)"
+          >
+            <TableIcon />
+            <span className="hidden sm:inline">Table</span>
+          </button>
         </div>
 
         {/* View mode buttons */}
@@ -387,6 +456,14 @@ export function Editor() {
           onSetMode={setEditorViewMode}
         />
       )}
+
+      {/* Note history panel */}
+      {showHistory && currentNote && (
+        <NoteHistory onClose={() => setShowHistory(false)} />
+      )}
+
+      {/* Table editor modal */}
+      <TableEditorModal />
     </div>
   );
 }

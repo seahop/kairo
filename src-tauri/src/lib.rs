@@ -3,7 +3,6 @@ mod db;
 mod fs;
 mod git;
 
-#[allow(unused_imports)]
 use tauri::Manager;
 
 pub fn run() {
@@ -26,6 +25,9 @@ pub fn run() {
 
             // Initialize the database manager
             db::init(&app_handle)?;
+
+            // Initialize git credential state for session-based caching
+            app.manage(git::create_credential_state());
 
             Ok(())
         })
@@ -75,6 +77,16 @@ pub fn run() {
             git::git_stage_file,
             git::git_unstage_file,
             git::git_commit,
+            // Git user config commands
+            git::git_get_user_config,
+            git::git_set_user_config,
+            git::git_set_session_passphrase,
+            git::git_clear_session_credentials,
+            git::git_check_ssh_key,
+            // Git note history commands
+            git::git_note_history,
+            git::git_note_at_commit,
+            git::git_restore_note_version,
             // Kanban commands
             commands::kanban::kanban_list_boards,
             commands::kanban::kanban_get_board,
@@ -144,6 +156,8 @@ pub fn run() {
             commands::settings::set_app_setting,
             commands::settings::get_app_setting,
             commands::settings::remove_recent_vault,
+            // Dataview commands
+            commands::dataview::execute_dataview_query,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

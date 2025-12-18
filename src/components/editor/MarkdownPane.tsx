@@ -10,6 +10,7 @@ import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { completionKeymap, startCompletion } from "@codemirror/autocomplete";
 import { useNoteStore } from "@/stores/noteStore";
 import { kairoAutocompletion, autocompleteTheme } from "./autocomplete";
+import { tableDetectionPlugin, tableTheme, tableKeymap } from "./table";
 
 // Custom plugin that triggers autocomplete on specific patterns
 // Simplified approach: check document state directly, not what was inserted
@@ -55,6 +56,12 @@ const autocompleteTrigger = ViewPlugin.fromClass(
 
       // Check for @ pattern
       if (textBeforeCursor.includes("@")) {
+        setTimeout(() => startCompletion(update.view), 0);
+        return;
+      }
+
+      // Check for / commands (at start of line or after whitespace)
+      if (/(^|\s)\/\w*$/.test(textBeforeCursor)) {
         setTimeout(() => startCompletion(update.view), 0);
         return;
       }
@@ -242,12 +249,17 @@ export function MarkdownPane() {
         // Custom trigger for autocompletion on specific patterns
         autocompleteTrigger,
 
+        // Table detection and styling
+        tableDetectionPlugin,
+        tableTheme,
+
         // Keymaps
         keymap.of([
           ...defaultKeymap,
           ...historyKeymap,
           ...searchKeymap,
           ...completionKeymap,
+          ...tableKeymap,
         ]),
 
         // Theme

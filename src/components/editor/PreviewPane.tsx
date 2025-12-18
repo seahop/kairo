@@ -9,6 +9,9 @@ import { useUIStore } from "@/stores/uiStore";
 import { useKanbanStore } from "@/plugins/builtin/kanban/store";
 import { useDiagramStore } from "@/plugins/builtin/diagram/store";
 import { LinkContextMenu, useContextMenu } from "@/components/common/LinkContextMenu";
+import { DataviewRenderer } from "./DataviewRenderer";
+import { useTableEditorStore } from "@/stores/tableEditorStore";
+import { parseMarkdownTable } from "./table/tableParser";
 
 // Icon for external links
 const ExternalLinkIcon = () => (
@@ -85,10 +88,11 @@ interface KanbanCardResult {
 }
 
 export function PreviewPane({ content }: PreviewPaneProps) {
-  const { editorContent, openNoteByReference, resolveNoteReference } = useNoteStore();
+  const { editorContent, openNoteByReference, resolveNoteReference, setEditorContent } = useNoteStore();
   const { loadBoard } = useKanbanStore();
   const { boards: diagramBoards, loadBoards: loadDiagramBoards, loadBoard: loadDiagramBoard, setShowView: setDiagramShowView } = useDiagramStore();
   const { openSidePane } = useUIStore();
+  const { openEditor: openTableEditor } = useTableEditorStore();
   const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
   const [vaultPath, setVaultPath] = useState<string | null>(null);
 
@@ -340,6 +344,80 @@ export function PreviewPane({ content }: PreviewPaneProps) {
     [showContextMenu]
   );
 
+  // Handle table click to open visual editor
+  const handleTableClick = useCallback(
+    (tableMarkdown: string) => {
+      // Find this table in the source content
+      const lines = displayContent.split("\n");
+      let tableStartLine = -1;
+      let tableEndLine = -1;
+      let inTable = false;
+      let foundIndex = 0;
+
+      // Find all tables and match by reconstructed content
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const isTableLine = line.trim().includes("|") && line.trim().length > 1;
+
+        if (isTableLine && !inTable) {
+          inTable = true;
+          tableStartLine = i;
+        } else if (!isTableLine && inTable) {
+          tableEndLine = i - 1;
+          // Check if this is the table we clicked
+          const tableContent = lines.slice(tableStartLine, tableEndLine + 1).join("\n");
+          if (tableContent.trim() === tableMarkdown.trim()) {
+            break;
+          }
+          inTable = false;
+          tableStartLine = -1;
+          foundIndex++;
+        }
+      }
+
+      // Handle table at end of file
+      if (inTable && tableEndLine === -1) {
+        tableEndLine = lines.length - 1;
+      }
+
+      if (tableStartLine === -1) {
+        // Fallback: just find first table if exact match failed
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (line.trim().includes("|") && line.trim().length > 1) {
+            tableStartLine = i;
+            while (i < lines.length && lines[i].trim().includes("|")) {
+              tableEndLine = i;
+              i++;
+            }
+            break;
+          }
+        }
+      }
+
+      if (tableStartLine === -1) return;
+
+      // Parse the table
+      const tableLines = lines.slice(tableStartLine, tableEndLine + 1).join("\n");
+      const tableData = parseMarkdownTable(tableLines);
+
+      if (tableData) {
+        openTableEditor(
+          tableData,
+          tableStartLine,
+          tableEndLine,
+          (newMarkdown: string) => {
+            // Replace the table in the source
+            const newLines = [...lines];
+            newLines.splice(tableStartLine, tableEndLine - tableStartLine + 1, ...newMarkdown.split("\n"));
+            setEditorContent(newLines.join("\n"));
+          }
+        );
+      }
+    },
+    [displayContent, openTableEditor, setEditorContent]
+  );
+
   // Debug mode - set to true to show debug UI
   const debugMode = false;
 
@@ -375,6 +453,7 @@ export function PreviewPane({ content }: PreviewPaneProps) {
             code({ className, children, ...props }) {
               const match = /language-(\w+)/.exec(className || "");
               const isInline = !match;
+              const language = match?.[1];
 
               if (isInline) {
                 return (
@@ -384,10 +463,25 @@ export function PreviewPane({ content }: PreviewPaneProps) {
                 );
               }
 
+              // Handle dataview queries
+              if (language === "dataview") {
+                const queryText = String(children).trim();
+                return (
+                  <div className="my-4 p-4 bg-dark-850 rounded-lg border border-dark-700">
+                    <div className="text-xs text-dark-500 mb-2 flex items-center gap-2">
+                      <span className="px-1.5 py-0.5 bg-accent-primary/20 text-accent-primary rounded">
+                        dataview
+                      </span>
+                    </div>
+                    <DataviewRenderer query={queryText} />
+                  </div>
+                );
+              }
+
               return (
                 <div className="relative group">
                   <div className="absolute top-2 right-2 text-xs text-dark-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {match[1]}
+                    {language}
                   </div>
                   <pre className={className}>
                     <code {...props}>{children}</code>
@@ -545,6 +639,63 @@ export function PreviewPane({ content }: PreviewPaneProps) {
                     <span className="block text-xs text-dark-500 mt-1 italic">{alt}</span>
                   )}
                 </span>
+              );
+            },
+            // Clickable tables with edit overlay
+            table({ children, ...props }) {
+              // Capture raw table content from children for reconstruction
+              const captureTableContent = (element: React.ReactNode): string => {
+                if (!element) return "";
+                if (typeof element === "string") return element;
+                if (Array.isArray(element)) return element.map(captureTableContent).join("");
+                if (typeof element === "object" && "props" in element) {
+                  const el = element as React.ReactElement;
+                  const tagName = typeof el.type === "string" ? el.type : "";
+                  const content = captureTableContent(el.props.children);
+                  if (tagName === "th" || tagName === "td") return `| ${content} `;
+                  if (tagName === "tr") return `${content}|\n`;
+                  if (tagName === "thead") return `${content}|---|\n`;
+                  return content;
+                }
+                return "";
+              };
+
+              return (
+                <div className="relative group my-4">
+                  <table
+                    className="w-full border-collapse"
+                    {...props}
+                  >
+                    {children}
+                  </table>
+                  <button
+                    className="absolute top-1 right-1 px-2 py-1 text-xs bg-accent-primary/80 hover:bg-accent-primary text-white rounded opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1"
+                    onClick={() => {
+                      // Find this table in the raw content and open editor
+                      // For now, we'll pass the full content and let handleTableClick find it
+                      const lines = displayContent.split("\n");
+                      // Find the first table in the content
+                      for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i];
+                        if (line.trim().includes("|") && line.trim().length > 1) {
+                          let endLine = i;
+                          while (endLine < lines.length && lines[endLine].trim().includes("|")) {
+                            endLine++;
+                          }
+                          const tableMarkdown = lines.slice(i, endLine).join("\n");
+                          handleTableClick(tableMarkdown);
+                          return;
+                        }
+                      }
+                    }}
+                    title="Edit table"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Edit
+                  </button>
+                </div>
               );
             },
           }}
