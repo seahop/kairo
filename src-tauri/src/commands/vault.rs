@@ -1,9 +1,12 @@
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
+use uuid::Uuid;
 
 use crate::db;
+use crate::db::with_db;
 
 /// Entries that should be in every vault's .gitignore
 const GITIGNORE_ENTRIES: &[&str] = &[
@@ -311,18 +314,127 @@ pub fn get_vault_user(app: AppHandle) -> Result<Option<String>, String> {
     }
 }
 
+/// Result from setting vault user (includes auto-created board if any)
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetUserResult {
+    pub username: String,
+    pub created_board: bool,
+    pub board_id: Option<String>,
+}
+
 /// Set the current user identity for this vault
-/// Writes to .kairo-user file in the vault root (should be gitignored)
+/// Writes to .kairo-user file and auto-creates personal kanban board + member entry
 #[tauri::command]
-pub fn set_vault_user(app: AppHandle, username: String) -> Result<(), String> {
+pub fn set_vault_user(app: AppHandle, username: String) -> Result<SetUserResult, String> {
     let vault_path =
         db::get_current_vault_path(&app).ok_or_else(|| "No vault is currently open".to_string())?;
 
+    let username = username.trim().to_string();
+    if username.is_empty() {
+        return Err("Username cannot be empty".to_string());
+    }
+
+    // Check if name is taken and create board/member if needed
+    let (created_board, board_id) = with_db(&app, |conn| {
+        let username_lower = username.to_lowercase();
+
+        // Check if a personal board with this owner already exists
+        let existing_board: Option<String> = conn
+            .query_row(
+                "SELECT id FROM kanban_boards WHERE LOWER(owner_name) = ?1",
+                params![username_lower],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if let Some(board_id) = existing_board {
+            // Board exists - make sure user is in members table
+            let member_exists: bool = conn
+                .query_row(
+                    "SELECT 1 FROM kanban_board_members WHERE LOWER(name) = ?1",
+                    params![username_lower],
+                    |_| Ok(true),
+                )
+                .unwrap_or(false);
+
+            if !member_exists {
+                let member_id = Uuid::new_v4().to_string();
+                let now = chrono::Utc::now().timestamp();
+                conn.execute(
+                    "INSERT INTO kanban_board_members (id, board_id, name, added_at) VALUES (?1, ?2, ?3, ?4)",
+                    params![member_id, board_id, username, now],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+
+            return Ok((false, Some(board_id)));
+        }
+
+        // No existing board - create one
+        let now = chrono::Utc::now().timestamp();
+        let board_id = Uuid::new_v4().to_string();
+
+        // Default columns for personal boards
+        let default_columns = vec![
+            ("Created", false),
+            ("In Progress", false),
+            ("Waiting on Others", false),
+            ("Delayed", false),
+            ("Closed", true),
+            ("Backlog", false),
+        ];
+
+        #[derive(serde::Serialize)]
+        struct KanbanColumn {
+            id: String,
+            name: String,
+            color: Option<String>,
+            #[serde(rename = "isDone")]
+            is_done: bool,
+        }
+
+        let kanban_columns: Vec<KanbanColumn> = default_columns
+            .into_iter()
+            .map(|(name, is_done)| KanbanColumn {
+                id: Uuid::new_v4().to_string(),
+                name: name.to_string(),
+                color: None,
+                is_done,
+            })
+            .collect();
+
+        let columns_json = serde_json::to_string(&kanban_columns).map_err(|e| e.to_string())?;
+
+        // Create the personal board
+        conn.execute(
+            "INSERT INTO kanban_boards (id, name, columns, owner_name, created_at, modified_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![board_id, username, columns_json, username, now, now],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Add user as a board member
+        let member_id = Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO kanban_board_members (id, board_id, name, added_at) VALUES (?1, ?2, ?3, ?4)",
+            params![member_id, board_id, username, now],
+        )
+        .map_err(|e| e.to_string())?;
+
+        Ok((true, Some(board_id.clone())))
+    })
+    .map_err(|e| e.to_string())?;
+
+    // Write to .kairo-user file
     let user_file = vault_path.join(".kairo-user");
-    fs::write(&user_file, username.trim()).map_err(|e| e.to_string())?;
+    fs::write(&user_file, &username).map_err(|e| e.to_string())?;
 
     // Ensure gitignore has all necessary entries (including .kairo-user)
     ensure_gitignore(&vault_path);
 
-    Ok(())
+    Ok(SetUserResult {
+        username,
+        created_board,
+        board_id,
+    })
 }

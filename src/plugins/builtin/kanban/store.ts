@@ -864,8 +864,28 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
 
   setUsername: async (username: string) => {
     try {
-      await invoke("set_vault_user", { username });
-      set({ currentUsername: username });
+      // set_vault_user now also creates the member entry and personal board
+      const result = await invoke<{
+        username: string;
+        createdBoard: boolean;
+        boardId: string | null;
+      }>("set_vault_user", { username });
+
+      set({ currentUsername: result.username });
+
+      // Reload boards to pick up the newly created personal board
+      if (result.createdBoard) {
+        await get().loadBoards();
+      }
+
+      // Always reload assignee suggestions since a new member was added
+      await get().loadAssigneeSuggestions();
+
+      // Also reload board members if we have a current board
+      const { currentBoard } = get();
+      if (currentBoard) {
+        await get().loadBoardMembers(currentBoard.id);
+      }
     } catch (error) {
       console.error("Failed to save username:", error);
       set({ error: String(error) });
