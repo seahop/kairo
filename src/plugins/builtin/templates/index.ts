@@ -3,11 +3,16 @@ import { create } from "zustand";
 import { useNoteStore } from "@/stores/noteStore";
 import { invoke } from "@tauri-apps/api/core";
 
+export type TemplateCategory = 'general' | 'daily' | 'zettelkasten' | 'moc' | 'para' | 'work' | 'security' | 'custom';
+
 export interface Template {
   id: string;
   name: string;
+  description?: string;
   content: string;
-  category?: string;
+  category?: TemplateCategory | string;
+  pathPrefix?: string;  // Where to create the note (e.g., "notes/daily")
+  filenamePattern?: string;  // Pattern for filename (supports {date}, {time}, {zettel}, {title})
   isBuiltin?: boolean;
 }
 
@@ -23,7 +28,7 @@ interface TemplateState {
   closeModal: () => void;
   openEditor: (template?: Template) => void;
   closeEditor: () => void;
-  createFromTemplate: (template: Template) => void;
+  createFromTemplate: (template: Template, customTitle?: string) => void;
   saveTemplate: (template: Template) => void;
   deleteTemplate: (id: string) => void;
 }
@@ -94,13 +99,14 @@ export const useTemplateStore = create<TemplateState>((set, get) => ({
 
   closeEditor: () => set({ isEditorMode: false, editingTemplate: null }),
 
-  createFromTemplate: (template: Template) => {
+  createFromTemplate: (template: Template, customTitle?: string) => {
     const { createNote } = useNoteStore.getState();
-    const timestamp = Date.now();
-    const fileName = `notes/${template.name.toLowerCase().replace(/\s+/g, "-")}-${timestamp}.md`;
+
+    // Generate filename using pattern or fallback
+    const fileName = generateFilename(template, customTitle);
 
     // Process template variables
-    const content = processTemplateVariables(template.content);
+    const content = processTemplateVariables(template.content, customTitle);
     createNote(fileName, content);
     set({ showModal: false });
   },
@@ -145,48 +151,477 @@ export const useTemplateStore = create<TemplateState>((set, get) => ({
   },
 }));
 
-function processTemplateVariables(content: string): string {
+// Generate Zettelkasten-style ID (YYYYMMDDHHmmss)
+function generateZettelId(): string {
   const now = new Date();
-  return content
-    .replace(/\{\{date\}\}/g, now.toISOString().split("T")[0])
-    .replace(/\{\{datetime\}\}/g, now.toISOString())
-    .replace(/\{\{time\}\}/g, now.toTimeString().split(" ")[0])
-    .replace(/\{\{year\}\}/g, String(now.getFullYear()))
-    .replace(/\{\{month\}\}/g, String(now.getMonth() + 1).padStart(2, "0"))
-    .replace(/\{\{day\}\}/g, String(now.getDate()).padStart(2, "0"));
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hour = String(now.getHours()).padStart(2, '0');
+  const minute = String(now.getMinutes()).padStart(2, '0');
+  const second = String(now.getSeconds()).padStart(2, '0');
+  return `${year}${month}${day}${hour}${minute}${second}`;
+}
+
+// Get date info for template processing
+function getDateInfo() {
+  const now = new Date();
+  return {
+    date: now.toISOString().split('T')[0],  // YYYY-MM-DD
+    time: now.toTimeString().split(' ')[0].slice(0, 5),  // HH:mm
+    datetime: now.toISOString(),
+    weekday: now.toLocaleDateString('en-US', { weekday: 'long' }),
+    monthName: now.toLocaleDateString('en-US', { month: 'long' }),
+    year: now.getFullYear().toString(),
+    month: String(now.getMonth() + 1).padStart(2, '0'),
+    day: String(now.getDate()).padStart(2, '0'),
+    zettel: generateZettelId(),
+  };
+}
+
+// Process template content with placeholders
+// Supports both {{var}} and {var} syntax for compatibility
+function processTemplateVariables(content: string, customTitle?: string): string {
+  const info = getDateInfo();
+  let result = content
+    // {{var}} syntax (plugin templates)
+    .replace(/\{\{date\}\}/g, info.date)
+    .replace(/\{\{datetime\}\}/g, info.datetime)
+    .replace(/\{\{time\}\}/g, info.time)
+    .replace(/\{\{year\}\}/g, info.year)
+    .replace(/\{\{month\}\}/g, info.month)
+    .replace(/\{\{day\}\}/g, info.day)
+    .replace(/\{\{weekday\}\}/g, info.weekday)
+    .replace(/\{\{monthName\}\}/g, info.monthName)
+    .replace(/\{\{zettel\}\}/g, info.zettel)
+    // {var} syntax (note templates)
+    .replace(/\{date\}/g, info.date)
+    .replace(/\{datetime\}/g, info.datetime)
+    .replace(/\{time\}/g, info.time)
+    .replace(/\{year\}/g, info.year)
+    .replace(/\{month\}/g, info.monthName)
+    .replace(/\{weekday\}/g, info.weekday)
+    .replace(/\{zettel\}/g, info.zettel);
+
+  if (customTitle) {
+    result = result
+      .replace(/\{\{title\}\}/g, customTitle)
+      .replace(/\{title\}/g, customTitle);
+  }
+
+  return result;
+}
+
+// Generate filename from template pattern
+function generateFilename(template: Template, customTitle?: string): string {
+  if (template.filenamePattern) {
+    const processed = processTemplateVariables(template.filenamePattern, customTitle || 'untitled');
+    const prefix = template.pathPrefix || 'notes';
+    return `${prefix}/${processed}.md`;
+  }
+
+  // Fallback: use name-based filename
+  const timestamp = Date.now();
+  const safeName = template.name.toLowerCase().replace(/\s+/g, "-");
+  return `notes/${safeName}-${timestamp}.md`;
+}
+
+// Check if a template needs a custom title input
+export function templateNeedsTitle(template: Template): boolean {
+  if (!template.filenamePattern) return false;
+  return template.filenamePattern.includes('{title}') || template.filenamePattern.includes('{{title}}');
 }
 
 function getBuiltinTemplates(): Template[] {
   return [
+    // === General Templates ===
     {
-      id: "meeting",
-      name: "Meeting Notes",
-      category: "Work",
+      id: 'quick-note',
+      name: 'Quick Note',
+      description: 'A simple note for quick capture',
+      category: 'general',
+      pathPrefix: 'notes/inbox',
+      filenamePattern: '{date}-{time}',
       isBuiltin: true,
-      content: `# Meeting Notes - {{date}}
+      content: `# Quick Note
 
-## Attendees
--
+{datetime}
 
-## Agenda
-1.
-
-## Discussion
-
-
-## Action Items
-- [ ]
-
-## Next Steps
+---
 
 `,
     },
     {
-      id: "runbook",
-      name: "Runbook",
-      category: "Red Team",
+      id: 'standard-note',
+      name: 'Standard Note',
+      description: 'A basic note with title',
+      category: 'general',
+      pathPrefix: 'notes',
+      filenamePattern: '{title}',
       isBuiltin: true,
-      content: `# Runbook: [Title]
+      content: `# {title}
+
+Created: {date}
+
+---
+
+`,
+    },
+    {
+      id: 'meeting',
+      name: 'Meeting Notes',
+      description: 'Notes from a meeting',
+      category: 'general',
+      pathPrefix: 'notes/meetings',
+      filenamePattern: '{date}-{title}',
+      isBuiltin: true,
+      content: `# Meeting: {title}
+
+**Date:** {date} {time}
+**Attendees:**
+
+---
+
+## Agenda
+1.
+
+## Discussion Notes
+
+
+## Action Items
+- [ ] @person -
+
+## Decisions Made
+
+
+## Follow-up
+-
+
+---
+*Created: {datetime}*
+`,
+    },
+
+    // === Daily Notes ===
+    {
+      id: 'daily-note',
+      name: 'Daily Note',
+      description: 'Daily journal and task tracking',
+      category: 'daily',
+      pathPrefix: 'notes/daily',
+      filenamePattern: '{date}',
+      isBuiltin: true,
+      content: `# {weekday}, {month} {day}, {year}
+
+## Tasks
+- [ ]
+
+## Notes
+
+
+## Links
+- [[{date}|Yesterday]]
+
+---
+*Created: {time}*
+`,
+    },
+    {
+      id: 'weekly-review',
+      name: 'Weekly Review',
+      description: 'Weekly reflection and planning',
+      category: 'daily',
+      pathPrefix: 'notes/reviews',
+      filenamePattern: 'week-{date}',
+      isBuiltin: true,
+      content: `# Weekly Review - {date}
+
+## What went well?
+
+
+## What could be improved?
+
+
+## Key learnings
+
+
+## Next week's priorities
+1.
+2.
+3.
+
+## Notes to review
+-
+
+---
+*Created: {datetime}*
+`,
+    },
+    {
+      id: 'standup',
+      name: 'Standup Notes',
+      description: 'Daily standup summary',
+      category: 'daily',
+      pathPrefix: 'notes/standups',
+      filenamePattern: 'standup-{date}',
+      isBuiltin: true,
+      content: `# Standup - {date}
+
+## Yesterday
+-
+
+## Today
+-
+
+## Blockers
+-
+
+`,
+    },
+
+    // === Zettelkasten Templates ===
+    {
+      id: 'zettel',
+      name: 'Zettel (Atomic Note)',
+      description: 'Single-idea note for Zettelkasten method',
+      category: 'zettelkasten',
+      pathPrefix: 'notes',
+      filenamePattern: '{zettel}-{title}',
+      isBuiltin: true,
+      content: `# {title}
+
+<!-- Single idea goes here -->
+
+
+
+---
+
+## References
+-
+
+## Links
+-
+
+---
+*ID: {zettel}*
+*Created: {datetime}*
+`,
+    },
+    {
+      id: 'literature-note',
+      name: 'Literature Note',
+      description: 'Notes from a book, article, or video',
+      category: 'zettelkasten',
+      pathPrefix: 'notes/literature',
+      filenamePattern: '{title}',
+      isBuiltin: true,
+      content: `# {title}
+
+**Source:**
+**Author:**
+**Date Read:** {date}
+
+---
+
+## Summary
+
+
+## Key Ideas
+1.
+2.
+3.
+
+## Quotes
+
+
+## My Thoughts
+
+
+## Links to Permanent Notes
+-
+
+---
+*Created: {datetime}*
+`,
+    },
+
+    // === MOC (Maps of Content) Templates ===
+    {
+      id: 'moc',
+      name: 'Map of Content (MOC)',
+      description: 'Index note that links related notes',
+      category: 'moc',
+      pathPrefix: 'notes/moc',
+      filenamePattern: 'moc-{title}',
+      isBuiltin: true,
+      content: `# {title} - Map of Content
+
+> This MOC organizes notes related to **{title}**.
+
+---
+
+## Overview
+
+
+## Core Concepts
+-
+
+## Related Notes
+-
+
+## Questions to Explore
+- [ ]
+
+## Resources
+-
+
+---
+*Last updated: {date}*
+`,
+    },
+    {
+      id: 'index',
+      name: 'Index Note',
+      description: 'Top-level navigation note',
+      category: 'moc',
+      pathPrefix: 'notes',
+      filenamePattern: 'index-{title}',
+      isBuiltin: true,
+      content: `# {title} Index
+
+## Quick Links
+
+
+## Categories
+
+
+## Recently Added
+
+
+---
+*Updated: {date}*
+`,
+    },
+
+    // === PARA Templates ===
+    {
+      id: 'project',
+      name: 'Project Note',
+      description: 'Active project with deadline (PARA)',
+      category: 'para',
+      pathPrefix: 'notes/1-projects',
+      filenamePattern: '{title}',
+      isBuiltin: true,
+      content: `# Project: {title}
+
+**Status:** Active
+**Deadline:**
+**Created:** {date}
+
+---
+
+## Objective
+
+
+## Key Results
+- [ ]
+- [ ]
+- [ ]
+
+## Tasks
+- [ ]
+
+## Notes
+
+
+## Resources
+-
+
+## Related
+-
+
+---
+*Last updated: {date}*
+`,
+    },
+    {
+      id: 'area',
+      name: 'Area Note',
+      description: 'Ongoing responsibility area (PARA)',
+      category: 'para',
+      pathPrefix: 'notes/2-areas',
+      filenamePattern: '{title}',
+      isBuiltin: true,
+      content: `# Area: {title}
+
+**Category:**
+**Created:** {date}
+
+---
+
+## Overview
+
+
+## Standards/Goals
+
+
+## Active Projects
+-
+
+## Key Resources
+-
+
+## Notes
+-
+
+---
+*Last updated: {date}*
+`,
+    },
+    {
+      id: 'resource',
+      name: 'Resource Note',
+      description: 'Reference material (PARA)',
+      category: 'para',
+      pathPrefix: 'notes/3-resources',
+      filenamePattern: '{title}',
+      isBuiltin: true,
+      content: `# Resource: {title}
+
+**Topic:**
+**Created:** {date}
+
+---
+
+## Summary
+
+
+## Key Points
+1.
+2.
+3.
+
+## Useful Links
+-
+
+## Related Notes
+-
+
+---
+*Last updated: {date}*
+`,
+    },
+
+    // === Security/Red Team Templates ===
+    {
+      id: 'runbook',
+      name: 'Runbook',
+      description: 'Red Team procedure documentation',
+      category: 'security',
+      pathPrefix: 'notes/runbooks',
+      filenamePattern: 'runbook-{title}',
+      isBuiltin: true,
+      content: `# Runbook: {title}
 
 ## Overview
 Brief description of the technique/procedure.
@@ -220,22 +655,25 @@ Tags: #runbook #redteam
 `,
     },
     {
-      id: "incident",
-      name: "Incident Report",
-      category: "Security",
+      id: 'incident',
+      name: 'Incident Report',
+      description: 'Security incident documentation',
+      category: 'security',
+      pathPrefix: 'notes/incidents',
+      filenamePattern: 'INC-{date}-{title}',
       isBuiltin: true,
-      content: `# Incident Report - {{date}}
+      content: `# Incident Report - {title}
 
 ## Summary
 | Field | Value |
 |-------|-------|
-| Incident ID | INC-{{date}} |
+| Incident ID | INC-{date} |
 | Severity | |
 | Status | Open |
 | Reported By | |
 
 ## Timeline
-- **{{datetime}}** -
+- **{datetime}** -
 
 ## Description
 
@@ -257,29 +695,14 @@ Tags: #incident #security
 `,
     },
     {
-      id: "standup",
-      name: "Standup Notes",
-      category: "Work",
+      id: 'tool',
+      name: 'Tool Documentation',
+      description: 'Security tool reference',
+      category: 'security',
+      pathPrefix: 'notes/tools',
+      filenamePattern: 'tool-{title}',
       isBuiltin: true,
-      content: `# Standup - {{date}}
-
-## Yesterday
--
-
-## Today
--
-
-## Blockers
--
-
-`,
-    },
-    {
-      id: "tool",
-      name: "Tool Documentation",
-      category: "Red Team",
-      isBuiltin: true,
-      content: `# Tool: [Name]
+      content: `# Tool: {title}
 
 ## Overview
 What the tool does and when to use it.
@@ -336,9 +759,8 @@ export function initTemplatesPlugin() {
 
       registerCommand({
         id: "templates.open",
-        name: "Templates: New from Template",
-        description: "Create a new note from a template",
-        shortcut: "Ctrl+Shift+N",
+        name: "Templates: Manage Templates",
+        description: "Open the templates manager",
         category: "Templates",
         execute: () => useTemplateStore.getState().openModal(),
       });

@@ -1,30 +1,25 @@
 import { useState, useEffect, useRef } from "react";
-import { useNoteStore } from "@/stores/noteStore";
 import { useUIStore } from "@/stores/uiStore";
-import {
-  defaultTemplates,
-  NoteTemplate,
-  processTemplate,
-  generateFilename,
-  getTemplatesByCategory,
-} from "@/lib/templates";
+import { useTemplateStore, Template, templateNeedsTitle, TemplateCategory } from "@/plugins/builtin/templates";
 import clsx from "clsx";
 import { CloseIcon } from "@/components/common/Icons";
 
-const categories = [
+const categories: { id: TemplateCategory | 'all'; label: string }[] = [
   { id: 'all', label: 'All Templates' },
   { id: 'general', label: 'General' },
   { id: 'daily', label: 'Daily Notes' },
   { id: 'zettelkasten', label: 'Zettelkasten' },
   { id: 'moc', label: 'MOC' },
   { id: 'para', label: 'PARA' },
-] as const;
+  { id: 'security', label: 'Security' },
+  { id: 'custom', label: 'Custom' },
+];
 
 export function CreateNoteModal() {
-  const { createNote } = useNoteStore();
+  const { createFromTemplate, templates } = useTemplateStore();
   const { activeModal, closeModal } = useUIStore();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [selectedTemplate, setSelectedTemplate] = useState<NoteTemplate | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [customTitle, setCustomTitle] = useState('');
   const [step, setStep] = useState<'select' | 'customize'>('select');
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -65,13 +60,13 @@ export function CreateNoteModal() {
   if (!isOpen) return null;
 
   const filteredTemplates = selectedCategory === 'all'
-    ? defaultTemplates
-    : getTemplatesByCategory(selectedCategory as NoteTemplate['category']);
+    ? templates
+    : templates.filter(t => t.category === selectedCategory);
 
-  const handleSelectTemplate = (template: NoteTemplate) => {
+  const handleSelectTemplate = (template: Template) => {
     setSelectedTemplate(template);
     // If template needs title, go to customize step
-    if (template.filenamePattern.includes('{title}')) {
+    if (templateNeedsTitle(template)) {
       setStep('customize');
     } else {
       // Create note directly
@@ -79,12 +74,8 @@ export function CreateNoteModal() {
     }
   };
 
-  const handleCreate = async (template: NoteTemplate, title: string) => {
-    const finalTitle = title || 'untitled';
-    const filename = generateFilename(template, finalTitle);
-    const content = processTemplate(template.content, finalTitle);
-
-    await createNote(filename, content);
+  const handleCreate = (template: Template, title: string) => {
+    createFromTemplate(template, title || undefined);
     closeModal();
   };
 
@@ -93,6 +84,14 @@ export function CreateNoteModal() {
     if (selectedTemplate && customTitle.trim()) {
       handleCreate(selectedTemplate, customTitle.trim());
     }
+  };
+
+  // Generate preview path
+  const getPreviewPath = (template: Template, title: string) => {
+    const prefix = template.pathPrefix || 'notes';
+    const pattern = template.filenamePattern || '{title}';
+    const filename = pattern.replace('{title}', title.toLowerCase().replace(/\s+/g, '-') || '...');
+    return `${prefix}/${filename}.md`;
   };
 
   return (
@@ -104,7 +103,7 @@ export function CreateNoteModal() {
       />
 
       {/* Modal */}
-      <div className="relative bg-dark-900 border border-dark-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+      <div className="relative bg-dark-900 border border-dark-700 rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700">
           <h2 className="text-lg font-semibold text-dark-100">
@@ -121,44 +120,55 @@ export function CreateNoteModal() {
         {step === 'select' ? (
           <>
             {/* Category tabs */}
-            <div className="flex gap-2 px-6 py-3 border-b border-dark-800 overflow-x-auto">
-              {categories.map((cat) => (
-                <button
-                  key={cat.id}
-                  className={clsx(
-                    "px-3 py-1.5 text-sm rounded-lg whitespace-nowrap transition-colors",
-                    selectedCategory === cat.id
-                      ? "bg-accent-primary text-dark-950 font-medium"
-                      : "text-dark-400 hover:text-dark-200 hover:bg-dark-800"
-                  )}
-                  onClick={() => setSelectedCategory(cat.id)}
-                >
-                  {cat.label}
-                </button>
-              ))}
+            <div className="flex gap-2 px-6 py-4 border-b border-dark-800 flex-wrap">
+                {categories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    className={clsx(
+                      "px-3 py-1.5 text-sm rounded-lg whitespace-nowrap flex-shrink-0 transition-colors",
+                      selectedCategory === cat.id
+                        ? "bg-accent-primary text-dark-950 font-medium"
+                        : "text-dark-400 hover:text-dark-200 hover:bg-dark-800"
+                    )}
+                    onClick={() => setSelectedCategory(cat.id)}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
             </div>
 
             {/* Template grid */}
             <div className="flex-1 overflow-y-auto p-6">
-              <div className="grid grid-cols-2 gap-3">
-                {filteredTemplates.map((template) => (
-                  <button
-                    key={template.id}
-                    className="p-4 text-left bg-dark-850 hover:bg-dark-800 border border-dark-700 hover:border-dark-600 rounded-lg transition-colors group"
-                    onClick={() => handleSelectTemplate(template)}
-                  >
-                    <div className="font-medium text-dark-200 group-hover:text-accent-primary">
-                      {template.name}
-                    </div>
-                    <div className="text-sm text-dark-500 mt-1">
-                      {template.description}
-                    </div>
-                    <div className="text-xs text-dark-600 mt-2 font-mono">
-                      {template.pathPrefix}/
-                    </div>
-                  </button>
-                ))}
-              </div>
+              {filteredTemplates.length === 0 ? (
+                <div className="text-center py-8 text-dark-500">
+                  No templates in this category
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {filteredTemplates.map((template) => (
+                    <button
+                      key={template.id}
+                      className="p-4 text-left bg-dark-850 hover:bg-dark-800 border border-dark-700 hover:border-dark-600 rounded-lg transition-colors group"
+                      onClick={() => handleSelectTemplate(template)}
+                    >
+                      <div className="font-medium text-dark-200 group-hover:text-accent-primary flex items-center gap-2">
+                        {template.name}
+                        {template.isBuiltin && (
+                          <span className="text-xs text-dark-500 bg-dark-700 px-1.5 py-0.5 rounded">
+                            Built-in
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-dark-500 mt-1">
+                        {template.description || 'No description'}
+                      </div>
+                      <div className="text-xs text-dark-600 mt-2 font-mono">
+                        {template.pathPrefix || 'notes'}/
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         ) : (
@@ -179,16 +189,19 @@ export function CreateNoteModal() {
                 />
               </div>
 
+              {selectedTemplate?.description && (
+                <div className="text-sm text-dark-500 mb-4">
+                  {selectedTemplate.description}
+                </div>
+              )}
+
               {/* Preview */}
               <div className="mt-6">
                 <div className="text-sm font-medium text-dark-400 mb-2">Preview</div>
                 <div className="p-4 bg-dark-850 border border-dark-700 rounded-lg">
                   <div className="text-sm text-dark-300 font-mono mb-2">
-                    {customTitle ? generateFilename(selectedTemplate!, customTitle) : 'Enter a title...'}
+                    {selectedTemplate ? getPreviewPath(selectedTemplate, customTitle) : 'Enter a title...'}
                   </div>
-                  <pre className="text-xs text-dark-500 whitespace-pre-wrap max-h-40 overflow-y-auto">
-                    {processTemplate(selectedTemplate!.content, customTitle || '{title}')}
-                  </pre>
                 </div>
               </div>
             </div>

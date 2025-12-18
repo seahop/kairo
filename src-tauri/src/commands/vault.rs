@@ -67,14 +67,10 @@ pub async fn create_vault(app: AppHandle, path: String, name: String) -> Result<
     // Create vault directory structure
     let kairo_dir = vault_path.join(".kairo");
     let notes_dir = vault_path.join("notes");
-    let templates_dir = vault_path.join("templates");
-    let assets_dir = vault_path.join("assets");
     let daily_dir = notes_dir.join("daily");
 
     fs::create_dir_all(&kairo_dir).map_err(|e| e.to_string())?;
     fs::create_dir_all(&notes_dir).map_err(|e| e.to_string())?;
-    fs::create_dir_all(&templates_dir).map_err(|e| e.to_string())?;
-    fs::create_dir_all(&assets_dir).map_err(|e| e.to_string())?;
     fs::create_dir_all(&daily_dir).map_err(|e| e.to_string())?;
 
     // Create config
@@ -97,15 +93,18 @@ This is your new vault. Here are some tips to get started:
 ## Quick Tips
 
 - Use `Ctrl+K` to open the command palette
-- Create new notes with `Ctrl+N`
+- Create new notes with `Ctrl+N` or use templates with `Ctrl+Shift+N`
 - Search everything with `Ctrl+Shift+F`
 
 ## Folder Structure
 
 - `notes/` - Your markdown notes
 - `notes/daily/` - Daily notes
-- `templates/` - Note templates
-- `assets/` - Images and attachments
+- `attachments/` - Images and files (created when you upload)
+
+## Templates
+
+Templates are managed through the app. Press `Ctrl+Shift+N` to create notes from templates, or create your own custom templates.
 
 Happy note-taking!
 "#;
