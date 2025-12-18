@@ -21,9 +21,18 @@
   background: #64748b;
 }
 
-/* Selection color */
+/*
+ * Selection color
+ * WebKitGTK has issues with semi-transparent selection backgrounds
+ * causing ghost line artifacts. Using a more opaque color helps.
+ */
 ::selection {
-  background-color: rgba(99, 102, 241, 0.3);
+  background-color: rgba(99, 102, 241, 0.4);
+  -webkit-text-fill-color: inherit;
+}
+
+::-moz-selection {
+  background-color: rgba(99, 102, 241, 0.4);
 }
 
 /*
@@ -37,6 +46,19 @@
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   isolation: isolate;
+}
+
+/*
+ * Scrollable containers with selectable text need GPU compositing
+ * to prevent selection artifacts at container boundaries
+ */
+.overflow-auto,
+.overflow-y-auto,
+.overflow-x-auto {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 
 /* Force GPU layer on all elements with transitions to prevent ghost artifacts */
@@ -548,12 +570,19 @@ a[class*="hover:"] {
   @apply border-l-2 border-accent-primary;
 }
 
-.cm-editor .cm-selectionBackground {
-  @apply bg-accent-primary/20 !important;
+.cm-editor .cm-selectionBackground,
+.cm-editor.cm-focused .cm-selectionBackground,
+.cm-editor .cm-selectionLayer .cm-selectionBackground {
+  /* Bright vivid blue selection - very visible */
+  background-color: #3b82f6 !important;
+}
+
+.cm-editor .cm-content ::selection {
+  background-color: #3b82f6 !important;
 }
 
 .cm-editor .cm-activeLine {
-  @apply bg-dark-900/50;
+  @apply bg-dark-900/30;
 }
 
 .cm-editor .cm-gutters {
@@ -615,9 +644,21 @@ a[class*="hover:"] {
 /* Markdown preview styles */
 .markdown-preview {
   @apply max-w-none;
-  /* Only backface visibility - transform/isolation breaks z-index */
+  /* GPU compositing to prevent WebKitGTK selection artifacts */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
+}
+
+/* Force clean selection rendering in preview */
+.markdown-preview *::selection {
+  background-color: rgba(99, 102, 241, 0.5);
+  -webkit-text-fill-color: currentColor;
+}
+
+.markdown-preview *::-moz-selection {
+  background-color: rgba(99, 102, 241, 0.5);
 }
 
 .markdown-preview h1 {
