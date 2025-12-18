@@ -11,7 +11,7 @@ use super::config::UserGitConfig;
 use super::error::GitError;
 
 /// Git repository status
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitStatus {
     pub is_repo: bool,
@@ -22,21 +22,6 @@ pub struct GitStatus {
     pub modified: Vec<String>,
     pub untracked: Vec<String>,
     pub has_remote: bool,
-}
-
-impl Default for GitStatus {
-    fn default() -> Self {
-        Self {
-            is_repo: false,
-            branch: String::new(),
-            ahead: 0,
-            behind: 0,
-            staged: vec![],
-            modified: vec![],
-            untracked: vec![],
-            has_remote: false,
-        }
-    }
 }
 
 /// Note version information from git history
@@ -150,10 +135,8 @@ pub fn get_status(repo: &Repository) -> Result<GitStatus, GitError> {
         }
 
         // Modified in worktree
-        if status.is_wt_modified() || status.is_wt_deleted() {
-            if !staged.contains(&path) {
-                modified.push(path.clone());
-            }
+        if (status.is_wt_modified() || status.is_wt_deleted()) && !staged.contains(&path) {
+            modified.push(path.clone());
         }
 
         // Untracked

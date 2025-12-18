@@ -8,7 +8,7 @@ pub mod credentials;
 pub mod error;
 pub mod operations;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use git2::Repository;
@@ -29,15 +29,15 @@ fn get_vault_path(app: &AppHandle) -> Result<PathBuf, GitError> {
 }
 
 /// Open a git repository at the vault path
-fn open_repo(vault_path: &PathBuf) -> Result<Repository, GitError> {
+fn open_repo(vault_path: &Path) -> Result<Repository, GitError> {
     Repository::open(vault_path).map_err(|_| GitError::NotARepo)
 }
 
 /// Get credential config from app state and user config
-fn get_cred_config<'a>(
+fn get_cred_config(
     app: &AppHandle,
-    vault_path: &PathBuf,
-    passphrase: Option<&'a str>,
+    vault_path: &Path,
+    passphrase: Option<&str>,
 ) -> Result<(UserGitConfig, Option<PathBuf>, Option<String>), GitError> {
     let user_config = UserGitConfig::read(vault_path)?;
 

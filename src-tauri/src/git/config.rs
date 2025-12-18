@@ -129,6 +129,7 @@ impl UserGitConfig {
     }
 
     /// Check if the configured SSH key exists
+    #[allow(dead_code)]
     pub fn ssh_key_exists(&self) -> bool {
         self.get_ssh_key_path().is_some()
     }

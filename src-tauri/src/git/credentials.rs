@@ -84,6 +84,7 @@ impl CredentialCache {
     }
 
     /// Check if we have a cached passphrase for a key
+    #[allow(dead_code)]
     pub fn has_passphrase(&self, key_path: &str) -> bool {
         self.passphrases.contains_key(key_path)
     }

@@ -9,6 +9,7 @@ use std::collections::HashMap;
 /// Query types supported by Dataview
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
+#[allow(dead_code)]
 pub enum QueryType {
     Table,
     List,
@@ -125,12 +126,12 @@ fn build_and_execute(conn: &Connection, query: &SerializedQuery) -> Result<Datav
         match source.source_type.as_str() {
             "folder" => {
                 let folder = source.value.trim_matches('"').trim_matches('/');
-                where_parts.push(format!("n.path LIKE ?"));
+                where_parts.push("n.path LIKE ?".to_string());
                 params.push(format!("{}%", folder));
             }
             "tag" => {
                 let tag = source.value.trim_matches('#');
-                where_parts.push(format!("t.tag = ?"));
+                where_parts.push("t.tag = ?".to_string());
                 params.push(tag.to_string());
             }
             "link" => {

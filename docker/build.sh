@@ -46,8 +46,13 @@ case "$BUILD_TYPE" in
         docker compose -f "${SCRIPT_DIR}/docker-compose.yml" run --rm kairo-dev cargo check --manifest-path src-tauri/Cargo.toml
         exit 0
         ;;
+    clippy)
+        echo -e "${YELLOW}Running cargo clippy...${NC}"
+        docker compose -f "${SCRIPT_DIR}/docker-compose.yml" run --rm kairo-dev cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+        exit 0
+        ;;
     *)
-        echo -e "${RED}Usage: $0 [release|dev|shell|fmt|check]${NC}"
+        echo -e "${RED}Usage: $0 [release|dev|shell|fmt|check|clippy]${NC}"
         exit 1
         ;;
 esac
