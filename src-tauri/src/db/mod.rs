@@ -1,7 +1,7 @@
+pub mod dataview;
 mod indexer;
 mod schema;
 mod search;
-pub mod dataview;
 
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};

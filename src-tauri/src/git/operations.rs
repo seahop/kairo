@@ -97,7 +97,9 @@ impl<'a> CredentialConfig<'a> {
                 return Cred::default();
             }
 
-            Err(git2::Error::from_str("No valid authentication method found"))
+            Err(git2::Error::from_str(
+                "No valid authentication method found",
+            ))
         });
 
         callbacks
@@ -342,7 +344,10 @@ pub fn commit(
 }
 
 /// Get the signature for commits
-fn get_signature(repo: &Repository, config: &UserGitConfig) -> Result<Signature<'static>, GitError> {
+fn get_signature(
+    repo: &Repository,
+    config: &UserGitConfig,
+) -> Result<Signature<'static>, GitError> {
     // Try user-provided config first
     if let (Some(name), Some(email)) = (&config.user_name, &config.user_email) {
         return Signature::now(name, email).map_err(|e| GitError::OperationFailed {
@@ -397,7 +402,11 @@ pub fn get_note_history(repo: &Repository, note_path: &str) -> Result<Vec<NoteVe
 }
 
 /// Check if a commit affects a specific path
-fn commit_affects_path(_repo: &Repository, commit: &git2::Commit, path: &str) -> Result<bool, GitError> {
+fn commit_affects_path(
+    _repo: &Repository,
+    commit: &git2::Commit,
+    path: &str,
+) -> Result<bool, GitError> {
     let tree = commit.tree()?;
 
     // Check if path exists in this commit
@@ -441,9 +450,11 @@ pub fn get_note_at_commit(
     let commit = repo.find_commit(oid)?;
     let tree = commit.tree()?;
 
-    let entry = tree.get_path(Path::new(note_path)).map_err(|_| GitError::FileNotFound {
-        path: note_path.to_string(),
-    })?;
+    let entry = tree
+        .get_path(Path::new(note_path))
+        .map_err(|_| GitError::FileNotFound {
+            path: note_path.to_string(),
+        })?;
 
     let blob = repo.find_blob(entry.id())?;
     let content = std::str::from_utf8(blob.content()).map_err(|_| GitError::OperationFailed {

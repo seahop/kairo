@@ -64,9 +64,10 @@ impl UserGitConfig {
         }
 
         // Write config
-        let content = serde_json::to_string_pretty(self).map_err(|e| GitError::OperationFailed {
-            message: format!("Failed to serialize git config: {}", e),
-        })?;
+        let content =
+            serde_json::to_string_pretty(self).map_err(|e| GitError::OperationFailed {
+                message: format!("Failed to serialize git config: {}", e),
+            })?;
         fs::write(&config_path, content)?;
 
         // Ensure config is gitignored

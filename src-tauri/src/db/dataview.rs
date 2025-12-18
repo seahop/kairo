@@ -194,7 +194,9 @@ fn build_and_execute(conn: &Connection, query: &SerializedQuery) -> Result<Datav
     let param_refs: Vec<&dyn rusqlite::ToSql> =
         params.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
 
-    let mut stmt = conn.prepare(&sql).map_err(|e| format!("SQL prepare error: {}", e))?;
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("SQL prepare error: {}", e))?;
 
     let rows = stmt
         .query_map(params_from_iter(param_refs.iter()), |row| {
@@ -233,7 +235,9 @@ fn condition_references_tags(condition: &Option<SerializedCondition>) -> bool {
                 }
             }
             if let Some(ref conditions) = c.conditions {
-                return conditions.iter().any(|c| condition_references_tags(&Some(c.clone())));
+                return conditions
+                    .iter()
+                    .any(|c| condition_references_tags(&Some(c.clone())));
             }
             false
         }
@@ -300,7 +304,10 @@ fn build_condition(condition: &SerializedCondition) -> Result<(String, Vec<Strin
             let (sql, params) = build_condition(&conditions[0])?;
             Ok((format!("NOT ({})", sql), params))
         }
-        _ => Err(format!("Unknown condition type: {}", condition.condition_type)),
+        _ => Err(format!(
+            "Unknown condition type: {}",
+            condition.condition_type
+        )),
     }
 }
 
@@ -310,7 +317,9 @@ fn map_field_to_sql(field: &str) -> String {
         "file.path" | "path" => "n.path".to_string(),
         "file.ctime" | "created" => "n.created_at".to_string(),
         "file.mtime" | "modified" => "n.modified_at".to_string(),
-        "file.folder" => "substr(n.path, 1, length(n.path) - length(replace(n.path, '/', '')) - 1)".to_string(),
+        "file.folder" => {
+            "substr(n.path, 1, length(n.path) - length(replace(n.path, '/', '')) - 1)".to_string()
+        }
         "file.tags" | "tags" => "t.tag".to_string(),
         _ => {
             // Assume it's a frontmatter field

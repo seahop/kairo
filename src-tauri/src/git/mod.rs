@@ -45,20 +45,21 @@ fn get_cred_config<'a>(
     let ssh_key_path = user_config.get_ssh_key_path();
 
     // Get cached passphrase if available and no passphrase provided
-    let cached_passphrase: Option<String> = if passphrase.is_none() && user_config.remember_passphrase {
-        if let Some(ref key_path) = ssh_key_path {
-            let cred_state = app.state::<Mutex<GitCredentialState>>();
-            let result = cred_state
-                .lock()
-                .ok()
-                .and_then(|state| state.get_passphrase(&key_path.to_string_lossy()));
-            result
+    let cached_passphrase: Option<String> =
+        if passphrase.is_none() && user_config.remember_passphrase {
+            if let Some(ref key_path) = ssh_key_path {
+                let cred_state = app.state::<Mutex<GitCredentialState>>();
+                let result = cred_state
+                    .lock()
+                    .ok()
+                    .and_then(|state| state.get_passphrase(&key_path.to_string_lossy()));
+                result
+            } else {
+                None
+            }
         } else {
-            None
-        }
-    } else {
-        passphrase.map(|s| s.to_string())
-    };
+            passphrase.map(|s| s.to_string())
+        };
 
     Ok((user_config, ssh_key_path, cached_passphrase))
 }
@@ -295,8 +296,8 @@ pub fn git_restore_note_version(
     let user_config = UserGitConfig::read(&vault_path).map_err(|e| e.to_string())?;
 
     // Get the content at the specified commit
-    let content =
-        operations::get_note_at_commit(&repo, &note_path, &commit_hash).map_err(|e| e.to_string())?;
+    let content = operations::get_note_at_commit(&repo, &note_path, &commit_hash)
+        .map_err(|e| e.to_string())?;
 
     // Write the content to the file
     let full_path = vault_path.join(&note_path);

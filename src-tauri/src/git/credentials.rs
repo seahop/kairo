@@ -21,9 +21,7 @@ impl ObfuscatedPassphrase {
         let mut rng = rand::rng();
 
         // Generate a random key the same length as the passphrase
-        let key: Vec<u8> = (0..passphrase_bytes.len())
-            .map(|_| rng.random())
-            .collect();
+        let key: Vec<u8> = (0..passphrase_bytes.len()).map(|_| rng.random()).collect();
 
         // XOR the passphrase with the key
         let data: Vec<u8> = passphrase_bytes
@@ -37,7 +35,8 @@ impl ObfuscatedPassphrase {
 
     /// Recover the plaintext passphrase
     fn decrypt(&self) -> String {
-        let decrypted: Vec<u8> = self.data
+        let decrypted: Vec<u8> = self
+            .data
             .iter()
             .zip(self.key.iter())
             .map(|(d, k)| d ^ k)
@@ -70,10 +69,8 @@ impl CredentialCache {
 
     /// Store a passphrase for an SSH key (encrypts before storing)
     pub fn set_passphrase(&mut self, key_path: &str, passphrase: String) {
-        self.passphrases.insert(
-            key_path.to_string(),
-            ObfuscatedPassphrase::new(&passphrase),
-        );
+        self.passphrases
+            .insert(key_path.to_string(), ObfuscatedPassphrase::new(&passphrase));
     }
 
     /// Remove a cached passphrase
