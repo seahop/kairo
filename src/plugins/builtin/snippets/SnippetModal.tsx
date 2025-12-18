@@ -1,5 +1,6 @@
 import { useSnippetStore, Snippet } from "./index";
 import { CloseIcon } from "@/components/common/Icons";
+import { Select } from "@/components/common/Select";
 
 const CopyIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -62,18 +63,16 @@ export function SnippetModal() {
                 <SearchIcon />
               </div>
             </div>
-            <select
-              className="input w-48"
+            <Select
+              className="w-48"
               value={selectedCategory || ""}
-              onChange={(e) => setSelectedCategory(e.target.value || null)}
-            >
-              <option value="">All Categories</option>
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
+              onChange={(value) => setSelectedCategory(value || null)}
+              options={[
+                { value: "", label: "All Categories" },
+                ...categories.map((cat) => ({ value: cat, label: cat })),
+              ]}
+              placeholder="All Categories"
+            />
           </div>
         </div>
 

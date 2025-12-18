@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useTemplateStore, Template, templateNeedsTitle, TemplateCategory } from "./index";
 import { CloseIcon } from "@/components/common/Icons";
+import { Select } from "@/components/common/Select";
 import clsx from "clsx";
 
 const FileIcon = () => (
@@ -122,20 +123,21 @@ function TemplateEditor() {
           </div>
           <div>
             <label className="block text-sm text-dark-400 mb-1">Category</label>
-            <select
-              className="input"
+            <Select
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
-            >
-              <option value="custom">Custom</option>
-              <option value="general">General</option>
-              <option value="daily">Daily</option>
-              <option value="zettelkasten">Zettelkasten</option>
-              <option value="moc">MOC</option>
-              <option value="para">PARA</option>
-              <option value="security">Security</option>
-              <option value="work">Work</option>
-            </select>
+              onChange={(value) => setCategory(value)}
+              options={[
+                { value: "custom", label: "Custom" },
+                { value: "general", label: "General" },
+                { value: "daily", label: "Daily" },
+                { value: "zettelkasten", label: "Zettelkasten" },
+                { value: "moc", label: "MOC" },
+                { value: "para", label: "PARA" },
+                { value: "security", label: "Security" },
+                { value: "work", label: "Work" },
+              ]}
+              placeholder="Select category..."
+            />
           </div>
         </div>
 

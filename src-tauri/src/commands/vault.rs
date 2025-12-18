@@ -1,9 +1,56 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
 use crate::db;
+
+/// Entries that should be in every vault's .gitignore
+const GITIGNORE_ENTRIES: &[&str] = &[
+    ".kairo/index.db",
+    ".kairo/index.db-journal",
+    ".kairo/index.db-wal",
+    ".kairo/index.db-shm",
+    ".kairo-user",
+];
+
+/// Ensure the vault's .gitignore has all necessary entries
+fn ensure_gitignore(vault_path: &Path) {
+    let gitignore_path = vault_path.join(".gitignore");
+
+    let existing_content = if gitignore_path.exists() {
+        fs::read_to_string(&gitignore_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let existing_lines: Vec<&str> = existing_content.lines().map(|l| l.trim()).collect();
+
+    let mut missing_entries: Vec<&str> = Vec::new();
+    for entry in GITIGNORE_ENTRIES {
+        if !existing_lines.contains(entry) {
+            missing_entries.push(entry);
+        }
+    }
+
+    if !missing_entries.is_empty() {
+        let mut new_content = existing_content;
+
+        // Add header comment if we're adding to an empty or non-existent file
+        if new_content.is_empty() {
+            new_content.push_str("# Kairo generated files\n");
+        } else if !new_content.ends_with('\n') {
+            new_content.push('\n');
+        }
+
+        for entry in missing_entries {
+            new_content.push_str(entry);
+            new_content.push('\n');
+        }
+
+        let _ = fs::write(&gitignore_path, new_content);
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VaultInfo {
@@ -39,6 +86,9 @@ pub async fn open_vault(app: AppHandle, path: String) -> Result<VaultInfo, Strin
     } else {
         return Err("Vault config not found".to_string());
     };
+
+    // Ensure gitignore has all necessary entries (for existing vaults)
+    ensure_gitignore(&vault_path);
 
     // Initialize database for this vault
     db::open_vault_db(&app, &vault_path).map_err(|e| e.to_string())?;
@@ -111,6 +161,9 @@ Happy note-taking!
 
     let welcome_path = notes_dir.join("welcome.md");
     fs::write(&welcome_path, welcome_note).map_err(|e| e.to_string())?;
+
+    // Create .gitignore for vault-specific files
+    ensure_gitignore(&vault_path);
 
     // Initialize database
     db::open_vault_db(&app, &vault_path).map_err(|e| e.to_string())?;
@@ -268,25 +321,8 @@ pub fn set_vault_user(app: AppHandle, username: String) -> Result<(), String> {
     let user_file = vault_path.join(".kairo-user");
     fs::write(&user_file, username.trim()).map_err(|e| e.to_string())?;
 
-    // Ensure .kairo-user is in .gitignore
-    let gitignore_path = vault_path.join(".gitignore");
-    let gitignore_entry = ".kairo-user";
-
-    if gitignore_path.exists() {
-        let content = fs::read_to_string(&gitignore_path).unwrap_or_default();
-        if !content.lines().any(|line| line.trim() == gitignore_entry) {
-            // Add to .gitignore
-            let new_content = if content.ends_with('\n') || content.is_empty() {
-                format!("{}{}\n", content, gitignore_entry)
-            } else {
-                format!("{}\n{}\n", content, gitignore_entry)
-            };
-            fs::write(&gitignore_path, new_content).map_err(|e| e.to_string())?;
-        }
-    } else {
-        // Create .gitignore with the entry
-        fs::write(&gitignore_path, format!("{}\n", gitignore_entry)).map_err(|e| e.to_string())?;
-    }
+    // Ensure gitignore has all necessary entries (including .kairo-user)
+    ensure_gitignore(&vault_path);
 
     Ok(())
 }

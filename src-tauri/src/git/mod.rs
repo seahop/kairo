@@ -83,7 +83,7 @@ pub fn git_status(app: AppHandle) -> Result<GitStatus, String> {
 
 /// Pull from remote
 #[tauri::command]
-pub fn git_pull(app: AppHandle, passphrase: Option<String>) -> Result<String, String> {
+pub async fn git_pull(app: AppHandle, passphrase: Option<String>) -> Result<String, String> {
     let vault_path = get_vault_path(&app).map_err(|e| e.to_string())?;
     let repo = open_repo(&vault_path).map_err(|e| e.to_string())?;
 
@@ -107,7 +107,15 @@ pub fn git_pull(app: AppHandle, passphrase: Option<String>) -> Result<String, St
         }
     }
 
-    operations::pull(&repo, &creds).map_err(|e| serde_json::to_string(&e).unwrap_or(e.to_string()))
+    let result = operations::pull(&repo, &creds)
+        .map_err(|e| serde_json::to_string(&e).unwrap_or(e.to_string()))?;
+
+    // Re-index the vault to pick up any new/changed files from the pull
+    db::index_vault(&app, &vault_path)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(result)
 }
 
 /// Push to remote
