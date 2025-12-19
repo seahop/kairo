@@ -17,6 +17,7 @@ import { useUIStore } from "./stores/uiStore";
 import { useNoteStore } from "./stores/noteStore";
 import { useExtensionStore } from "./stores/extensionStore";
 import { useCommands } from "./plugins/api";
+import { useFileWatcher } from "./hooks/useFileWatcher";
 import { invoke } from "@tauri-apps/api/core";
 
 // Plugin components
@@ -149,6 +150,9 @@ function App() {
 
   // Extension store
   const { loadSettings, loadExtensionsFromFolder } = useExtensionStore();
+
+  // File watcher for external file changes
+  useFileWatcher();
 
   // Initialize plugins and try to auto-open last vault
   useEffect(() => {

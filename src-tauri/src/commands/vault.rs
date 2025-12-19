@@ -2,11 +2,24 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use tauri::AppHandle;
+use std::sync::Mutex;
+use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 use crate::db;
 use crate::db::with_db;
+use crate::fs::watcher::VaultWatcher;
+
+/// State for the file watcher
+pub struct WatcherState {
+    pub watcher: Option<VaultWatcher>,
+}
+
+impl Default for WatcherState {
+    fn default() -> Self {
+        Self { watcher: None }
+    }
+}
 
 /// Entries that should be in every vault's .gitignore
 const GITIGNORE_ENTRIES: &[&str] = &[
@@ -101,6 +114,14 @@ pub async fn open_vault(app: AppHandle, path: String) -> Result<VaultInfo, Strin
         .await
         .map_err(|e| e.to_string())?;
 
+    // Start file watcher
+    if let Ok(watcher) = VaultWatcher::new(app.clone(), vault_path.clone()) {
+        let state = app.state::<Mutex<WatcherState>>();
+        if let Ok(mut guard) = state.lock() {
+            guard.watcher = Some(watcher);
+        };
+    }
+
     // Get note count
     let note_count = db::get_note_count(&app).map_err(|e| e.to_string())?;
 
@@ -175,6 +196,14 @@ Happy note-taking!
     db::index_vault(&app, &vault_path)
         .await
         .map_err(|e| e.to_string())?;
+
+    // Start file watcher
+    if let Ok(watcher) = VaultWatcher::new(app.clone(), vault_path.clone()) {
+        let state = app.state::<Mutex<WatcherState>>();
+        if let Ok(mut guard) = state.lock() {
+            guard.watcher = Some(watcher);
+        };
+    }
 
     Ok(VaultInfo {
         path,

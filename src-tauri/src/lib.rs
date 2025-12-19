@@ -29,6 +29,11 @@ pub fn run() {
             // Initialize git credential state for session-based caching
             app.manage(git::create_credential_state());
 
+            // Initialize file watcher state
+            app.manage(std::sync::Mutex::new(
+                commands::vault::WatcherState::default(),
+            ));
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
