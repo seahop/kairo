@@ -591,6 +591,58 @@ function syncCompletions(context: CompletionContext): CompletionResult | null {
     };
   }
 
+  // Check for ![[  pattern (transclusion) - show notes to embed
+  const transclusionMatch = textBeforeCursor.match(/!\[\[([^\]#]*)$/);
+  if (transclusionMatch) {
+    const query = transclusionMatch[1].toLowerCase();
+    const bracketStart = textBeforeCursor.lastIndexOf("![[");
+
+    // Filter notes by query
+    const matches = noteCache
+      .filter(n => !n.archived && (n.title.toLowerCase().includes(query) || n.path.toLowerCase().includes(query)))
+      .slice(0, 20);
+
+    if (matches.length > 0) {
+      return {
+        from: line.from + bracketStart,
+        options: matches.map(n => ({
+          label: `![[${n.title}]]`,
+          detail: `Embed: ${n.path}`,
+          type: "function",
+        })),
+      };
+    }
+    return {
+      from: line.from + bracketStart,
+      options: [
+        { label: `![[${query || "..."}]]`, detail: "Embed note content", type: "function" },
+      ],
+    };
+  }
+
+  // Check for ![[note#^ or [[note#^ pattern (block reference) - show blocks
+  const blockRefMatch = textBeforeCursor.match(/(!\[\[|^\[\[)([^\]#]+)#\^([a-zA-Z0-9_-]*)$/);
+  if (blockRefMatch) {
+    const isTransclusion = blockRefMatch[1] === "![[";
+    const noteRef = blockRefMatch[2];
+    const blockQuery = blockRefMatch[3].toLowerCase();
+    const startPos = textBeforeCursor.lastIndexOf(blockRefMatch[1]);
+
+    // We need to fetch blocks for this note - for now show a placeholder
+    // The actual block fetching would need to be async, so we provide
+    // a hint to type the block ID
+    return {
+      from: line.from + startPos,
+      options: [
+        {
+          label: isTransclusion ? `![[${noteRef}#^${blockQuery || "block-id"}]]` : `[[${noteRef}#^${blockQuery || "block-id"}]]`,
+          detail: "Type block ID (^block-id in target note)",
+          type: "function",
+        },
+      ],
+    };
+  }
+
   // Check for [[ pattern (general) - show prefix options only
   const bracketIndex = textBeforeCursor.lastIndexOf("[[");
   if (bracketIndex !== -1) {

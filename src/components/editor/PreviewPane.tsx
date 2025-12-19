@@ -10,6 +10,7 @@ import { useKanbanStore } from "@/plugins/builtin/kanban/store";
 import { useDiagramStore } from "@/plugins/builtin/diagram/store";
 import { LinkContextMenu, useContextMenu } from "@/components/common/LinkContextMenu";
 import { DataviewRenderer } from "./DataviewRenderer";
+import { TransclusionRenderer } from "./TransclusionRenderer";
 import { useTableEditorStore } from "@/stores/tableEditorStore";
 import { parseMarkdownTable } from "./table/tableParser";
 
@@ -21,10 +22,45 @@ const ExternalLinkIcon = () => (
 );
 
 // Transform wiki-style links [[note]] and [[note|display]] to markdown links
-// Also transforms card/kanban links and diagram links
+// Also transforms card/kanban links, diagram links, and transclusions
 function preprocessWikiLinks(content: string): string {
-  // First, handle card links: [[card:title]] or [[card:board/title]] or [[card:title|display]]
+  // IMPORTANT: Handle transclusions FIRST (before regular links)
+  // This ensures ![[note]] is processed before [[note]]
+
+  // 1. Block transclusion: ![[note#^block-id]] or ![[note#^block-id|alias]]
   let processed = content.replace(
+    /!\[\[([^\]#|]+)#\^([a-zA-Z0-9_-]+)(?:\|([^\]]+))?\]\]/g,
+    (_, noteRef, blockId, alias) => {
+      const encodedRef = encodeURIComponent(noteRef.trim());
+      const encodedBlock = encodeURIComponent(blockId);
+      const encodedAlias = alias ? encodeURIComponent(alias.trim()) : "";
+      return `<div class="transclusion-embed" data-ref="${encodedRef}" data-block="${encodedBlock}" data-alias="${encodedAlias}"></div>`;
+    }
+  );
+
+  // 2. Full note transclusion: ![[note]] or ![[note|alias]]
+  processed = processed.replace(
+    /!\[\[([^\]#|]+)(?:\|([^\]]+))?\]\]/g,
+    (_, noteRef, alias) => {
+      const encodedRef = encodeURIComponent(noteRef.trim());
+      const encodedAlias = alias ? encodeURIComponent(alias.trim()) : "";
+      return `<div class="transclusion-embed" data-ref="${encodedRef}" data-alias="${encodedAlias}"></div>`;
+    }
+  );
+
+  // 3. Block reference link (not transclusion): [[note#^block-id]] or [[note#^block-id|display]]
+  processed = processed.replace(
+    /\[\[([^\]#|]+)#\^([a-zA-Z0-9_-]+)(?:\|([^\]]+))?\]\]/g,
+    (_, noteRef, blockId, display) => {
+      const displayText = display || `${noteRef}#^${blockId}`;
+      const encodedRef = encodeURIComponent(noteRef.trim());
+      const encodedBlock = encodeURIComponent(blockId);
+      return `[${displayText}](#blockref:${encodedRef}:${encodedBlock})`;
+    }
+  );
+
+  // Handle card links: [[card:title]] or [[card:board/title]] or [[card:title|display]]
+  processed = processed.replace(
     /\[\[card:([^\]|]+)(?:\|([^\]]+))?\]\]/g,
     (_, cardRef, display) => {
       const displayText = display || cardRef;
@@ -442,7 +478,7 @@ export function PreviewPane({ content }: PreviewPaneProps) {
           rehypePlugins={[rehypeRaw]}
           urlTransform={(url) => {
             // Keep our hash-based custom links unchanged
-            if (url.startsWith("#cardlink:") || url.startsWith("#wikilink:") || url.startsWith("#diagramlink:")) {
+            if (url.startsWith("#cardlink:") || url.startsWith("#wikilink:") || url.startsWith("#diagramlink:") || url.startsWith("#blockref:")) {
               return url;
             }
             return url;
@@ -567,6 +603,38 @@ export function PreviewPane({ content }: PreviewPaneProps) {
                 );
               }
 
+              // Check if it's a block reference link
+              if (href?.startsWith("#blockref:")) {
+                const parts = href.slice(10).split(":");
+                const noteRef = decodeURIComponent(parts[0] || "");
+                const blockId = decodeURIComponent(parts[1] || "");
+                const resolved = resolveNoteReference(noteRef);
+                const exists = resolved !== null;
+
+                return (
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleWikiLinkClick(e, noteRef);
+                      // TODO: scroll to block after navigation
+                    }}
+                    className={`
+                      cursor-pointer transition-colors
+                      ${exists
+                        ? "text-secondary-400 hover:text-secondary-300 underline decoration-dotted"
+                        : "text-red-400 hover:text-red-300 line-through opacity-70"
+                      }
+                    `}
+                    title={exists ? `Go to: ${resolved.path}#^${blockId}` : `Note not found: ${noteRef}`}
+                    {...props}
+                  >
+                    {children}
+                    <span className="text-xs text-dark-500 ml-1">^{blockId}</span>
+                  </a>
+                );
+              }
+
               // External link
               return (
                 <a
@@ -593,6 +661,30 @@ export function PreviewPane({ content }: PreviewPaneProps) {
                   {...props}
                 />
               );
+            },
+            // Custom div handler for transclusion embeds
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            div: ({ className, children, ...props }: any) => {
+              // Check if this is a transclusion embed
+              if (className === "transclusion-embed") {
+                const ref = props["data-ref"] as string | undefined;
+                const blockId = props["data-block"] as string | undefined;
+                const alias = props["data-alias"] as string | undefined;
+
+                if (!ref) return null;
+
+                return (
+                  <TransclusionRenderer
+                    reference={decodeURIComponent(ref)}
+                    blockId={blockId ? decodeURIComponent(blockId) : undefined}
+                    alias={alias ? decodeURIComponent(alias) : undefined}
+                    depth={1}
+                  />
+                );
+              }
+
+              // Default div rendering
+              return <div className={className} {...props}>{children}</div>;
             },
             // Images with size support and path resolution
             img: ({ src, alt, width, height, ...props }) => {

@@ -49,6 +49,10 @@ pub fn run() {
             commands::notes::rename_note,
             commands::notes::create_folder,
             commands::notes::set_note_archived,
+            // Transclusion commands
+            commands::notes::get_note_content_for_transclusion,
+            commands::notes::get_block_content,
+            commands::notes::list_blocks_for_note,
             // Search commands
             commands::search::search_notes,
             commands::search::search_entities,

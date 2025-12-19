@@ -123,7 +123,7 @@ pub async fn index_single_note(
             params![id, path_str, title, content, content_hash, created_at, modified_at, frontmatter, archived as i32],
         )?;
 
-        // Clear existing entities, tags, code blocks, backlinks, and card backlinks for this note
+        // Clear existing entities, tags, code blocks, backlinks, card backlinks, and blocks for this note
         conn.execute("DELETE FROM entities WHERE note_id = ?1", params![id])?;
         conn.execute("DELETE FROM tags WHERE note_id = ?1", params![id])?;
         conn.execute("DELETE FROM code_blocks WHERE note_id = ?1", params![id])?;
@@ -132,6 +132,7 @@ pub async fn index_single_note(
             "DELETE FROM card_backlinks WHERE source_id = ?1",
             params![id],
         )?;
+        conn.execute("DELETE FROM blocks WHERE note_id = ?1", params![id])?;
 
         // Extract and insert entities
         let entities = extract_entities(&content);
@@ -198,6 +199,15 @@ pub async fn index_single_note(
                     params![id, card_id, context],
                 )?;
             }
+        }
+
+        // Extract and insert block references (for transclusion)
+        let blocks = extract_blocks(&content);
+        for (block_id, block_content, line_number) in blocks {
+            conn.execute(
+                "INSERT OR REPLACE INTO blocks (note_id, block_id, content, line_number) VALUES (?1, ?2, ?3, ?4)",
+                params![id, block_id, block_content, line_number],
+            )?;
         }
 
         Ok(())
@@ -521,6 +531,27 @@ fn extract_links(content: &str) -> Vec<(String, String)> {
     }
 
     links
+}
+
+/// Extract block references from content: lines ending with ^block-id
+/// Returns: Vec<(block_id, content, line_number)>
+fn extract_blocks(content: &str) -> Vec<(String, String, i32)> {
+    let mut blocks = Vec::new();
+
+    // Match lines ending with ^block-id (alphanumeric, hyphens, underscores)
+    let block_re = Regex::new(r"^(.+?)\s+\^([a-zA-Z0-9_-]+)\s*$").unwrap();
+
+    for (line_num, line) in content.lines().enumerate() {
+        let line_num = (line_num + 1) as i32;
+
+        if let Some(cap) = block_re.captures(line) {
+            let block_content = cap[1].trim().to_string();
+            let block_id = cap[2].to_string();
+            blocks.push((block_id, block_content, line_num));
+        }
+    }
+
+    blocks
 }
 
 /// Extract card links from content: [[card:Card Title]] or [[card:Board Name/Card Title]]

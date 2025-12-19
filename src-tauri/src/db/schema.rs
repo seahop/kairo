@@ -109,6 +109,19 @@ pub fn init_schema(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> 
         CREATE INDEX IF NOT EXISTS idx_code_blocks_lang ON code_blocks(language);
         CREATE INDEX IF NOT EXISTS idx_code_blocks_note_lang ON code_blocks(note_id, language);
 
+        -- Block references (user-defined paragraph-level IDs for transclusion)
+        CREATE TABLE IF NOT EXISTS blocks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            note_id TEXT REFERENCES notes(id) ON DELETE CASCADE,
+            block_id TEXT NOT NULL,  -- The ^block-id value (e.g., "my-block")
+            content TEXT NOT NULL,   -- The block content (paragraph text)
+            line_number INTEGER NOT NULL,
+            UNIQUE(note_id, block_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_blocks_note ON blocks(note_id);
+        CREATE INDEX IF NOT EXISTS idx_blocks_block_id ON blocks(block_id);
+
         -- Kanban boards (plugin data, but core enough to include)
         CREATE TABLE IF NOT EXISTS kanban_boards (
             id TEXT PRIMARY KEY,
@@ -390,6 +403,28 @@ fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
             r#"
             ALTER TABLE diagram_boards ADD COLUMN archived INTEGER DEFAULT 0;
             CREATE INDEX IF NOT EXISTS idx_diagram_boards_archived ON diagram_boards(archived);
+            "#,
+        )?;
+    }
+
+    // Migration: Create blocks table for transclusion block references
+    let has_blocks_table = conn
+        .prepare("SELECT id FROM blocks LIMIT 0")
+        .is_ok();
+
+    if !has_blocks_table {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS blocks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id TEXT REFERENCES notes(id) ON DELETE CASCADE,
+                block_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                line_number INTEGER NOT NULL,
+                UNIQUE(note_id, block_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_blocks_note ON blocks(note_id);
+            CREATE INDEX IF NOT EXISTS idx_blocks_block_id ON blocks(block_id);
             "#,
         )?;
     }

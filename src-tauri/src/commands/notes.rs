@@ -444,3 +444,246 @@ fn update_frontmatter_archived(content: &str, archived: bool) -> String {
     // No frontmatter exists, create one
     format!("---\n{}\n---\n\n{}", archived_line, content)
 }
+
+// ============================================================================
+// Transclusion Commands
+// ============================================================================
+
+/// Result type for transcluded note content
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TranscludedNote {
+    pub content: String,
+    pub title: String,
+    pub path: String,
+    pub exists: bool,
+}
+
+/// Result type for block content
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BlockContent {
+    pub content: String,
+    pub line_number: i32,
+    pub exists: bool,
+}
+
+/// Block info for autocomplete
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BlockInfo {
+    pub block_id: String,
+    pub content: String,
+    pub line_number: i32,
+}
+
+/// Get note content for transclusion (stripped of frontmatter and title)
+#[tauri::command]
+pub fn get_note_content_for_transclusion(
+    app: AppHandle,
+    path: String,
+) -> Result<TranscludedNote, String> {
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
+
+    // Try to resolve the path - it might be a title or partial path
+    let resolved_path = resolve_note_path(&app, &vault_path, &path)?;
+
+    if let Some(note_path_str) = resolved_path {
+        let note_path = validate_vault_path(&vault_path, &note_path_str)?;
+
+        if note_path.exists() {
+            let content = fs::read_to_string(&note_path).map_err(|e| e.to_string())?;
+            let title = extract_title(&content, &note_path_str);
+            let stripped_content = strip_frontmatter_and_title(&content);
+
+            return Ok(TranscludedNote {
+                content: stripped_content,
+                title,
+                path: note_path_str,
+                exists: true,
+            });
+        }
+    }
+
+    // Note not found
+    Ok(TranscludedNote {
+        content: String::new(),
+        title: String::new(),
+        path,
+        exists: false,
+    })
+}
+
+/// Get block content by note path and block ID
+#[tauri::command]
+pub fn get_block_content(
+    app: AppHandle,
+    note_path: String,
+    block_id: String,
+) -> Result<BlockContent, String> {
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
+
+    // Resolve the note path
+    let resolved_path = resolve_note_path(&app, &vault_path, &note_path)?;
+
+    if let Some(note_path_str) = resolved_path {
+        // Look up block in database
+        let result = db::with_db(&app, |conn| {
+            // First get the note ID
+            let note_id: Result<String, _> = conn.query_row(
+                "SELECT id FROM notes WHERE path = ?1",
+                rusqlite::params![note_path_str],
+                |row| row.get(0),
+            );
+
+            if let Ok(nid) = note_id {
+                // Then get the block
+                let block: Result<(String, i32), _> = conn.query_row(
+                    "SELECT content, line_number FROM blocks WHERE note_id = ?1 AND block_id = ?2",
+                    rusqlite::params![nid, block_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                );
+
+                if let Ok((content, line_number)) = block {
+                    return Ok(BlockContent {
+                        content,
+                        line_number,
+                        exists: true,
+                    });
+                }
+            }
+
+            Ok(BlockContent {
+                content: String::new(),
+                line_number: 0,
+                exists: false,
+            })
+        });
+
+        return result.map_err(|e| e.to_string());
+    }
+
+    Ok(BlockContent {
+        content: String::new(),
+        line_number: 0,
+        exists: false,
+    })
+}
+
+/// List all block IDs in a note (for autocomplete)
+#[tauri::command]
+pub fn list_blocks_for_note(app: AppHandle, note_path: String) -> Result<Vec<BlockInfo>, String> {
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
+
+    // Resolve the note path
+    let resolved_path = resolve_note_path(&app, &vault_path, &note_path)?;
+
+    if let Some(note_path_str) = resolved_path {
+        let result = db::with_db(&app, |conn| {
+            // First get the note ID
+            let note_id: Result<String, _> = conn.query_row(
+                "SELECT id FROM notes WHERE path = ?1",
+                rusqlite::params![note_path_str],
+                |row| row.get(0),
+            );
+
+            if let Ok(nid) = note_id {
+                let mut stmt = conn.prepare(
+                    "SELECT block_id, content, line_number FROM blocks WHERE note_id = ?1 ORDER BY line_number",
+                )?;
+
+                let blocks: Vec<BlockInfo> = stmt
+                    .query_map(rusqlite::params![nid], |row| {
+                        Ok(BlockInfo {
+                            block_id: row.get(0)?,
+                            content: row.get(1)?,
+                            line_number: row.get(2)?,
+                        })
+                    })?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                return Ok(blocks);
+            }
+
+            Ok(Vec::new())
+        });
+
+        return result.map_err(|e| e.to_string());
+    }
+
+    Ok(Vec::new())
+}
+
+/// Resolve a note reference (title, path, or partial path) to an actual path
+fn resolve_note_path(
+    app: &AppHandle,
+    vault_path: &Path,
+    reference: &str,
+) -> Result<Option<String>, String> {
+    // Try exact path first (with various extensions/prefixes)
+    let candidates = vec![
+        reference.to_string(),
+        format!("{}.md", reference),
+        format!("notes/{}", reference),
+        format!("notes/{}.md", reference),
+    ];
+
+    for candidate in &candidates {
+        let full_path = vault_path.join(candidate);
+        if full_path.exists() && full_path.is_file() {
+            return Ok(Some(candidate.clone()));
+        }
+    }
+
+    // Try to find by title in the database
+    let result = db::with_db(app, |conn| {
+        // Case-insensitive title match
+        let path: Result<String, _> = conn.query_row(
+            "SELECT path FROM notes WHERE LOWER(title) = LOWER(?1) LIMIT 1",
+            rusqlite::params![reference],
+            |row| row.get(0),
+        );
+
+        if let Ok(p) = path {
+            return Ok(Some(p));
+        }
+
+        // Partial filename match (without extension)
+        let path: Result<String, _> = conn.query_row(
+            "SELECT path FROM notes WHERE path LIKE ?1 LIMIT 1",
+            rusqlite::params![format!("%/{}.md", reference)],
+            |row| row.get(0),
+        );
+
+        Ok(path.ok())
+    });
+
+    result.map_err(|e| e.to_string())
+}
+
+/// Strip frontmatter and first H1 title from content
+fn strip_frontmatter_and_title(content: &str) -> String {
+    let mut result = content.to_string();
+
+    // Strip frontmatter (--- ... ---)
+    if result.starts_with("---") {
+        let parts: Vec<&str> = result.splitn(3, "---").collect();
+        if parts.len() >= 3 {
+            result = parts[2].to_string();
+        }
+    }
+
+    // Strip first H1 heading
+    let mut lines: Vec<&str> = result.lines().collect();
+    let mut found_h1 = false;
+    lines.retain(|line| {
+        if !found_h1 && line.trim().starts_with("# ") {
+            found_h1 = true;
+            false // Remove this line
+        } else {
+            true
+        }
+    });
+
+    // Trim leading whitespace but preserve structure
+    let result = lines.join("\n");
+    result.trim_start_matches('\n').to_string()
+}

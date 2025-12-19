@@ -725,6 +725,77 @@ a[class*="hover:"] {
   @apply border-dark-700 my-6;
 }
 
+/* Transclusion blocks - embedded note content */
+.transclusion-block {
+  @apply border-l-2 pl-4 my-4 rounded-r-lg py-2;
+  border-color: rgba(99, 102, 241, 0.5);
+  background-color: rgba(23, 32, 51, 0.3);
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+
+.transclusion-header {
+  @apply flex items-center gap-2 text-xs text-dark-400 mb-2 cursor-pointer;
+  transition: color 0.15s ease;
+}
+
+.transclusion-header:hover {
+  color: #6366f1;
+}
+
+.transclusion-header svg {
+  color: rgba(99, 102, 241, 0.7);
+}
+
+.transclusion-content {
+  @apply text-sm;
+}
+
+.transclusion-content > *:first-child {
+  @apply mt-0;
+}
+
+.transclusion-content > *:last-child {
+  @apply mb-0;
+}
+
+/* Nested transclusions - slightly more indented */
+.transclusion-block .transclusion-block {
+  @apply ml-2;
+  border-color: rgba(139, 92, 246, 0.4);
+}
+
+.transclusion-block .transclusion-block .transclusion-block {
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+/* Transclusion loading state */
+.transclusion-loading {
+  @apply flex items-center gap-2 text-dark-500 text-sm py-2;
+}
+
+/* Transclusion error state */
+.transclusion-error {
+  @apply p-3 rounded-lg text-sm;
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+/* Circular reference warning */
+.transclusion-circular {
+  @apply p-3 rounded-lg text-sm;
+  background-color: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+}
+
+/* Block ID styling in source text (faded to indicate metadata) */
+.block-id-marker {
+  @apply text-xs font-mono;
+  color: rgba(139, 92, 246, 0.5);
+}
+
 /* Resizable panel handle */
 /* Force GPU layer to prevent WebKitGTK rendering artifacts (ghost lines) */
 [data-panel-group-direction="horizontal"] > [data-panel-resize-handle-id] {
