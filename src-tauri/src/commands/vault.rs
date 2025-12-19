@@ -11,14 +11,9 @@ use crate::db::with_db;
 use crate::fs::watcher::VaultWatcher;
 
 /// State for the file watcher
+#[derive(Default)]
 pub struct WatcherState {
     pub watcher: Option<VaultWatcher>,
-}
-
-impl Default for WatcherState {
-    fn default() -> Self {
-        Self { watcher: None }
-    }
 }
 
 /// Entries that should be in every vault's .gitignore

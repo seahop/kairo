@@ -152,10 +152,11 @@ pub fn resolve_note_by_alias(
     })
 }
 
+/// Alias info: (alias, path, title)
+pub type AliasInfo = (String, String, String);
+
 /// Get all aliases with their note paths (for autocomplete)
-pub fn get_all_aliases(
-    app: &AppHandle,
-) -> Result<Vec<(String, String, String)>, Box<dyn std::error::Error>> {
+pub fn get_all_aliases(app: &AppHandle) -> Result<Vec<AliasInfo>, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
         let mut stmt = conn.prepare(
             r#"

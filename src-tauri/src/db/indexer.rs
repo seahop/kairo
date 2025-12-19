@@ -364,8 +364,8 @@ fn serde_yaml_to_json(yaml: &str) -> Result<String, Box<dyn std::error::Error>> 
                         let trimmed = next_line.trim();
 
                         // Check if it's an array item (starts with -)
-                        if trimmed.starts_with('-') {
-                            let item = trimmed[1..]
+                        if let Some(stripped) = trimmed.strip_prefix('-') {
+                            let item = stripped
                                 .trim()
                                 .trim_matches('"')
                                 .trim_matches('\'')
@@ -382,11 +382,7 @@ fn serde_yaml_to_json(yaml: &str) -> Result<String, Box<dyn std::error::Error>> 
                         {
                             break;
                         }
-                        // Skip empty lines within the array
-                        else if trimmed.is_empty() {
-                            i += 1;
-                        }
-                        // Anything else (non-array nested content), skip
+                        // Skip empty lines or other nested content
                         else {
                             i += 1;
                         }
