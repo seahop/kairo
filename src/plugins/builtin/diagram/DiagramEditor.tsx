@@ -2004,10 +2004,10 @@ export function DiagramEditor() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left Sidebar - Board List & Palette */}
         <div className="w-64 border-r border-dark-700 bg-dark-800 flex flex-col">
-          {/* Board List */}
-          <div className="p-3 border-b border-dark-700">
-            <h3 className="text-xs font-semibold text-dark-400 uppercase mb-2">Diagrams</h3>
-            <div className="space-y-1 max-h-40 overflow-y-auto">
+          {/* Board List - takes available space */}
+          <div className="flex-1 min-h-0 p-3 border-b border-dark-700 flex flex-col">
+            <h3 className="text-xs font-semibold text-dark-400 uppercase mb-2 flex-shrink-0">Diagrams</h3>
+            <div className="space-y-1 overflow-y-auto flex-1 min-h-0">
               {boards
                 .filter((board) => showArchivedBoards || !board.archived)
                 .map((board) => (
@@ -2089,8 +2089,8 @@ export function DiagramEditor() {
             </label>
           </div>
 
-          {/* Color Palette */}
-          <div className="p-3 border-b border-dark-700">
+          {/* Color Palette - stays at bottom */}
+          <div className="p-3 border-b border-dark-700 flex-shrink-0">
             <h3 className="text-xs font-semibold text-dark-400 uppercase mb-2">Color</h3>
             <div className="flex flex-wrap gap-1">
               {COLOR_PALETTE.map((color) => (
@@ -2104,8 +2104,8 @@ export function DiagramEditor() {
             </div>
           </div>
 
-          {/* Shape/Icon Tabs */}
-          <div className="flex border-b border-dark-700">
+          {/* Shape/Icon Tabs - stays at bottom */}
+          <div className="flex border-b border-dark-700 flex-shrink-0">
             <button
               className={`flex-1 px-3 py-2 text-sm ${activeTab === "shapes" ? "bg-dark-700 text-white" : "text-dark-400 hover:text-white"}`}
               onClick={() => setActiveTab("shapes")}
@@ -2120,8 +2120,8 @@ export function DiagramEditor() {
             </button>
           </div>
 
-          {/* Palette Content */}
-          <div className="flex-1 overflow-y-auto p-3">
+          {/* Palette Content - sized to fit icons without scrolling */}
+          <div className="max-h-[420px] overflow-y-auto p-3 flex-shrink-0">
             {isLocked && (
               <div className="text-xs text-amber-500 bg-amber-500/10 px-2 py-1.5 rounded mb-3">
                 Unlock to add elements
