@@ -408,9 +408,7 @@ fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Migration: Create blocks table for transclusion block references
-    let has_blocks_table = conn
-        .prepare("SELECT id FROM blocks LIMIT 0")
-        .is_ok();
+    let has_blocks_table = conn.prepare("SELECT id FROM blocks LIMIT 0").is_ok();
 
     if !has_blocks_table {
         conn.execute_batch(
