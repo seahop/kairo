@@ -51,8 +51,18 @@ case "$BUILD_TYPE" in
         docker compose -f "${SCRIPT_DIR}/docker-compose.yml" run --rm kairo-dev cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
         exit 0
         ;;
+    typecheck)
+        echo -e "${YELLOW}Running TypeScript type check...${NC}"
+        docker compose -f "${SCRIPT_DIR}/docker-compose.yml" run --rm kairo-dev pnpm typecheck
+        exit 0
+        ;;
+    lint)
+        echo -e "${YELLOW}Running ESLint...${NC}"
+        docker compose -f "${SCRIPT_DIR}/docker-compose.yml" run --rm kairo-dev pnpm lint
+        exit 0
+        ;;
     *)
-        echo -e "${RED}Usage: $0 [release|dev|shell|fmt|check|clippy]${NC}"
+        echo -e "${RED}Usage: $0 [release|dev|shell|fmt|check|clippy|typecheck|lint]${NC}"
         exit 1
         ;;
 esac

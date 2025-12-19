@@ -86,11 +86,12 @@ Download the latest release for your platform from the [Releases](https://github
 
 ### Build from Source
 
+All development is done via Docker—no local Rust, Node.js, or pnpm installation required.
+
 #### Prerequisites
 
-- [Rust](https://rustup.rs/) (1.70+)
-- [Node.js](https://nodejs.org/) (18+)
-- [pnpm](https://pnpm.io/) (8+)
+- [Docker](https://docs.docker.com/get-docker/)
+- [Docker Compose](https://docs.docker.com/compose/install/)
 
 #### Development
 
@@ -99,33 +100,28 @@ Download the latest release for your platform from the [Releases](https://github
 git clone https://github.com/your-username/kairo.git
 cd kairo
 
-# Install dependencies
-pnpm install
-
-# Start development server
-pnpm tauri dev
+# Start development environment (hot-reload enabled)
+./docker/build.sh dev
 ```
 
 #### Production Build
 
 ```bash
-# Build for your platform
-pnpm tauri build
+# Build release artifacts (.deb, .AppImage, binary)
+./docker/build.sh release
 ```
 
-#### Docker Build (Linux)
+#### Other Commands
 
 ```bash
-# Build release artifacts using Docker
-./docker/build.sh release
-
-# Other options:
-./docker/build.sh dev      # Start dev environment
+./docker/build.sh dev      # Start dev environment with hot-reload
 ./docker/build.sh shell    # Open shell in build container
 ./docker/build.sh fmt      # Format Rust code
 ./docker/build.sh check    # Run cargo check
 ./docker/build.sh clippy   # Run clippy lints
 ```
+
+Build artifacts are output to the `dist/` folder.
 
 ---
 
@@ -332,10 +328,10 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ./docker/build.sh clippy
 
 # Type-check frontend
-pnpm typecheck
+./docker/build.sh typecheck
 
 # Lint frontend
-pnpm lint
+./docker/build.sh lint
 ```
 
 ---
