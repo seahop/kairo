@@ -1062,7 +1062,8 @@ pub fn list_trash(app: AppHandle) -> Result<Vec<TrashItem>, String> {
 
                             // Read title from file
                             let content = fs::read_to_string(&path).unwrap_or_default();
-                            let title = crate::commands::notes::extract_title(&content, &original_path);
+                            let title =
+                                crate::commands::notes::extract_title(&content, &original_path);
 
                             items.push(TrashItem {
                                 original_path,
@@ -1075,7 +1076,13 @@ pub fn list_trash(app: AppHandle) -> Result<Vec<TrashItem>, String> {
                 }
             }
 
-            walk_dir(&timestamp_dir, &trash_path, &timestamp_dir, deleted_at, &mut items);
+            walk_dir(
+                &timestamp_dir,
+                &trash_path,
+                &timestamp_dir,
+                deleted_at,
+                &mut items,
+            );
         }
     }
 
@@ -1087,7 +1094,10 @@ pub fn list_trash(app: AppHandle) -> Result<Vec<TrashItem>, String> {
 
 /// Restore a note from trash
 #[tauri::command]
-pub async fn restore_from_trash(app: AppHandle, trash_path: String) -> Result<NoteMetadata, String> {
+pub async fn restore_from_trash(
+    app: AppHandle,
+    trash_path: String,
+) -> Result<NoteMetadata, String> {
     let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
     let trash_folder = get_trash_path(&vault_path)?;
     let source_path = trash_folder.join(&trash_path);
@@ -1118,10 +1128,26 @@ pub async fn restore_from_trash(app: AppHandle, trash_path: String) -> Result<No
             counter += 1;
             new_dest = parent.join(format!("{} (restored {}).{}", stem, counter, ext));
         }
-        return restore_to_path(&app, &vault_path, &source_path, &new_dest, &trash_folder, &trash_path).await;
+        return restore_to_path(
+            &app,
+            &vault_path,
+            &source_path,
+            &new_dest,
+            &trash_folder,
+            &trash_path,
+        )
+        .await;
     }
 
-    restore_to_path(&app, &vault_path, &source_path, &dest_path, &trash_folder, &trash_path).await
+    restore_to_path(
+        &app,
+        &vault_path,
+        &source_path,
+        &dest_path,
+        &trash_folder,
+        &trash_path,
+    )
+    .await
 }
 
 async fn restore_to_path(

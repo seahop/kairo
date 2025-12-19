@@ -37,7 +37,7 @@ use crate::commands::notes::NoteMetadata;
 /// Clean up notes that no longer exist on disk
 fn cleanup_deleted_notes(
     app: &AppHandle,
-    vault_path: &PathBuf,
+    vault_path: &Path,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     // Get all note paths from the database
     let db_paths: Vec<String> = with_db(app, |conn| {
@@ -64,10 +64,19 @@ fn cleanup_deleted_notes(
                 // Delete all related data
                 conn.execute("DELETE FROM entities WHERE note_id = ?1", params![note_id])?;
                 conn.execute("DELETE FROM tags WHERE note_id = ?1", params![note_id])?;
-                conn.execute("DELETE FROM code_blocks WHERE note_id = ?1", params![note_id])?;
+                conn.execute(
+                    "DELETE FROM code_blocks WHERE note_id = ?1",
+                    params![note_id],
+                )?;
                 // Delete outgoing backlinks (by source_id)
-                conn.execute("DELETE FROM backlinks WHERE source_id = ?1", params![note_id])?;
-                conn.execute("DELETE FROM card_backlinks WHERE source_id = ?1", params![note_id])?;
+                conn.execute(
+                    "DELETE FROM backlinks WHERE source_id = ?1",
+                    params![note_id],
+                )?;
+                conn.execute(
+                    "DELETE FROM card_backlinks WHERE source_id = ?1",
+                    params![note_id],
+                )?;
                 conn.execute("DELETE FROM blocks WHERE note_id = ?1", params![note_id])?;
                 conn.execute("DELETE FROM aliases WHERE note_id = ?1", params![note_id])?;
                 // Delete the note itself

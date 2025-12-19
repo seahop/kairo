@@ -621,10 +621,8 @@ pub fn get_tag_notes(
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
 
-        for row in rows {
-            if let Ok((tag, path)) = row {
-                result.entry(tag).or_insert_with(Vec::new).push(path);
-            }
+        for (tag, path) in rows.flatten() {
+            result.entry(tag).or_default().push(path);
         }
 
         Ok(result)
