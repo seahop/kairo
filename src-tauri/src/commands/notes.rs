@@ -932,10 +932,6 @@ pub async fn restore_note_version(
 
 /// Label a version
 #[tauri::command]
-pub fn label_note_version(
-    app: AppHandle,
-    version_id: i64,
-    label: String,
-) -> Result<(), String> {
+pub fn label_note_version(app: AppHandle, version_id: i64, label: String) -> Result<(), String> {
     db::label_version(&app, version_id, &label).map_err(|e| e.to_string())
 }

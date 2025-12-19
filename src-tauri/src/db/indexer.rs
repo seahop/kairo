@@ -365,14 +365,21 @@ fn serde_yaml_to_json(yaml: &str) -> Result<String, Box<dyn std::error::Error>> 
 
                         // Check if it's an array item (starts with -)
                         if trimmed.starts_with('-') {
-                            let item = trimmed[1..].trim().trim_matches('"').trim_matches('\'').to_string();
+                            let item = trimmed[1..]
+                                .trim()
+                                .trim_matches('"')
+                                .trim_matches('\'')
+                                .to_string();
                             if !item.is_empty() {
                                 items.push(item);
                             }
                             i += 1;
                         }
                         // Check if we've hit another root-level key or end
-                        else if !next_line.starts_with(' ') && !next_line.starts_with('\t') && !trimmed.is_empty() {
+                        else if !next_line.starts_with(' ')
+                            && !next_line.starts_with('\t')
+                            && !trimmed.is_empty()
+                        {
                             break;
                         }
                         // Skip empty lines within the array

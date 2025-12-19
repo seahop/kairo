@@ -86,7 +86,10 @@ pub fn get_note_count(app: &AppHandle) -> Result<usize, Box<dyn std::error::Erro
 }
 
 /// Get starred status for a note
-pub fn get_note_starred(app: &AppHandle, note_id: &str) -> Result<bool, Box<dyn std::error::Error>> {
+pub fn get_note_starred(
+    app: &AppHandle,
+    note_id: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
         let starred: i32 = conn
             .query_row(
