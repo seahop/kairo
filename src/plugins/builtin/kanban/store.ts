@@ -163,7 +163,8 @@ interface KanbanState {
 
   // Template actions
   loadCustomTemplates: () => Promise<void>;
-  saveCustomTemplate: (template: Omit<CardTemplate, "id">) => Promise<void>;
+  saveCustomTemplate: (template: Omit<CardTemplate, "id"> & { id?: string }) => Promise<void>;
+  updateCustomTemplate: (templateId: string, updates: Partial<Omit<CardTemplate, "id" | "isBuiltin">>) => Promise<void>;
   deleteCustomTemplate: (templateId: string) => Promise<void>;
   selectTemplate: (templateId: string | null) => void;
   getSelectedTemplate: () => CardTemplate | null;
@@ -797,11 +798,29 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     }
   },
 
-  saveCustomTemplate: async (template: Omit<CardTemplate, "id">) => {
-    const id = `custom-${Date.now()}`;
+  saveCustomTemplate: async (template: Omit<CardTemplate, "id"> & { id?: string }) => {
+    const id = template.id || `custom-${Date.now()}`;
     const newTemplate: CardTemplate = { ...template, id };
     const { customTemplates } = get();
     const updated = [...customTemplates, newTemplate];
+
+    try {
+      await invoke("write_plugin_data", {
+        pluginId: "kanban",
+        key: TEMPLATE_STORAGE_KEY,
+        data: JSON.stringify(updated),
+      });
+      set({ customTemplates: updated });
+    } catch (error) {
+      set({ error: String(error) });
+    }
+  },
+
+  updateCustomTemplate: async (templateId: string, updates: Partial<Omit<CardTemplate, "id" | "isBuiltin">>) => {
+    const { customTemplates } = get();
+    const updated = customTemplates.map((t) =>
+      t.id === templateId ? { ...t, ...updates } : t
+    );
 
     try {
       await invoke("write_plugin_data", {
@@ -839,17 +858,20 @@ export const useKanbanStore = create<KanbanState>((set, get) => ({
     const { selectedTemplateId, customTemplates } = get();
     if (!selectedTemplateId) return null;
 
-    // Check built-in templates first
-    const builtin = BUILTIN_TEMPLATES.find((t) => t.id === selectedTemplateId);
-    if (builtin) return builtin;
+    // Check custom templates first (they can override built-ins)
+    const custom = customTemplates.find((t) => t.id === selectedTemplateId);
+    if (custom) return custom;
 
-    // Check custom templates
-    return customTemplates.find((t) => t.id === selectedTemplateId) || null;
+    // Then check built-in templates
+    return BUILTIN_TEMPLATES.find((t) => t.id === selectedTemplateId) || null;
   },
 
   getAllTemplates: () => {
     const { customTemplates } = get();
-    return [...BUILTIN_TEMPLATES, ...customTemplates];
+    // Custom templates with the same ID override built-in templates
+    const customIds = new Set(customTemplates.map(t => t.id));
+    const filteredBuiltin = BUILTIN_TEMPLATES.filter(t => !customIds.has(t.id));
+    return [...filteredBuiltin, ...customTemplates];
   },
 
   // User identity actions (stored in .kairo-user file, gitignored)

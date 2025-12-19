@@ -4,6 +4,7 @@ import { CardDetailPanel } from "./CardDetailPanel";
 import { DatePicker } from "../../../components/common/DatePicker";
 import { Select, SelectOption } from "../../../components/common/Select";
 import { TemplateSelector } from "./components/TemplateSelector";
+import { TemplateManager } from "./components/TemplateManager";
 import { CardTemplate } from "./templates";
 import { ExtensionTitleBar, DropdownItem } from "../../../components/layout/ExtensionTitleBar";
 import { LinkContextMenu, useContextMenu } from "../../../components/common/LinkContextMenu";
@@ -743,6 +744,7 @@ export function KanbanBoard() {
 
   const [, setDraggedCard] = useState<string | null>(null);
   const [showMembersPanel, setShowMembersPanel] = useState(false);
+  const [showTemplateManager, setShowTemplateManager] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
   const membersPanelRef = useRef<HTMLDivElement>(null);
 
@@ -1012,6 +1014,7 @@ export function KanbanBoard() {
         }
       }},
     ] : []),
+    { label: "Manage Templates", onClick: () => setShowTemplateManager(true), divider: !currentBoard },
   ];
 
   return (
@@ -1388,6 +1391,14 @@ export function KanbanBoard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Template Manager Modal */}
+      {showTemplateManager && (
+        <TemplateManager
+          isOpen={showTemplateManager}
+          onClose={() => setShowTemplateManager(false)}
+        />
       )}
     </>
   );

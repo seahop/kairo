@@ -22,6 +22,13 @@ export interface Note {
   created_at: number;
 }
 
+export interface TrashItem {
+  original_path: string;
+  trash_path: string;
+  title: string;
+  deleted_at: number;
+}
+
 interface NoteState {
   notes: NoteMetadata[];
   currentNote: Note | null;
@@ -79,6 +86,17 @@ interface NoteState {
   setSecondaryEditorContent: (content: string) => void;
   saveSecondaryNote: () => Promise<void>;
   swapPanes: () => void;
+
+  // Trash state
+  trashItems: TrashItem[];
+  isTrashLoading: boolean;
+
+  // Trash actions
+  loadTrash: () => Promise<void>;
+  moveToTrash: (path: string) => Promise<void>;
+  restoreFromTrash: (trashPath: string) => Promise<void>;
+  permanentlyDelete: (trashPath: string) => Promise<void>;
+  emptyTrash: () => Promise<number>;
 }
 
 export const useNoteStore = create<NoteState>((set, get) => ({
@@ -103,6 +121,10 @@ export const useNoteStore = create<NoteState>((set, get) => ({
 
   // Archive visibility
   showArchived: false,
+
+  // Trash state
+  trashItems: [],
+  isTrashLoading: false,
 
   loadNotes: async () => {
     set({ isLoading: true, error: null });
@@ -313,26 +335,8 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   },
 
   deleteNote: async (path: string) => {
-    try {
-      // Get note info before deletion for the hook
-      const { notes, currentNote } = get();
-      const noteToDelete = notes.find(n => n.path === path);
-
-      await invoke("delete_note", { path });
-
-      // Trigger hook for extensions
-      triggerHook("onNoteDelete", { path, note: noteToDelete });
-
-      // If this was the current note, close it
-      if (currentNote?.path === path) {
-        set({ currentNote: null, editorContent: "", hasUnsavedChanges: false });
-      }
-
-      // Refresh notes list
-      get().loadNotes();
-    } catch (error) {
-      set({ error: String(error) });
-    }
+    // Use moveToTrash for soft delete
+    await get().moveToTrash(path);
   },
 
   renameNote: async (oldPath: string, newPath: string) => {
@@ -624,5 +628,74 @@ export const useNoteStore = create<NoteState>((set, get) => ({
 
     set({ isNavigating: true, navigationIndex: navigationIndex + 1 });
     await get().openNote(nextPath);
+  },
+
+  // Trash actions
+  loadTrash: async () => {
+    set({ isTrashLoading: true });
+    try {
+      const trashItems = await invoke<TrashItem[]>("list_trash");
+      set({ trashItems, isTrashLoading: false });
+    } catch (error) {
+      set({ error: String(error), isTrashLoading: false });
+    }
+  },
+
+  moveToTrash: async (path: string) => {
+    try {
+      // Get note info before moving for the hook
+      const { notes, currentNote } = get();
+      const noteToDelete = notes.find(n => n.path === path);
+
+      await invoke<TrashItem>("move_to_trash", { path });
+
+      // Trigger hook for extensions
+      triggerHook("onNoteDelete", { path, note: noteToDelete });
+
+      // If this was the current note, close it
+      if (currentNote?.path === path) {
+        set({ currentNote: null, editorContent: "", hasUnsavedChanges: false });
+      }
+
+      // Refresh notes and trash lists
+      get().loadNotes();
+      get().loadTrash();
+    } catch (error) {
+      set({ error: String(error) });
+    }
+  },
+
+  restoreFromTrash: async (trashPath: string) => {
+    try {
+      await invoke<NoteMetadata>("restore_from_trash", { trashPath });
+
+      // Refresh notes and trash lists
+      get().loadNotes();
+      get().loadTrash();
+    } catch (error) {
+      set({ error: String(error) });
+    }
+  },
+
+  permanentlyDelete: async (trashPath: string) => {
+    try {
+      await invoke("permanently_delete_from_trash", { trashPath });
+
+      // Refresh trash list
+      get().loadTrash();
+    } catch (error) {
+      set({ error: String(error) });
+    }
+  },
+
+  emptyTrash: async () => {
+    try {
+      const count = await invoke<number>("empty_trash");
+      set({ trashItems: [] });
+      return count;
+    } catch (error) {
+      set({ error: String(error) });
+      return 0;
+    }
   },
 }));

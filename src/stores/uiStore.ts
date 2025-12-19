@@ -48,6 +48,13 @@ interface UIState {
   sidePaneContent: SidePaneContent;
   sidePaneWidth: number;
 
+  // Editor settings
+  spellcheckEnabled: boolean;
+
+  // Reading mode settings
+  readingFontSize: 'sm' | 'base' | 'lg' | 'xl';
+  readingWidth: 'narrow' | 'medium' | 'wide' | 'full';
+
   // Actions
   setSidebarWidth: (width: number) => void;
   toggleSidebar: () => void;
@@ -64,6 +71,10 @@ interface UIState {
   openSidePane: (content: SidePaneContent) => void;
   closeSidePane: () => void;
   setSidePaneWidth: (width: number) => void;
+  setSpellcheckEnabled: (enabled: boolean) => void;
+  toggleSpellcheck: () => void;
+  setReadingFontSize: (size: 'sm' | 'base' | 'lg' | 'xl') => void;
+  setReadingWidth: (width: 'narrow' | 'medium' | 'wide' | 'full') => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -80,6 +91,9 @@ export const useUIStore = create<UIState>((set) => ({
   mainViewMode: 'notes',
   sidePaneContent: null,
   sidePaneWidth: 350,
+  spellcheckEnabled: true,
+  readingFontSize: 'base',
+  readingWidth: 'medium',
 
   // Actions
   setSidebarWidth: (width: number) => set({ sidebarWidth: width }),
@@ -120,4 +134,13 @@ export const useUIStore = create<UIState>((set) => ({
   closeSidePane: () => set({ sidePaneContent: null }),
 
   setSidePaneWidth: (width: number) => set({ sidePaneWidth: width }),
+
+  setSpellcheckEnabled: (enabled: boolean) => set({ spellcheckEnabled: enabled }),
+
+  toggleSpellcheck: () =>
+    set((state) => ({ spellcheckEnabled: !state.spellcheckEnabled })),
+
+  setReadingFontSize: (size) => set({ readingFontSize: size }),
+
+  setReadingWidth: (width) => set({ readingWidth: width }),
 }));

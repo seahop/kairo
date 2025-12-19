@@ -43,36 +43,67 @@ let pluginsInitialized = false;
 
 // Keyboard Shortcuts Modal
 function ShortcutsModal({ onClose }: { onClose: () => void }) {
-  const shortcuts = [
-    { key: "Ctrl+K", action: "Command Palette" },
-    { key: "Ctrl+P", action: "Command Palette" },
-    { key: "Ctrl+Shift+F", action: "Global Search" },
-    { key: "Ctrl+N", action: "New Note" },
-    { key: "Ctrl+Shift+N", action: "New Note (Templates)" },
-    { key: "Ctrl+D", action: "Daily Note" },
-    { key: "Ctrl+S", action: "Save Note" },
-    { key: "Ctrl+B", action: "Toggle Sidebar" },
-    { key: "Ctrl+Shift+V", action: "Cycle View Mode" },
-    { key: "Ctrl+Shift+G", action: "Graph View" },
-    { key: "Ctrl+G", action: "Local Graph" },
-    { key: "Ctrl+Shift+K", action: "Kanban Board" },
-    { key: "Ctrl+Shift+D", action: "Diagram Editor" },
-    { key: "Ctrl+Shift+P", action: "Git Pull" },
-    { key: "Ctrl+Shift+C", action: "Git Commit" },
-    { key: "Ctrl+Shift+U", action: "Git Push" },
-    { key: "Ctrl+Click", action: "Follow Wiki Link" },
-    { key: "Escape", action: "Close Modal" },
+  const shortcutGroups = [
+    {
+      title: "General",
+      shortcuts: [
+        { key: "Ctrl+K / Ctrl+P", action: "Command Palette" },
+        { key: "Ctrl+Shift+F", action: "Global Search" },
+        { key: "Ctrl+B", action: "Toggle Sidebar" },
+        { key: "Ctrl+/", action: "Keyboard Shortcuts" },
+        { key: "Escape", action: "Close Modal / Exit View" },
+      ],
+    },
+    {
+      title: "Notes",
+      shortcuts: [
+        { key: "Ctrl+N", action: "New Note" },
+        { key: "Ctrl+Shift+N", action: "New Note (Templates)" },
+        { key: "Ctrl+D", action: "Daily Note" },
+        { key: "Ctrl+S", action: "Save Note" },
+        { key: "Ctrl+Shift+V", action: "Cycle View Mode" },
+        { key: "Ctrl+Shift+H", action: "Version History" },
+        { key: "Alt+Left", action: "Navigate Back" },
+        { key: "Alt+Right", action: "Navigate Forward" },
+        { key: "Ctrl+Click", action: "Follow Wiki Link" },
+      ],
+    },
+    {
+      title: "Views",
+      shortcuts: [
+        { key: "Ctrl+Shift+G", action: "Graph View" },
+        { key: "Ctrl+G", action: "Local Graph" },
+        { key: "Ctrl+Shift+K", action: "Kanban Board" },
+        { key: "Ctrl+Shift+D", action: "Diagram Editor" },
+        { key: "Ctrl+Shift+S", action: "Snippets Library" },
+      ],
+    },
+    {
+      title: "Git",
+      shortcuts: [
+        { key: "Ctrl+Shift+P", action: "Git Pull" },
+        { key: "Ctrl+Shift+C", action: "Git Commit" },
+        { key: "Ctrl+Shift+U", action: "Git Push" },
+      ],
+    },
   ];
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={onClose}>
-      <div className="bg-dark-900 rounded-lg p-6 w-full max-w-md border border-dark-700" onClick={e => e.stopPropagation()}>
+      <div className="bg-dark-900 rounded-lg p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto border border-dark-700" onClick={e => e.stopPropagation()}>
         <h2 className="text-lg font-semibold text-dark-100 mb-4">Keyboard Shortcuts</h2>
-        <div className="space-y-2">
-          {shortcuts.map((s, i) => (
-            <div key={i} className="flex justify-between text-sm">
-              <span className="text-dark-400">{s.action}</span>
-              <kbd className="px-2 py-0.5 bg-dark-800 rounded text-dark-200 text-xs">{s.key}</kbd>
+        <div className="space-y-4">
+          {shortcutGroups.map((group) => (
+            <div key={group.title}>
+              <h3 className="text-xs font-semibold text-dark-500 uppercase mb-2">{group.title}</h3>
+              <div className="space-y-1.5">
+                {group.shortcuts.map((s, i) => (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span className="text-dark-400">{s.action}</span>
+                    <kbd className="px-2 py-0.5 bg-dark-800 rounded text-dark-200 text-xs font-mono">{s.key}</kbd>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
@@ -292,6 +323,31 @@ function App() {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "N") {
         e.preventDefault();
         openModal("create-note");
+      }
+
+      // Ctrl/Cmd + N: Quick new note (no template)
+      if ((e.ctrlKey || e.metaKey) && e.key === "n" && !e.shiftKey) {
+        e.preventDefault();
+        const timestamp = Date.now();
+        createNote(`notes/new-note-${timestamp}.md`);
+      }
+
+      // Ctrl/Cmd + B: Toggle sidebar
+      if ((e.ctrlKey || e.metaKey) && e.key === "b" && !e.shiftKey) {
+        e.preventDefault();
+        toggleSidebar();
+      }
+
+      // Ctrl/Cmd + Shift + V: Cycle editor view mode
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "V") {
+        e.preventDefault();
+        cycleEditorViewMode();
+      }
+
+      // Ctrl/Cmd + /: Show keyboard shortcuts
+      if ((e.ctrlKey || e.metaKey) && e.key === "/") {
+        e.preventDefault();
+        setShortcutsOpen(true);
       }
 
       // Escape: Close modals or return to notes view

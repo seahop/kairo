@@ -9,8 +9,10 @@ import { tags } from "@lezer/highlight";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { completionKeymap, startCompletion } from "@codemirror/autocomplete";
 import { useNoteStore } from "@/stores/noteStore";
+import { useUIStore } from "@/stores/uiStore";
 import { kairoAutocompletion, autocompleteTheme } from "./autocomplete";
 import { tableDetectionPlugin, tableTheme, tableKeymap } from "./table";
+import { spellCheckExtension } from "./spellcheck";
 
 // Custom plugin that triggers autocomplete on specific patterns
 // Simplified approach: check document state directly, not what was inserted
@@ -187,6 +189,7 @@ export function MarkdownPane() {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const { currentNote, editorContent, setEditorContent, openNoteByReference } = useNoteStore();
+  const spellcheckEnabled = useUIStore((state) => state.spellcheckEnabled);
 
   // Handle Ctrl+Click to follow wiki-links
   const handleLinkClick = useCallback((view: EditorView, event: MouseEvent) => {
@@ -282,6 +285,9 @@ export function MarkdownPane() {
         EditorView.domEventHandlers({
           click: (event, view) => handleLinkClick(view, event),
         }),
+
+        // JavaScript-based spell checking (works on all platforms)
+        spellCheckExtension(spellcheckEnabled),
       ],
     });
 
@@ -298,7 +304,7 @@ export function MarkdownPane() {
     return () => {
       view.destroy();
     };
-  }, [currentNote?.id, handleLinkClick]); // Only recreate when note changes
+  }, [currentNote?.id, handleLinkClick, spellcheckEnabled]); // Recreate when note or spellcheck changes
 
   // Update content when it changes externally
   useEffect(() => {

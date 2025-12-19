@@ -1,4 +1,5 @@
 import { CompletionContext, CompletionResult, Completion, autocompletion, startCompletion } from "@codemirror/autocomplete";
+import { EditorView } from "@codemirror/view";
 import { invoke } from "@tauri-apps/api/core";
 import { useNoteStore, NoteMetadata } from "@/stores/noteStore";
 
@@ -441,41 +442,212 @@ export async function kairoCompletions(context: CompletionContext): Promise<Comp
   return null;
 }
 
-// Table templates for /table command
-const TABLE_TEMPLATES = [
+// Slash command definitions
+interface SlashCommand {
+  label: string;
+  detail: string;
+  category: 'heading' | 'list' | 'callout' | 'block' | 'table' | 'insert' | 'format';
+  template: string | (() => string);
+  icon?: string;
+}
+
+const SLASH_COMMANDS: SlashCommand[] = [
+  // Headings
+  { label: "/h1", detail: "Heading 1", category: "heading", template: "# ", icon: "H1" },
+  { label: "/h2", detail: "Heading 2", category: "heading", template: "## ", icon: "H2" },
+  { label: "/h3", detail: "Heading 3", category: "heading", template: "### ", icon: "H3" },
+  { label: "/h4", detail: "Heading 4", category: "heading", template: "#### ", icon: "H4" },
+  { label: "/h5", detail: "Heading 5", category: "heading", template: "##### ", icon: "H5" },
+  { label: "/h6", detail: "Heading 6", category: "heading", template: "###### ", icon: "H6" },
+
+  // Lists
+  { label: "/list", detail: "Bullet list", category: "list", template: "- Item 1\n- Item 2\n- Item 3", icon: "•" },
+  { label: "/numbered", detail: "Numbered list", category: "list", template: "1. First item\n2. Second item\n3. Third item", icon: "1." },
+  { label: "/todo", detail: "Task list", category: "list", template: "- [ ] Task 1\n- [ ] Task 2\n- [ ] Task 3", icon: "☐" },
+  { label: "/toggle", detail: "Toggle list (nested)", category: "list", template: "- Parent item\n  - [ ] Sub-task 1\n  - [ ] Sub-task 2", icon: "▸" },
+
+  // Callouts (Obsidian-compatible)
+  { label: "/note", detail: "Note callout", category: "callout", template: "> [!note]\n> Your note here", icon: "📝" },
+  { label: "/tip", detail: "Tip callout", category: "callout", template: "> [!tip]\n> Your tip here", icon: "💡" },
+  { label: "/info", detail: "Info callout", category: "callout", template: "> [!info]\n> Your info here", icon: "ℹ️" },
+  { label: "/warning", detail: "Warning callout", category: "callout", template: "> [!warning]\n> Your warning here", icon: "⚠️" },
+  { label: "/danger", detail: "Danger callout", category: "callout", template: "> [!danger]\n> Critical warning here", icon: "🚨" },
+  { label: "/success", detail: "Success callout", category: "callout", template: "> [!success]\n> Success message here", icon: "✅" },
+  { label: "/question", detail: "Question callout", category: "callout", template: "> [!question]\n> Your question here", icon: "❓" },
+  { label: "/quote", detail: "Quote callout", category: "callout", template: "> [!quote]\n> Your quote here", icon: "💬" },
+  { label: "/example", detail: "Example callout", category: "callout", template: "> [!example]\n> Your example here", icon: "📋" },
+  { label: "/bug", detail: "Bug callout", category: "callout", template: "> [!bug]\n> Bug description here", icon: "🐛" },
+  { label: "/abstract", detail: "Abstract/Summary", category: "callout", template: "> [!abstract]\n> Summary here", icon: "📑" },
+
+  // Code blocks
+  { label: "/code", detail: "Inline code", category: "block", template: "`code`", icon: "</>" },
+  { label: "/codeblock", detail: "Code block", category: "block", template: "```\n\n```", icon: "{ }" },
+  { label: "/js", detail: "JavaScript code", category: "block", template: "```javascript\n\n```", icon: "JS" },
+  { label: "/ts", detail: "TypeScript code", category: "block", template: "```typescript\n\n```", icon: "TS" },
+  { label: "/python", detail: "Python code", category: "block", template: "```python\n\n```", icon: "🐍" },
+  { label: "/rust", detail: "Rust code", category: "block", template: "```rust\n\n```", icon: "🦀" },
+  { label: "/bash", detail: "Bash/Shell code", category: "block", template: "```bash\n\n```", icon: "$" },
+  { label: "/sql", detail: "SQL code", category: "block", template: "```sql\n\n```", icon: "DB" },
+  { label: "/json", detail: "JSON code", category: "block", template: "```json\n\n```", icon: "{}" },
+  { label: "/html", detail: "HTML code", category: "block", template: "```html\n\n```", icon: "<>" },
+  { label: "/css", detail: "CSS code", category: "block", template: "```css\n\n```", icon: "#" },
+  { label: "/math", detail: "Math block (LaTeX)", category: "block", template: "$$\n\n$$", icon: "∑" },
+
+  // Tables
   {
     label: "/table",
-    detail: "Insert 3x3 table",
+    detail: "3x3 table",
+    category: "table",
     template: `| Header 1 | Header 2 | Header 3 |
 |----------|----------|----------|
 | Cell 1   | Cell 2   | Cell 3   |
 | Cell 4   | Cell 5   | Cell 6   |
 | Cell 7   | Cell 8   | Cell 9   |`,
+    icon: "⊞"
   },
   {
     label: "/table2",
-    detail: "Insert 2 column table",
+    detail: "2 column table",
+    category: "table",
     template: `| Column 1 | Column 2 |
 |----------|----------|
 | Data 1   | Data 2   |
 | Data 3   | Data 4   |`,
+    icon: "⊞"
   },
   {
     label: "/table4",
-    detail: "Insert 4 column table",
+    detail: "4 column table",
+    category: "table",
     template: `| Header 1 | Header 2 | Header 3 | Header 4 |
 |----------|----------|----------|----------|
 | Cell 1   | Cell 2   | Cell 3   | Cell 4   |
 | Cell 5   | Cell 6   | Cell 7   | Cell 8   |`,
+    icon: "⊞"
   },
   {
-    label: "/checklist",
-    detail: "Insert task table",
+    label: "/tasktable",
+    detail: "Task tracking table",
+    category: "table",
     template: `| Task | Status | Priority |
 |------|--------|----------|
 | Task 1 | Pending | High |
 | Task 2 | Done | Medium |
 | Task 3 | Pending | Low |`,
+    icon: "☑"
+  },
+
+  // Insert elements
+  { label: "/hr", detail: "Horizontal rule", category: "insert", template: "\n---\n", icon: "―" },
+  { label: "/divider", detail: "Divider line", category: "insert", template: "\n---\n", icon: "―" },
+  { label: "/br", detail: "Line break", category: "insert", template: "\n\n", icon: "↵" },
+  { label: "/blockquote", detail: "Block quote", category: "insert", template: "> ", icon: "❝" },
+  { label: "/link", detail: "Hyperlink", category: "insert", template: "[text](url)", icon: "🔗" },
+  { label: "/image", detail: "Image", category: "insert", template: "![alt text](image-url)", icon: "🖼️" },
+  { label: "/wikilink", detail: "Wiki link", category: "insert", template: "[[", icon: "📎" },
+  { label: "/embed", detail: "Embed note", category: "insert", template: "![[", icon: "📄" },
+
+  // Date/Time inserts (dynamic)
+  {
+    label: "/date",
+    detail: "Insert current date",
+    category: "insert",
+    template: () => new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+    icon: "📅"
+  },
+  {
+    label: "/today",
+    detail: "Insert today (YYYY-MM-DD)",
+    category: "insert",
+    template: () => new Date().toISOString().split('T')[0],
+    icon: "📅"
+  },
+  {
+    label: "/time",
+    detail: "Insert current time",
+    category: "insert",
+    template: () => new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+    icon: "⏰"
+  },
+  {
+    label: "/datetime",
+    detail: "Insert date and time",
+    category: "insert",
+    template: () => new Date().toLocaleString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    icon: "📅"
+  },
+  {
+    label: "/timestamp",
+    detail: "Insert ISO timestamp",
+    category: "insert",
+    template: () => new Date().toISOString(),
+    icon: "🕐"
+  },
+
+  // Formatting
+  { label: "/bold", detail: "Bold text", category: "format", template: "**text**", icon: "B" },
+  { label: "/italic", detail: "Italic text", category: "format", template: "*text*", icon: "I" },
+  { label: "/strike", detail: "Strikethrough", category: "format", template: "~~text~~", icon: "S̶" },
+  { label: "/highlight", detail: "Highlight text", category: "format", template: "==text==", icon: "🖍️" },
+  { label: "/sub", detail: "Subscript", category: "format", template: "~text~", icon: "₂" },
+  { label: "/sup", detail: "Superscript", category: "format", template: "^text^", icon: "²" },
+
+  // Templates
+  {
+    label: "/meeting",
+    detail: "Meeting notes template",
+    category: "insert",
+    template: () => `## Meeting Notes - ${new Date().toLocaleDateString()}
+
+**Attendees:**
+
+**Agenda:**
+1.
+
+**Discussion:**
+
+**Action Items:**
+- [ ]
+
+**Next Steps:**
+`,
+    icon: "👥"
+  },
+  {
+    label: "/daily",
+    detail: "Daily note template",
+    category: "insert",
+    template: () => `# ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+
+## Tasks
+- [ ]
+
+## Notes
+
+## Journal
+
+`,
+    icon: "📓"
+  },
+  {
+    label: "/project",
+    detail: "Project template",
+    category: "insert",
+    template: `# Project Name
+
+## Overview
+
+## Goals
+- [ ]
+
+## Timeline
+
+## Resources
+
+## Notes
+
+`,
+    icon: "📁"
   },
 ];
 
@@ -488,22 +660,59 @@ function syncCompletions(context: CompletionContext): CompletionResult | null {
   // Trigger cache refresh in background (won't block)
   refreshCache();
 
-  // Check for /table or / commands at start of line or after whitespace
+  // Check for / commands at start of line or after whitespace
   const slashMatch = textBeforeCursor.match(/(^|\s)(\/\w*)$/);
   if (slashMatch) {
     const query = slashMatch[2].toLowerCase();
     const from = line.from + slashMatch.index! + slashMatch[1].length;
 
-    const matches = TABLE_TEMPLATES.filter(t => t.label.toLowerCase().startsWith(query));
-    if (matches.length > 0) {
+    // Filter commands that match the query
+    const matches = SLASH_COMMANDS.filter(cmd => cmd.label.toLowerCase().startsWith(query));
+
+    if (matches.length > 0 || query === "/") {
+      // Group and sort commands: exact match first, then by category, then alphabetically
+      const sortedMatches = (matches.length > 0 ? matches : SLASH_COMMANDS).sort((a, b) => {
+        // Exact match gets priority
+        if (a.label.toLowerCase() === query) return -1;
+        if (b.label.toLowerCase() === query) return 1;
+        // Sort by category priority
+        const categoryOrder = { heading: 0, list: 1, callout: 2, block: 3, table: 4, insert: 5, format: 6 };
+        const catDiff = categoryOrder[a.category] - categoryOrder[b.category];
+        if (catDiff !== 0) return catDiff;
+        // Within category, sort alphabetically
+        return a.label.localeCompare(b.label);
+      }).slice(0, 25); // Limit results
+
       return {
         from: from,
-        options: matches.map(t => ({
-          label: t.label,
-          detail: t.detail,
-          type: "function" as const,
-          apply: t.template,
-        })),
+        options: sortedMatches.map(cmd => {
+          // For static templates, use string apply (more reliable with keyboard)
+          // For dynamic templates (functions), use function apply
+          if (typeof cmd.template === 'string') {
+            return {
+              label: cmd.label,
+              detail: `${cmd.icon ? cmd.icon + ' ' : ''}${cmd.detail}`,
+              type: "function" as const,
+              apply: cmd.template,
+            };
+          } else {
+            // Store the function reference to help TypeScript narrow the type
+            const templateFn = cmd.template as () => string;
+            return {
+              label: cmd.label,
+              detail: `${cmd.icon ? cmd.icon + ' ' : ''}${cmd.detail}`,
+              type: "function" as const,
+              apply: (view: EditorView, _completion: Completion, from: number, to: number) => {
+                const content = templateFn();
+                view.dispatch({
+                  changes: { from, to, insert: content },
+                  selection: { anchor: from + content.length },
+                });
+              },
+            };
+          }
+        }),
+        validFor: /^\/\w*$/,
       };
     }
   }
@@ -760,7 +969,7 @@ export const kairoAutocompletion = autocompletion({
   override: [syncCompletions],
   activateOnTyping: true,
   activateOnTypingDelay: 50, // Shorter delay
-  maxRenderedOptions: 20,
+  maxRenderedOptions: 25, // Increased for slash commands
   icons: true,
   optionClass: (completion) => {
     if (completion.type === "text") return "cm-completion-note";
@@ -768,6 +977,7 @@ export const kairoAutocompletion = autocompletion({
     if (completion.type === "namespace") return "cm-completion-diagram";
     if (completion.type === "keyword") return "cm-completion-tag";
     if (completion.type === "variable") return "cm-completion-mention";
+    if (completion.type === "function") return "cm-completion-slash";
     return "";
   },
 });
@@ -828,6 +1038,16 @@ export const autocompleteTheme = {
     content: "'@'",
     color: "#22c55e",
     fontWeight: "bold",
+  },
+  ".cm-completion-slash .cm-completionIcon::after": {
+    content: "'/'",
+    color: "#a78bfa",
+    fontWeight: "bold",
+  },
+  ".cm-completion-slash .cm-completionLabel": {
+    color: "#c4b5fd",
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: "12px",
   },
 };
 

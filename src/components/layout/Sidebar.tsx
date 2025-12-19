@@ -3,6 +3,8 @@ import { useNoteStore, NoteMetadata } from "@/stores/noteStore";
 import { useVaultStore } from "@/stores/vaultStore";
 import { useUIStore } from "@/stores/uiStore";
 import { useContextMenuStore, ContextMenuContext } from "@/plugins/api/contextMenu";
+import { TrashModal } from "@/components/common/TrashModal";
+import { TagPane } from "@/components/layout/TagPane";
 import clsx from "clsx";
 
 // Context menu state
@@ -153,7 +155,7 @@ function NoteContextMenu({
       )}
       <div className="border-t border-dark-700 my-1" />
       <button
-        className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2"
+        className="w-full px-4 py-2 text-left text-sm text-orange-400 hover:bg-orange-500/10 hover:text-orange-300 flex items-center gap-2"
         onClick={() => {
           onDelete(state.note!);
           onClose();
@@ -162,7 +164,7 @@ function NoteContextMenu({
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
         </svg>
-        Delete
+        Move to Trash
         <span className="ml-auto text-xs text-dark-500">Del</span>
       </button>
     </div>
@@ -208,6 +210,18 @@ const GraphIcon = () => (
 const HealthIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const TrashIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+  </svg>
+);
+
+const TagsIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
   </svg>
 );
 
@@ -398,8 +412,12 @@ export function Sidebar() {
   const [selectedNote, setSelectedNote] = useState<NoteMetadata | null>(null);
   const [renamingNote, setRenamingNote] = useState<NoteMetadata | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [showTrashModal, setShowTrashModal] = useState(false);
+  const [sidebarView, setSidebarView] = useState<"files" | "tags">("files");
   const renameInputRef = useRef<HTMLInputElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
+
+  const trashItemCount = useNoteStore((state) => state.trashItems.length);
 
   useEffect(() => {
     if (vault) {
@@ -457,11 +475,11 @@ export function Sidebar() {
 
   const handleDeleteNote = (note: NoteMetadata) => {
     showConfirmDialog({
-      title: "Delete Note",
-      message: `Are you sure you want to delete "${note.title}"? This action cannot be undone.`,
-      confirmText: "Delete",
+      title: "Move to Trash",
+      message: `Move "${note.title}" to trash? You can restore it later from the trash.`,
+      confirmText: "Move to Trash",
       cancelText: "Cancel",
-      variant: "danger",
+      variant: "warning",
       onConfirm: () => {
         deleteNote(note.path);
         setSelectedNote(null);
@@ -555,6 +573,27 @@ export function Sidebar() {
         >
           <HealthIcon />
         </button>
+        <button
+          className={clsx("btn-icon", sidebarView === "tags" && "text-accent-primary")}
+          title="Tags"
+          onClick={() => setSidebarView(sidebarView === "tags" ? "files" : "tags")}
+        >
+          <TagsIcon />
+        </button>
+        <div className="flex-1" />
+        <button
+          className="btn-icon relative"
+          title="Trash"
+          onClick={() => setShowTrashModal(true)}
+        >
+          <TrashIcon />
+          {trashItemCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">
+              {trashItemCount > 9 ? "9+" : trashItemCount}
+            </span>
+          )}
+        </button>
+        <TrashModal isOpen={showTrashModal} onClose={() => setShowTrashModal(false)} />
       </div>
     );
   }
@@ -636,9 +675,45 @@ export function Sidebar() {
           <HealthIcon />
           <span>Vault Health</span>
         </button>
+
+        {/* Files / Tags toggle */}
+        <div className="flex bg-dark-800 rounded-lg p-0.5 mt-3">
+          <button
+            className={clsx(
+              "flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors",
+              sidebarView === "files"
+                ? "bg-dark-700 text-dark-100"
+                : "text-dark-400 hover:text-dark-200"
+            )}
+            onClick={() => setSidebarView("files")}
+          >
+            <FileIcon />
+            <span>Files</span>
+          </button>
+          <button
+            className={clsx(
+              "flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors",
+              sidebarView === "tags"
+                ? "bg-dark-700 text-dark-100"
+                : "text-dark-400 hover:text-dark-200"
+            )}
+            onClick={() => setSidebarView("tags")}
+          >
+            <TagsIcon />
+            <span>Tags</span>
+          </button>
+        </div>
       </div>
 
+      {/* Tag Pane */}
+      {sidebarView === "tags" && (
+        <div className="flex-1 overflow-hidden">
+          <TagPane />
+        </div>
+      )}
+
       {/* File tree */}
+      {sidebarView === "files" && (
       <div className="flex-1 overflow-y-auto py-2" ref={sidebarRef} tabIndex={0}>
         {/* Starred Notes Section */}
         {getStarredNotes().length > 0 && (
@@ -691,18 +766,32 @@ export function Sidebar() {
           </div>
         )}
       </div>
+      )}
 
       {/* Footer */}
+      {sidebarView === "files" && (
       <div className="p-4 border-t border-dark-800">
-        <label className="flex items-center gap-2 mb-2 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={showArchived}
-            onChange={(e) => setShowArchived(e.target.checked)}
-            className="w-3.5 h-3.5 rounded border-dark-600 bg-dark-800 text-accent-primary focus:ring-accent-primary/50 focus:ring-offset-0"
-          />
-          <span className="text-xs text-dark-400">Show archived</span>
-        </label>
+        <div className="flex items-center justify-between mb-2">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+              className="w-3.5 h-3.5 rounded border-dark-600 bg-dark-800 text-accent-primary focus:ring-accent-primary/50 focus:ring-offset-0"
+            />
+            <span className="text-xs text-dark-400">Show archived</span>
+          </label>
+          <button
+            className="flex items-center gap-1.5 px-2 py-1 text-xs text-dark-400 hover:text-dark-200 hover:bg-dark-800 rounded transition-colors"
+            onClick={() => setShowTrashModal(true)}
+            title="Open Trash"
+          >
+            <TrashIcon />
+            {trashItemCount > 0 && (
+              <span className="text-red-400">{trashItemCount}</span>
+            )}
+          </button>
+        </div>
         <div className="text-xs text-dark-500">
           {visibleNotes.length} notes{showArchived ? "" : ` (${notes.filter(n => n.archived).length} archived)`}
           {selectedNote && (
@@ -710,6 +799,7 @@ export function Sidebar() {
           )}
         </div>
       </div>
+      )}
 
       {/* Context Menu */}
       <NoteContextMenu
@@ -760,6 +850,9 @@ export function Sidebar() {
           </div>
         </div>
       )}
+
+      {/* Trash Modal */}
+      <TrashModal isOpen={showTrashModal} onClose={() => setShowTrashModal(false)} />
     </div>
   );
 }

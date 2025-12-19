@@ -39,6 +39,14 @@ pub fn get_all_tags(app: AppHandle) -> Result<Vec<String>, String> {
     db::get_all_tags(&app).map_err(|e| e.to_string())
 }
 
+/// Get tags with their associated note paths
+#[tauri::command]
+pub fn get_tag_notes(
+    app: AppHandle,
+) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+    db::get_tag_notes(&app).map_err(|e| e.to_string())
+}
+
 /// Get all unique mentions in the vault
 #[tauri::command]
 pub fn get_all_mentions(app: AppHandle) -> Result<Vec<String>, String> {

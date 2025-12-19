@@ -10,6 +10,7 @@ Welcome to the Kairo User Guide. This documentation covers all the features and 
 
 ### Core Features
 - [Linking](linking.md) - Wiki links, card links, and autocomplete
+- [Slash Commands](slash-commands.md) - Quick insertion shortcuts
 - [Kanban Boards](kanban.md) - Visual task management
 - [Graph View](#graph-view) - Visualize note connections
 - [Search](#search) - Find anything in your vault

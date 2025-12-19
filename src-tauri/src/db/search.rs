@@ -603,6 +603,34 @@ pub fn get_all_tags(app: &AppHandle) -> Result<Vec<String>, Box<dyn std::error::
     })
 }
 
+/// Get tags with their associated note paths
+pub fn get_tag_notes(
+    app: &AppHandle,
+) -> Result<std::collections::HashMap<String, Vec<String>>, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT t.tag, n.path FROM tags t
+             JOIN notes n ON t.note_id = n.id
+             ORDER BY t.tag, n.path",
+        )?;
+
+        let mut result: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        for row in rows {
+            if let Ok((tag, path)) = row {
+                result.entry(tag).or_insert_with(Vec::new).push(path);
+            }
+        }
+
+        Ok(result)
+    })
+}
+
 /// Get all unique mentions in the vault
 pub fn get_all_mentions(app: &AppHandle) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     with_db(app, |conn| {

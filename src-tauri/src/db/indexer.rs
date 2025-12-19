@@ -34,6 +34,54 @@ fn ceil_char_boundary(s: &str, index: usize) -> usize {
 }
 use crate::commands::notes::NoteMetadata;
 
+/// Clean up notes that no longer exist on disk
+fn cleanup_deleted_notes(
+    app: &AppHandle,
+    vault_path: &PathBuf,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    // Get all note paths from the database
+    let db_paths: Vec<String> = with_db(app, |conn| {
+        let mut stmt = conn.prepare("SELECT path FROM notes")?;
+        let paths = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(paths)
+    })?;
+
+    let mut deleted_count = 0;
+
+    for db_path in db_paths {
+        // Construct the full path
+        let full_path = vault_path.join(&db_path);
+
+        // Check if the file still exists
+        if !full_path.exists() {
+            // File no longer exists - remove from database
+            let note_id = generate_note_id(&db_path);
+
+            with_db(app, |conn| {
+                // Delete all related data
+                conn.execute("DELETE FROM entities WHERE note_id = ?1", params![note_id])?;
+                conn.execute("DELETE FROM tags WHERE note_id = ?1", params![note_id])?;
+                conn.execute("DELETE FROM code_blocks WHERE note_id = ?1", params![note_id])?;
+                // Delete outgoing backlinks (by source_id)
+                conn.execute("DELETE FROM backlinks WHERE source_id = ?1", params![note_id])?;
+                conn.execute("DELETE FROM card_backlinks WHERE source_id = ?1", params![note_id])?;
+                conn.execute("DELETE FROM blocks WHERE note_id = ?1", params![note_id])?;
+                conn.execute("DELETE FROM aliases WHERE note_id = ?1", params![note_id])?;
+                // Delete the note itself
+                conn.execute("DELETE FROM notes WHERE id = ?1", params![note_id])?;
+                Ok(())
+            })?;
+
+            deleted_count += 1;
+        }
+    }
+
+    Ok(deleted_count)
+}
+
 /// Index the entire vault
 pub async fn index_vault(
     app: &AppHandle,
@@ -41,6 +89,9 @@ pub async fn index_vault(
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let notes_dir = vault_path.join("notes");
     let mut count = 0;
+
+    // First, clean up deleted files from the database
+    cleanup_deleted_notes(app, vault_path)?;
 
     // Walk through all markdown files
     for entry in WalkDir::new(&notes_dir)

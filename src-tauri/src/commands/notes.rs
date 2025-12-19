@@ -935,3 +935,309 @@ pub async fn restore_note_version(
 pub fn label_note_version(app: AppHandle, version_id: i64, label: String) -> Result<(), String> {
     db::label_version(&app, version_id, &label).map_err(|e| e.to_string())
 }
+
+// ============================================================================
+// Trash / Soft Delete Commands
+// ============================================================================
+
+/// Trash item metadata
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TrashItem {
+    pub original_path: String,
+    pub trash_path: String,
+    pub title: String,
+    pub deleted_at: i64,
+}
+
+const TRASH_FOLDER: &str = ".trash";
+
+/// Get the trash folder path, creating it if necessary
+fn get_trash_path(vault_path: &Path) -> Result<PathBuf, String> {
+    let trash_path = vault_path.join(TRASH_FOLDER);
+    if !trash_path.exists() {
+        fs::create_dir_all(&trash_path).map_err(|e| e.to_string())?;
+    }
+    Ok(trash_path)
+}
+
+/// Move a note to trash (soft delete)
+#[tauri::command]
+pub async fn move_to_trash(app: AppHandle, path: String) -> Result<TrashItem, String> {
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
+    let note_path = validate_vault_path(&vault_path, &path)?;
+
+    if !note_path.exists() {
+        return Err(format!("Note not found: {}", path));
+    }
+
+    // Read content to get title before moving
+    let content = fs::read_to_string(&note_path).unwrap_or_default();
+    let title = extract_title(&content, &path);
+
+    // Create trash folder
+    let trash_path = get_trash_path(&vault_path)?;
+
+    // Generate unique trash filename with timestamp
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    // Preserve directory structure in trash
+    let relative_trash_path = format!("{}/{}", now, path);
+    let dest_path = trash_path.join(&relative_trash_path);
+
+    // Ensure parent directory exists
+    if let Some(parent) = dest_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    // Move file to trash
+    fs::rename(&note_path, &dest_path).map_err(|e| e.to_string())?;
+
+    // Remove from index
+    db::remove_note_from_index(&app, &path).map_err(|e| e.to_string())?;
+
+    // Clean up empty parent directories
+    if let Some(parent) = note_path.parent() {
+        let _ = fs::remove_dir(parent); // Ignore errors for non-empty dirs
+    }
+
+    Ok(TrashItem {
+        original_path: path,
+        trash_path: relative_trash_path,
+        title,
+        deleted_at: now,
+    })
+}
+
+/// List all items in trash
+#[tauri::command]
+pub fn list_trash(app: AppHandle) -> Result<Vec<TrashItem>, String> {
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
+    let trash_path = get_trash_path(&vault_path)?;
+
+    let mut items = Vec::new();
+
+    // Iterate through timestamp directories
+    if let Ok(entries) = fs::read_dir(&trash_path) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let timestamp_dir = entry.path();
+            if !timestamp_dir.is_dir() {
+                continue;
+            }
+
+            // Parse timestamp from directory name
+            let deleted_at: i64 = timestamp_dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0);
+
+            // Walk through files in this timestamp directory
+            fn walk_dir(
+                dir: &Path,
+                base: &Path,
+                timestamp_dir: &Path,
+                deleted_at: i64,
+                items: &mut Vec<TrashItem>,
+            ) {
+                if let Ok(entries) = fs::read_dir(dir) {
+                    for entry in entries.filter_map(|e| e.ok()) {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            walk_dir(&path, base, timestamp_dir, deleted_at, items);
+                        } else if path.extension().map(|e| e == "md").unwrap_or(false) {
+                            // Get original path (relative to timestamp dir)
+                            let original_path = path
+                                .strip_prefix(timestamp_dir)
+                                .map(|p| p.to_string_lossy().to_string())
+                                .unwrap_or_default();
+
+                            // Get trash path (relative to trash folder)
+                            let trash_path = path
+                                .strip_prefix(base)
+                                .map(|p| p.to_string_lossy().to_string())
+                                .unwrap_or_default();
+
+                            // Read title from file
+                            let content = fs::read_to_string(&path).unwrap_or_default();
+                            let title = crate::commands::notes::extract_title(&content, &original_path);
+
+                            items.push(TrashItem {
+                                original_path,
+                                trash_path,
+                                title,
+                                deleted_at,
+                            });
+                        }
+                    }
+                }
+            }
+
+            walk_dir(&timestamp_dir, &trash_path, &timestamp_dir, deleted_at, &mut items);
+        }
+    }
+
+    // Sort by deleted_at descending (newest first)
+    items.sort_by(|a, b| b.deleted_at.cmp(&a.deleted_at));
+
+    Ok(items)
+}
+
+/// Restore a note from trash
+#[tauri::command]
+pub async fn restore_from_trash(app: AppHandle, trash_path: String) -> Result<NoteMetadata, String> {
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
+    let trash_folder = get_trash_path(&vault_path)?;
+    let source_path = trash_folder.join(&trash_path);
+
+    if !source_path.exists() {
+        return Err(format!("Trash item not found: {}", trash_path));
+    }
+
+    // Extract original path from trash_path (format: "timestamp/original/path.md")
+    let parts: Vec<&str> = trash_path.splitn(2, '/').collect();
+    if parts.len() < 2 {
+        return Err("Invalid trash path format".to_string());
+    }
+    let original_path = parts[1];
+
+    // Destination path
+    let dest_path = vault_path.join(original_path);
+
+    // Check if file already exists at original location
+    if dest_path.exists() {
+        // Generate unique name
+        let stem = dest_path.file_stem().unwrap_or_default().to_string_lossy();
+        let ext = dest_path.extension().unwrap_or_default().to_string_lossy();
+        let parent = dest_path.parent().unwrap_or(&vault_path);
+        let mut counter = 1;
+        let mut new_dest = parent.join(format!("{} (restored {}).{}", stem, counter, ext));
+        while new_dest.exists() {
+            counter += 1;
+            new_dest = parent.join(format!("{} (restored {}).{}", stem, counter, ext));
+        }
+        return restore_to_path(&app, &vault_path, &source_path, &new_dest, &trash_folder, &trash_path).await;
+    }
+
+    restore_to_path(&app, &vault_path, &source_path, &dest_path, &trash_folder, &trash_path).await
+}
+
+async fn restore_to_path(
+    app: &AppHandle,
+    vault_path: &Path,
+    source_path: &Path,
+    dest_path: &Path,
+    trash_folder: &Path,
+    trash_path: &str,
+) -> Result<NoteMetadata, String> {
+    // Ensure parent directory exists
+    if let Some(parent) = dest_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    // Move file back
+    fs::rename(source_path, dest_path).map_err(|e| e.to_string())?;
+
+    // Clean up empty timestamp directory
+    let timestamp_dir = trash_folder.join(trash_path.split('/').next().unwrap_or(""));
+    let _ = fs::remove_dir_all(&timestamp_dir); // Ignore errors
+
+    // Get the relative path for indexing
+    let relative_path = dest_path
+        .strip_prefix(vault_path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    // Re-index the note
+    db::index_single_note(app, vault_path, &PathBuf::from(&relative_path))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Return metadata
+    let content = fs::read_to_string(dest_path).map_err(|e| e.to_string())?;
+    let metadata = fs::metadata(dest_path).map_err(|e| e.to_string())?;
+
+    let modified_at = metadata
+        .modified()
+        .map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        })
+        .unwrap_or(0);
+
+    let created_at = metadata
+        .created()
+        .map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        })
+        .unwrap_or(modified_at);
+
+    let title = extract_title(&content, &relative_path);
+    let id = generate_note_id(&relative_path);
+    let archived = extract_archived(&content);
+    let starred = db::get_note_starred(app, &id).unwrap_or(false);
+
+    Ok(NoteMetadata {
+        id,
+        path: relative_path,
+        title,
+        modified_at,
+        created_at,
+        archived,
+        starred,
+    })
+}
+
+/// Permanently delete an item from trash
+#[tauri::command]
+pub fn permanently_delete_from_trash(app: AppHandle, trash_path: String) -> Result<(), String> {
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
+    let trash_folder = get_trash_path(&vault_path)?;
+    let file_path = trash_folder.join(&trash_path);
+
+    if !file_path.exists() {
+        return Err(format!("Trash item not found: {}", trash_path));
+    }
+
+    // Delete the file
+    fs::remove_file(&file_path).map_err(|e| e.to_string())?;
+
+    // Try to clean up empty timestamp directory
+    let timestamp_dir = trash_folder.join(trash_path.split('/').next().unwrap_or(""));
+    if timestamp_dir.exists() && timestamp_dir.is_dir() {
+        // Only remove if empty
+        let _ = fs::remove_dir(&timestamp_dir);
+    }
+
+    Ok(())
+}
+
+/// Empty the entire trash
+#[tauri::command]
+pub fn empty_trash(app: AppHandle) -> Result<i32, String> {
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
+    let trash_folder = get_trash_path(&vault_path)?;
+
+    let mut count = 0;
+
+    // Remove all contents
+    if let Ok(entries) = fs::read_dir(&trash_folder) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_dir() {
+                if fs::remove_dir_all(&path).is_ok() {
+                    count += 1;
+                }
+            } else if fs::remove_file(&path).is_ok() {
+                count += 1;
+            }
+        }
+    }
+
+    Ok(count)
+}

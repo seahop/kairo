@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useEffect, useState } from "react";
+import React, { useMemo, useCallback, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -28,16 +28,177 @@ function stripFrontmatter(content: string): string {
   return content.replace(frontmatterRegex, '');
 }
 
+// Callout type configurations
+const CALLOUT_TYPES: Record<string, { icon: string; color: string; bgColor: string; borderColor: string }> = {
+  note: { icon: '📝', color: 'text-blue-400', bgColor: 'bg-blue-950/30', borderColor: 'border-blue-500/50' },
+  abstract: { icon: '📋', color: 'text-cyan-400', bgColor: 'bg-cyan-950/30', borderColor: 'border-cyan-500/50' },
+  summary: { icon: '📋', color: 'text-cyan-400', bgColor: 'bg-cyan-950/30', borderColor: 'border-cyan-500/50' },
+  info: { icon: 'ℹ️', color: 'text-blue-400', bgColor: 'bg-blue-950/30', borderColor: 'border-blue-500/50' },
+  todo: { icon: '☑️', color: 'text-blue-400', bgColor: 'bg-blue-950/30', borderColor: 'border-blue-500/50' },
+  tip: { icon: '💡', color: 'text-emerald-400', bgColor: 'bg-emerald-950/30', borderColor: 'border-emerald-500/50' },
+  hint: { icon: '💡', color: 'text-emerald-400', bgColor: 'bg-emerald-950/30', borderColor: 'border-emerald-500/50' },
+  important: { icon: '🔥', color: 'text-purple-400', bgColor: 'bg-purple-950/30', borderColor: 'border-purple-500/50' },
+  success: { icon: '✅', color: 'text-green-400', bgColor: 'bg-green-950/30', borderColor: 'border-green-500/50' },
+  check: { icon: '✅', color: 'text-green-400', bgColor: 'bg-green-950/30', borderColor: 'border-green-500/50' },
+  done: { icon: '✅', color: 'text-green-400', bgColor: 'bg-green-950/30', borderColor: 'border-green-500/50' },
+  question: { icon: '❓', color: 'text-yellow-400', bgColor: 'bg-yellow-950/30', borderColor: 'border-yellow-500/50' },
+  help: { icon: '❓', color: 'text-yellow-400', bgColor: 'bg-yellow-950/30', borderColor: 'border-yellow-500/50' },
+  faq: { icon: '❓', color: 'text-yellow-400', bgColor: 'bg-yellow-950/30', borderColor: 'border-yellow-500/50' },
+  warning: { icon: '⚠️', color: 'text-orange-400', bgColor: 'bg-orange-950/30', borderColor: 'border-orange-500/50' },
+  caution: { icon: '⚠️', color: 'text-orange-400', bgColor: 'bg-orange-950/30', borderColor: 'border-orange-500/50' },
+  attention: { icon: '⚠️', color: 'text-orange-400', bgColor: 'bg-orange-950/30', borderColor: 'border-orange-500/50' },
+  danger: { icon: '⛔', color: 'text-red-400', bgColor: 'bg-red-950/30', borderColor: 'border-red-500/50' },
+  error: { icon: '❌', color: 'text-red-400', bgColor: 'bg-red-950/30', borderColor: 'border-red-500/50' },
+  failure: { icon: '❌', color: 'text-red-400', bgColor: 'bg-red-950/30', borderColor: 'border-red-500/50' },
+  fail: { icon: '❌', color: 'text-red-400', bgColor: 'bg-red-950/30', borderColor: 'border-red-500/50' },
+  missing: { icon: '❌', color: 'text-red-400', bgColor: 'bg-red-950/30', borderColor: 'border-red-500/50' },
+  bug: { icon: '🐛', color: 'text-red-400', bgColor: 'bg-red-950/30', borderColor: 'border-red-500/50' },
+  example: { icon: '📎', color: 'text-purple-400', bgColor: 'bg-purple-950/30', borderColor: 'border-purple-500/50' },
+  quote: { icon: '💬', color: 'text-gray-400', bgColor: 'bg-gray-950/30', borderColor: 'border-gray-500/50' },
+  cite: { icon: '💬', color: 'text-gray-400', bgColor: 'bg-gray-950/30', borderColor: 'border-gray-500/50' },
+};
+
+// Process callouts/admonitions in Obsidian format
+// Syntax: > [!type] Optional Title
+//         > Content lines...
+function preprocessCallouts(content: string): string {
+  const lines = content.split('\n');
+  const result: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    // Match callout start: > [!type] or > [!type]+ or > [!type]-
+    const calloutMatch = line.match(/^>\s*\[!(\w+)\]([+-])?(?:\s+(.*))?$/);
+
+    if (calloutMatch) {
+      const type = calloutMatch[1].toLowerCase();
+      const foldState = calloutMatch[2]; // + = expanded, - = collapsed, undefined = not foldable
+      const customTitle = calloutMatch[3]?.trim();
+      const config = CALLOUT_TYPES[type] || CALLOUT_TYPES.note;
+      const title = customTitle || type.charAt(0).toUpperCase() + type.slice(1);
+      const isFoldable = foldState !== undefined;
+      const isCollapsed = foldState === '-';
+
+      // Collect content lines (all subsequent lines starting with >)
+      const contentLines: string[] = [];
+      i++;
+      while (i < lines.length && lines[i].match(/^>\s?/)) {
+        // Remove the leading > and optional space
+        contentLines.push(lines[i].replace(/^>\s?/, ''));
+        i++;
+      }
+
+      // Build the callout HTML
+      const calloutContent = contentLines.join('\n');
+      const foldableAttr = isFoldable ? ` data-foldable="true" data-collapsed="${isCollapsed}"` : '';
+
+      result.push(`<div class="callout callout-${type} ${config.bgColor} ${config.borderColor}"${foldableAttr}>`);
+      result.push(`<div class="callout-title ${config.color}">`);
+      result.push(`<span class="callout-icon">${config.icon}</span>`);
+      result.push(`<span class="callout-title-text">${title}</span>`);
+      if (isFoldable) {
+        result.push(`<span class="callout-fold-icon">${isCollapsed ? '▶' : '▼'}</span>`);
+      }
+      result.push(`</div>`);
+      result.push(`<div class="callout-content">`);
+      result.push(calloutContent);
+      result.push(`</div>`);
+      result.push(`</div>`);
+    } else {
+      result.push(line);
+      i++;
+    }
+  }
+
+  return result.join('\n');
+}
+
+// Process content to wrap heading sections in foldable divs
+function preprocessHeadingSections(content: string): string {
+  const lines = content.split('\n');
+  const result: string[] = [];
+  let currentLevel = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Match markdown headings (# to ######)
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const text = headingMatch[2];
+      const sectionId = `h${level}-${text.slice(0, 30).replace(/\W/g, '-')}`;
+
+      // Close previous section if exists
+      if (currentLevel > 0) {
+        result.push(`</div>`);
+        result.push(''); // Blank line to separate from previous section
+      }
+
+      // Add heading
+      result.push(line);
+      result.push(''); // Blank line after heading to ensure proper markdown parsing
+
+      // Open new section
+      result.push(`<div class="heading-section" data-section-id="${sectionId}" data-level="${level}">`);
+      currentLevel = level;
+    } else {
+      result.push(line);
+    }
+  }
+
+  // Close last section if exists
+  if (currentLevel > 0) {
+    result.push(''); // Blank line before closing
+    result.push(`</div>`);
+  }
+
+  return result.join('\n');
+}
+
 // Transform wiki-style links [[note]] and [[note|display]] to markdown links
 // Also transforms card/kanban links, diagram links, and transclusions
 function preprocessWikiLinks(content: string): string {
   // First strip frontmatter
   const contentWithoutFrontmatter = stripFrontmatter(content);
+
+  // Process callouts before other transformations
+  const contentWithCallouts = preprocessCallouts(contentWithoutFrontmatter);
+
+  // Process heading sections for folding
+  const contentWithSections = preprocessHeadingSections(contentWithCallouts);
+
+  // IMPORTANT: Preserve code blocks and inline code before processing wiki links
+  // This prevents [[...]] inside code from being converted to links
+  const codeBlockPlaceholders: string[] = [];
+  const inlineCodePlaceholders: string[] = [];
+
+  // Extract fenced code blocks first (```...```)
+  let processed = contentWithSections.replace(
+    /```[\s\S]*?```/g,
+    (match) => {
+      const placeholder = `__CODE_BLOCK_${codeBlockPlaceholders.length}__`;
+      codeBlockPlaceholders.push(match);
+      return placeholder;
+    }
+  );
+
+  // Extract inline code (`...`) - but not empty backticks
+  processed = processed.replace(
+    /`[^`]+`/g,
+    (match) => {
+      const placeholder = `__INLINE_CODE_${inlineCodePlaceholders.length}__`;
+      inlineCodePlaceholders.push(match);
+      return placeholder;
+    }
+  );
+
   // IMPORTANT: Handle transclusions FIRST (before regular links)
   // This ensures ![[note]] is processed before [[note]]
 
   // 1. Block transclusion: ![[note#^block-id]] or ![[note#^block-id|alias]]
-  let processed = contentWithoutFrontmatter.replace(
+  processed = processed.replace(
     /!\[\[([^\]#|]+)#\^([a-zA-Z0-9_-]+)(?:\|([^\]]+))?\]\]/g,
     (_, noteRef, blockId, alias) => {
       const encodedRef = encodeURIComponent(noteRef.trim());
@@ -117,6 +278,16 @@ function preprocessWikiLinks(content: string): string {
     }
   );
 
+  // Restore inline code (do this before code blocks to maintain order)
+  inlineCodePlaceholders.forEach((code, index) => {
+    processed = processed.replace(`__INLINE_CODE_${index}__`, code);
+  });
+
+  // Restore code blocks
+  codeBlockPlaceholders.forEach((code, index) => {
+    processed = processed.replace(`__CODE_BLOCK_${index}__`, code);
+  });
+
   return processed;
 }
 
@@ -136,13 +307,34 @@ export function PreviewPane({ content }: PreviewPaneProps) {
   const { editorContent, openNoteByReference, resolveNoteReference, setEditorContent } = useNoteStore();
   const { loadBoard } = useKanbanStore();
   const { boards: diagramBoards, loadBoards: loadDiagramBoards, loadBoard: loadDiagramBoard, setShowView: setDiagramShowView } = useDiagramStore();
-  const { openSidePane } = useUIStore();
+  const { openSidePane, readingFontSize, readingWidth } = useUIStore();
   const { openEditor: openTableEditor } = useTableEditorStore();
   const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
   const [vaultPath, setVaultPath] = useState<string | null>(null);
+  const [collapsedCallouts, setCollapsedCallouts] = useState<Set<number>>(new Set());
+  const [collapsedHeadings, setCollapsedHeadings] = useState<Set<string>>(new Set());
 
   // Use provided content or fall back to store's editorContent
   const displayContent = content ?? editorContent;
+
+  // Reset collapsed states when content changes
+  useEffect(() => {
+    setCollapsedCallouts(new Set());
+    setCollapsedHeadings(new Set());
+  }, [displayContent]);
+
+  // Toggle heading collapse state
+  const toggleHeading = useCallback((headingId: string) => {
+    setCollapsedHeadings(prev => {
+      const next = new Set(prev);
+      if (next.has(headingId)) {
+        next.delete(headingId);
+      } else {
+        next.add(headingId);
+      }
+      return next;
+    });
+  }, []);
 
   // Fetch vault path for resolving relative image paths
   useEffect(() => {
@@ -481,7 +673,7 @@ export function PreviewPane({ content }: PreviewPaneProps) {
           </details>
         </>
       )}
-      <div className="max-w-3xl mx-auto markdown-preview">
+      <div className={`markdown-preview reading-mode width-${readingWidth} text-${readingFontSize}-reading`}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[rehypeRaw]}
@@ -532,6 +724,83 @@ export function PreviewPane({ content }: PreviewPaneProps) {
                     <code {...props}>{children}</code>
                   </pre>
                 </div>
+              );
+            },
+            // Foldable headings
+            h1: ({ children, ...props }) => {
+              const text = String(children);
+              const headingId = `h1-${text.slice(0, 30).replace(/\W/g, '-')}`;
+              const isCollapsed = collapsedHeadings.has(headingId);
+              return (
+                <h1 className="group flex items-center gap-2" {...props}>
+                  <button
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-dark-500 hover:text-dark-300"
+                    onClick={() => toggleHeading(headingId)}
+                    title={isCollapsed ? "Expand section" : "Collapse section"}
+                  >
+                    <svg className={`w-4 h-4 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  <span className="flex-1">{children}</span>
+                </h1>
+              );
+            },
+            h2: ({ children, ...props }) => {
+              const text = String(children);
+              const headingId = `h2-${text.slice(0, 30).replace(/\W/g, '-')}`;
+              const isCollapsed = collapsedHeadings.has(headingId);
+              return (
+                <h2 className="group flex items-center gap-2" {...props}>
+                  <button
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-dark-500 hover:text-dark-300"
+                    onClick={() => toggleHeading(headingId)}
+                    title={isCollapsed ? "Expand section" : "Collapse section"}
+                  >
+                    <svg className={`w-4 h-4 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  <span className="flex-1">{children}</span>
+                </h2>
+              );
+            },
+            h3: ({ children, ...props }) => {
+              const text = String(children);
+              const headingId = `h3-${text.slice(0, 30).replace(/\W/g, '-')}`;
+              const isCollapsed = collapsedHeadings.has(headingId);
+              return (
+                <h3 className="group flex items-center gap-2" {...props}>
+                  <button
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-dark-500 hover:text-dark-300"
+                    onClick={() => toggleHeading(headingId)}
+                    title={isCollapsed ? "Expand section" : "Collapse section"}
+                  >
+                    <svg className={`w-3.5 h-3.5 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  <span className="flex-1">{children}</span>
+                </h3>
+              );
+            },
+            h4: ({ children, ...props }) => {
+              const text = String(children);
+              const headingId = `h4-${text.slice(0, 30).replace(/\W/g, '-')}`;
+              const isCollapsed = collapsedHeadings.has(headingId);
+              return (
+                <h4 className="group flex items-center gap-2 text-base font-semibold text-dark-100 mt-3 mb-2" {...props}>
+                  <button
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-dark-500 hover:text-dark-300"
+                    onClick={() => toggleHeading(headingId)}
+                    title={isCollapsed ? "Expand section" : "Collapse section"}
+                  >
+                    <svg className={`w-3 h-3 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  <span className="flex-1">{children}</span>
+                </h4>
               );
             },
             // Custom rendering for links
@@ -671,7 +940,7 @@ export function PreviewPane({ content }: PreviewPaneProps) {
                 />
               );
             },
-            // Custom div handler for transclusion embeds
+            // Custom div handler for transclusion embeds and callouts
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             div: ({ className, children, ...props }: any) => {
               // Check if this is a transclusion embed
@@ -690,6 +959,86 @@ export function PreviewPane({ content }: PreviewPaneProps) {
                     depth={1}
                   />
                 );
+              }
+
+              // Check if this is a callout (has callout class)
+              if (className && className.includes("callout") && !className.includes("callout-")) {
+                const isFoldable = props["data-foldable"] === "true";
+                const initialCollapsed = props["data-collapsed"] === "true";
+
+                // Generate a unique ID for this callout based on content
+                const calloutId = className.split(" ").join("-") + "-" + String(children).slice(0, 20).replace(/\W/g, "");
+                const calloutIndex = calloutId.length; // Simple hash
+
+                // Check if we should be collapsed
+                const isCollapsed = collapsedCallouts.has(calloutIndex)
+                  ? true
+                  : (!collapsedCallouts.has(-calloutIndex - 1) && initialCollapsed);
+
+                const handleToggle = () => {
+                  if (!isFoldable) return;
+                  setCollapsedCallouts(prev => {
+                    const next = new Set(prev);
+                    if (isCollapsed) {
+                      // Expand: remove from collapsed, add to expanded marker
+                      next.delete(calloutIndex);
+                      next.add(-calloutIndex - 1);
+                    } else {
+                      // Collapse: add to collapsed, remove expanded marker
+                      next.add(calloutIndex);
+                      next.delete(-calloutIndex - 1);
+                    }
+                    return next;
+                  });
+                };
+
+                return (
+                  <div
+                    className={className}
+                    data-collapsed={isCollapsed}
+                    {...props}
+                  >
+                    {React.Children.map(children, (child) => {
+                      if (React.isValidElement(child)) {
+                        const childProps = child.props as { className?: string };
+                        // Make the title clickable for foldable callouts
+                        if (childProps.className?.includes("callout-title") && isFoldable) {
+                          return React.cloneElement(child as React.ReactElement, {
+                            onClick: handleToggle,
+                            style: { cursor: "pointer" },
+                            children: React.Children.map((child.props as { children?: React.ReactNode }).children, (titleChild) => {
+                              if (React.isValidElement(titleChild)) {
+                                const titleChildProps = titleChild.props as { className?: string };
+                                if (titleChildProps.className?.includes("callout-fold-icon")) {
+                                  return React.cloneElement(titleChild as React.ReactElement, {
+                                    children: isCollapsed ? "▶" : "▼"
+                                  });
+                                }
+                              }
+                              return titleChild;
+                            })
+                          });
+                        }
+                        // Hide content if collapsed
+                        if (childProps.className?.includes("callout-content") && isCollapsed) {
+                          return null;
+                        }
+                      }
+                      return child;
+                    })}
+                  </div>
+                );
+              }
+
+              // Check if this is a heading section
+              if (className === "heading-section") {
+                const sectionId = props["data-section-id"] as string | undefined;
+                if (sectionId && collapsedHeadings.has(sectionId)) {
+                  // Section is collapsed - hide it
+                  return null;
+                }
+                // Section is visible - render normally
+                return <div className={className} {...props}>{children}</div>;
               }
 
               // Default div rendering

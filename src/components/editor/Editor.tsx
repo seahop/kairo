@@ -94,6 +94,18 @@ const TableIcon = () => (
   </svg>
 );
 
+const SpellcheckIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const ReadingModeIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+  </svg>
+);
+
 interface ContextMenuProps {
   x: number;
   y: number;
@@ -240,11 +252,12 @@ function ContextMenu({ x, y, onClose, currentMode, onSetMode }: ContextMenuProps
 
 export function Editor() {
   const { saveNote, hasUnsavedChanges, goBack, goForward, canGoBack, canGoForward, currentNote, editorContent, setEditorContent } = useNoteStore();
-  const { editorViewMode, setEditorViewMode, editorSplitRatio, setEditorSplitRatio } = useUIStore();
+  const { editorViewMode, setEditorViewMode, editorSplitRatio, setEditorSplitRatio, spellcheckEnabled, toggleSpellcheck, readingFontSize, setReadingFontSize, readingWidth, setReadingWidth } = useUIStore();
   const { openEditor } = useTableEditorStore();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [showImageUpload, setShowImageUpload] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showReadingSettings, setShowReadingSettings] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
 
   // Open table editor with a new table (insert at cursor or end)
@@ -456,6 +469,67 @@ export function Editor() {
             <TableIcon />
             <span className="hidden sm:inline">Table</span>
           </button>
+
+          {/* Spellcheck toggle */}
+          <button
+            className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs ${
+              spellcheckEnabled
+                ? "bg-green-500/20 text-green-400"
+                : "text-dark-400 hover:text-dark-200 hover:bg-dark-800"
+            }`}
+            onClick={toggleSpellcheck}
+            title={spellcheckEnabled ? "Disable spellcheck" : "Enable spellcheck"}
+          >
+            <SpellcheckIcon />
+            <span className="hidden sm:inline">Spell</span>
+          </button>
+
+          {/* Reading mode settings */}
+          <div className="relative">
+            <button
+              className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs ${
+                showReadingSettings
+                  ? "bg-accent-primary/20 text-accent-primary"
+                  : "text-dark-400 hover:text-dark-200 hover:bg-dark-800"
+              }`}
+              onClick={() => setShowReadingSettings(!showReadingSettings)}
+              title="Reading mode settings"
+            >
+              <ReadingModeIcon />
+              <span className="hidden sm:inline">Reading</span>
+            </button>
+            {showReadingSettings && (
+              <div className="absolute top-full left-0 mt-1 bg-dark-850 border border-dark-700 rounded-lg shadow-xl py-2 z-50 w-48">
+                <div className="px-3 py-1.5 text-xs text-dark-500 uppercase tracking-wide">Font Size</div>
+                {(['sm', 'base', 'lg', 'xl'] as const).map((size) => (
+                  <button
+                    key={size}
+                    className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 hover:bg-dark-800 ${
+                      readingFontSize === size ? "text-accent-primary" : "text-dark-200"
+                    }`}
+                    onClick={() => { setReadingFontSize(size); }}
+                  >
+                    <span className="w-4">{readingFontSize === size ? "✓" : ""}</span>
+                    {size === 'sm' ? 'Small' : size === 'base' ? 'Medium' : size === 'lg' ? 'Large' : 'Extra Large'}
+                  </button>
+                ))}
+                <div className="border-t border-dark-700 my-1" />
+                <div className="px-3 py-1.5 text-xs text-dark-500 uppercase tracking-wide">Content Width</div>
+                {(['narrow', 'medium', 'wide', 'full'] as const).map((width) => (
+                  <button
+                    key={width}
+                    className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 hover:bg-dark-800 ${
+                      readingWidth === width ? "text-accent-primary" : "text-dark-200"
+                    }`}
+                    onClick={() => { setReadingWidth(width); }}
+                  >
+                    <span className="w-4">{readingWidth === width ? "✓" : ""}</span>
+                    {width.charAt(0).toUpperCase() + width.slice(1)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* View mode buttons */}

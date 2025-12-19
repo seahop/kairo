@@ -69,6 +69,12 @@ pub fn run() {
             commands::notes::create_note_snapshot,
             commands::notes::restore_note_version,
             commands::notes::label_note_version,
+            // Trash commands
+            commands::notes::move_to_trash,
+            commands::notes::list_trash,
+            commands::notes::restore_from_trash,
+            commands::notes::permanently_delete_from_trash,
+            commands::notes::empty_trash,
             // Search commands
             commands::search::search_notes,
             commands::search::search_entities,
@@ -79,6 +85,7 @@ pub fn run() {
             commands::db::get_backlinks,
             commands::db::get_graph_data,
             commands::db::get_all_tags,
+            commands::db::get_tag_notes,
             commands::db::get_all_mentions,
             // Vault health commands
             commands::db::get_orphan_notes,

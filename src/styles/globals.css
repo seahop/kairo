@@ -689,6 +689,51 @@ a[class*="hover:"] {
   @apply border-l-4 border-accent-primary pl-4 italic text-dark-400 my-4;
 }
 
+/* Callouts / Admonitions - Obsidian-compatible */
+.markdown-preview .callout {
+  @apply my-4 rounded-lg border-l-4 overflow-hidden;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+
+.markdown-preview .callout-title {
+  @apply flex items-center gap-2 px-4 py-2 font-medium text-sm;
+}
+
+.markdown-preview .callout-icon {
+  @apply text-base;
+}
+
+.markdown-preview .callout-title-text {
+  @apply flex-1;
+}
+
+.markdown-preview .callout-fold-icon {
+  @apply text-xs opacity-60 cursor-pointer hover:opacity-100 transition-opacity;
+}
+
+.markdown-preview .callout-content {
+  @apply px-4 pb-3 text-dark-300 text-sm;
+}
+
+.markdown-preview .callout-content > *:first-child {
+  @apply mt-0;
+}
+
+.markdown-preview .callout-content > *:last-child {
+  @apply mb-0;
+}
+
+/* Callout collapsed state */
+.markdown-preview .callout[data-collapsed="true"] .callout-content {
+  @apply hidden;
+}
+
+/* Nested callouts */
+.markdown-preview .callout .callout {
+  @apply my-2;
+}
+
 .markdown-preview code {
   @apply font-mono text-sm bg-dark-800 px-1.5 py-0.5 rounded text-accent-primary;
 }
@@ -723,6 +768,26 @@ a[class*="hover:"] {
 
 .markdown-preview hr {
   @apply border-dark-700 my-6;
+}
+
+/* Foldable headings */
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4 {
+  cursor: pointer;
+}
+
+.markdown-preview h1 button,
+.markdown-preview h2 button,
+.markdown-preview h3 button,
+.markdown-preview h4 button {
+  @apply -ml-1;
+}
+
+/* Heading section containers */
+.markdown-preview .heading-section {
+  @apply relative;
 }
 
 /* Transclusion blocks - embedded note content */
@@ -976,4 +1041,254 @@ a svg,
   transform: translateZ(0);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
+}
+
+/*
+ * ============================================
+ * Reading Mode / Preview Mode Polish
+ * ============================================
+ */
+
+/* Enhanced reading mode styles */
+.markdown-preview.reading-mode {
+  @apply mx-auto px-8 py-6;
+  scroll-behavior: smooth;
+}
+
+/* Reading mode - centered content with max width */
+.markdown-preview.reading-mode.width-narrow {
+  max-width: 42rem;
+}
+
+.markdown-preview.reading-mode.width-medium {
+  max-width: 56rem;
+}
+
+.markdown-preview.reading-mode.width-wide {
+  max-width: 72rem;
+}
+
+.markdown-preview.reading-mode.width-full {
+  max-width: none;
+}
+
+/* Font size variants */
+.markdown-preview.text-sm-reading {
+  font-size: 0.9rem;
+}
+
+.markdown-preview.text-sm-reading h1 { @apply text-xl; }
+.markdown-preview.text-sm-reading h2 { @apply text-lg; }
+.markdown-preview.text-sm-reading h3 { @apply text-base; }
+
+.markdown-preview.text-base-reading {
+  font-size: 1rem;
+}
+
+.markdown-preview.text-lg-reading {
+  font-size: 1.1rem;
+  line-height: 1.8;
+}
+
+.markdown-preview.text-lg-reading h1 { @apply text-3xl; }
+.markdown-preview.text-lg-reading h2 { @apply text-2xl; }
+.markdown-preview.text-lg-reading h3 { @apply text-xl; }
+
+.markdown-preview.text-xl-reading {
+  font-size: 1.25rem;
+  line-height: 1.9;
+}
+
+.markdown-preview.text-xl-reading h1 { font-size: 2rem; }
+.markdown-preview.text-xl-reading h2 { font-size: 1.75rem; }
+.markdown-preview.text-xl-reading h3 { font-size: 1.5rem; }
+
+/* Enhanced task list styling */
+.markdown-preview input[type="checkbox"] {
+  @apply w-4 h-4 mr-2 rounded border-2 border-dark-600 bg-dark-800;
+  @apply checked:bg-accent-primary checked:border-accent-primary;
+  @apply focus:ring-2 focus:ring-accent-primary/50 focus:ring-offset-0;
+  cursor: pointer;
+  vertical-align: middle;
+  accent-color: #6366f1;
+}
+
+.markdown-preview input[type="checkbox"]:checked + * {
+  @apply line-through text-dark-500;
+}
+
+/* Better list styling */
+.markdown-preview ul {
+  list-style-type: disc;
+}
+
+.markdown-preview ul ul {
+  list-style-type: circle;
+}
+
+.markdown-preview ul ul ul {
+  list-style-type: square;
+}
+
+.markdown-preview ol {
+  list-style-type: decimal;
+}
+
+.markdown-preview ol ol {
+  list-style-type: lower-alpha;
+}
+
+.markdown-preview ol ol ol {
+  list-style-type: lower-roman;
+}
+
+/* Task list specific styling (no bullets) */
+.markdown-preview ul:has(> li > input[type="checkbox"]) {
+  list-style: none;
+  @apply pl-0;
+}
+
+.markdown-preview ul:has(> li > input[type="checkbox"]) li {
+  @apply flex items-start;
+}
+
+/* Enhanced horizontal rule */
+.markdown-preview hr {
+  @apply border-0 h-px my-8;
+  background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.5), transparent);
+}
+
+/* Better blockquote styling */
+.markdown-preview blockquote {
+  @apply border-l-4 border-accent-primary/50 pl-4 my-4 py-1;
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.05), transparent);
+}
+
+.markdown-preview blockquote p {
+  @apply text-dark-300 italic mb-2;
+}
+
+.markdown-preview blockquote p:last-child {
+  @apply mb-0;
+}
+
+/* Better inline code */
+.markdown-preview code {
+  @apply font-mono text-sm bg-dark-800/80 px-1.5 py-0.5 rounded text-accent-secondary;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+/* Better code blocks */
+.markdown-preview pre {
+  @apply bg-dark-900 p-4 rounded-lg overflow-x-auto my-4 border border-dark-800;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.markdown-preview pre code {
+  @apply bg-transparent p-0 border-0 text-dark-100;
+}
+
+/* Code block with language label */
+.markdown-preview pre[data-language]::before {
+  content: attr(data-language);
+  @apply absolute top-0 right-0 px-2 py-1 text-xs text-dark-500 bg-dark-800 rounded-bl;
+}
+
+/* Enhanced table styling */
+.markdown-preview table {
+  @apply w-full border-collapse my-4 text-sm;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.markdown-preview th {
+  @apply bg-dark-850 font-semibold text-left px-4 py-3 border-b-2 border-dark-700;
+  color: #c4b5fd;
+}
+
+.markdown-preview td {
+  @apply px-4 py-3 border-b border-dark-800;
+}
+
+.markdown-preview tr:hover {
+  @apply bg-dark-850/50;
+}
+
+.markdown-preview tr:last-child td {
+  @apply border-b-0;
+}
+
+/* Image captions (using alt text) */
+.markdown-preview img {
+  @apply rounded-lg max-w-full my-4 border border-dark-800;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* Better link styling with underline animation */
+.markdown-preview a:not(.callout-title):not(.transclusion-header) {
+  @apply text-accent-primary no-underline relative;
+  background-image: linear-gradient(transparent 90%, rgba(99, 102, 241, 0.3) 10%);
+  background-size: 100% 100%;
+  transition: background-size 0.2s ease;
+}
+
+.markdown-preview a:not(.callout-title):not(.transclusion-header):hover {
+  background-size: 100% 50%;
+  color: #a78bfa;
+}
+
+/* External link indicator */
+.markdown-preview a[href^="http"]::after {
+  content: " ↗";
+  @apply text-xs opacity-50;
+}
+
+/* Wiki link styling (internal links) */
+.markdown-preview a[href^="#wikilink:"],
+.markdown-preview a.wikilink {
+  @apply text-purple-400;
+  background-image: linear-gradient(transparent 90%, rgba(168, 85, 247, 0.3) 10%);
+}
+
+.markdown-preview a[href^="#wikilink:"]:hover,
+.markdown-preview a.wikilink:hover {
+  @apply text-purple-300;
+}
+
+/* Smooth scroll indicator */
+.markdown-preview::-webkit-scrollbar {
+  width: 8px;
+}
+
+.markdown-preview::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.markdown-preview::-webkit-scrollbar-thumb {
+  @apply bg-dark-700 rounded-full;
+}
+
+.markdown-preview::-webkit-scrollbar-thumb:hover {
+  @apply bg-dark-600;
+}
+
+/* Focus mode - hide distracting elements */
+.focus-mode .markdown-preview {
+  @apply max-w-3xl mx-auto;
+}
+
+/* Print-friendly styles */
+@media print {
+  .markdown-preview {
+    @apply text-black bg-white;
+  }
+
+  .markdown-preview h1,
+  .markdown-preview h2,
+  .markdown-preview h3 {
+    @apply text-black;
+  }
+
+  .markdown-preview a {
+    @apply text-blue-600;
+  }
 }
