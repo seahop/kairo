@@ -132,6 +132,123 @@ function formatDateForInput(timestamp?: number): string {
   return date.toISOString().split("T")[0];
 }
 
+// Context menu for the editor area
+interface EditorContextMenuProps {
+  x: number;
+  y: number;
+  onClose: () => void;
+  viewMode: ViewMode;
+  onSetViewMode: (mode: ViewMode) => void;
+}
+
+function EditorContextMenu({ x, y, onClose, viewMode, onSetViewMode }: EditorContextMenuProps) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [onClose]);
+
+  const handleAction = async (action: "cut" | "copy" | "paste" | "selectAll") => {
+    onClose();
+    // Small delay to let the menu close and focus return
+    await new Promise(r => setTimeout(r, 50));
+
+    switch (action) {
+      case "cut":
+        document.execCommand("cut");
+        break;
+      case "copy":
+        document.execCommand("copy");
+        break;
+      case "paste":
+        try {
+          const text = await navigator.clipboard.readText();
+          document.execCommand("insertText", false, text);
+        } catch {
+          document.execCommand("paste");
+        }
+        break;
+      case "selectAll":
+        document.execCommand("selectAll");
+        break;
+    }
+  };
+
+  return (
+    <div
+      ref={menuRef}
+      className="fixed bg-dark-900 border border-dark-700 rounded-lg shadow-xl py-1 z-50 min-w-[180px]"
+      style={{ left: x, top: y }}
+    >
+      <div className="px-2 py-1.5 text-xs text-dark-500 font-medium">View Mode</div>
+      <button
+        className={`w-full px-3 py-1.5 text-sm text-left flex items-center gap-2 hover:bg-dark-800 ${
+          viewMode === "edit" ? "text-accent-primary" : "text-dark-200"
+        }`}
+        onClick={() => { onSetViewMode("edit"); onClose(); }}
+      >
+        <EditIcon /> Edit
+      </button>
+      <button
+        className={`w-full px-3 py-1.5 text-sm text-left flex items-center gap-2 hover:bg-dark-800 ${
+          viewMode === "split" ? "text-accent-primary" : "text-dark-200"
+        }`}
+        onClick={() => { onSetViewMode("split"); onClose(); }}
+      >
+        <SplitIcon /> Split
+      </button>
+      <button
+        className={`w-full px-3 py-1.5 text-sm text-left flex items-center gap-2 hover:bg-dark-800 ${
+          viewMode === "preview" ? "text-accent-primary" : "text-dark-200"
+        }`}
+        onClick={() => { onSetViewMode("preview"); onClose(); }}
+      >
+        <PreviewIcon /> Preview
+      </button>
+
+      <div className="border-t border-dark-700 my-1" />
+      <div className="px-2 py-1.5 text-xs text-dark-500 font-medium">Edit</div>
+      <button
+        className="w-full px-3 py-1.5 text-sm text-left text-dark-200 hover:bg-dark-800 flex justify-between"
+        onClick={() => handleAction("cut")}
+      >
+        Cut <span className="text-dark-500">Ctrl+X</span>
+      </button>
+      <button
+        className="w-full px-3 py-1.5 text-sm text-left text-dark-200 hover:bg-dark-800 flex justify-between"
+        onClick={() => handleAction("copy")}
+      >
+        Copy <span className="text-dark-500">Ctrl+C</span>
+      </button>
+      <button
+        className="w-full px-3 py-1.5 text-sm text-left text-dark-200 hover:bg-dark-800 flex justify-between"
+        onClick={() => handleAction("paste")}
+      >
+        Paste <span className="text-dark-500">Ctrl+V</span>
+      </button>
+      <button
+        className="w-full px-3 py-1.5 text-sm text-left text-dark-200 hover:bg-dark-800 flex justify-between"
+        onClick={() => handleAction("selectAll")}
+      >
+        Select All <span className="text-dark-500">Ctrl+A</span>
+      </button>
+    </div>
+  );
+}
+
 export function CardDetailPanel() {
   const {
     selectedCard,
@@ -162,6 +279,10 @@ export function CardDetailPanel() {
   const [viewMode, setViewMode] = useState<ViewMode>("edit");
   const [showImageUpload, setShowImageUpload] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [editorContextMenu, setEditorContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+  // Track when we're switching view modes to prevent blur saves during transition
+  const isViewModeChanging = useRef(false);
 
   // Resizable panel state
   const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
@@ -200,6 +321,17 @@ export function CardDetailPanel() {
     };
   }, [isResizing]);
 
+  // Wrapper for setViewMode that temporarily disables blur saves
+  // Must be defined before any conditional returns to follow React hooks rules
+  const handleViewModeChange = useCallback((mode: ViewMode) => {
+    isViewModeChanging.current = true;
+    setViewMode(mode);
+    // Re-enable saves after a short delay (after blur events have fired)
+    setTimeout(() => {
+      isViewModeChanging.current = false;
+    }, 100);
+  }, []);
+
   // Sync local state when selectedCard changes
   useEffect(() => {
     if (selectedCard) {
@@ -215,6 +347,16 @@ export function CardDetailPanel() {
   if (!showCardDetail || !selectedCard) return null;
 
   const handleSave = () => {
+    // Skip save if we're in the middle of switching view modes (blur from unmounting editor)
+    if (isViewModeChanging.current) {
+      return;
+    }
+
+    // Don't save if title would be empty - prevents data loss
+    if (!title.trim()) {
+      return;
+    }
+
     updateCard(selectedCard.id, {
       title: title !== selectedCard.title ? title : undefined,
       description: description !== (selectedCard.description || "") ? description : undefined,
@@ -563,7 +705,7 @@ export function CardDetailPanel() {
                 <ImageIcon />
               </button>
             </div>
-            <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+            <ViewModeToggle mode={viewMode} onChange={handleViewModeChange} />
           </div>
 
           {/* Image upload panel */}
@@ -575,43 +717,51 @@ export function CardDetailPanel() {
             </div>
           )}
 
-          {/* Editor/Preview based on view mode */}
-          {viewMode === "edit" && (
-            <CardMarkdownEditor
-              content={description}
-              onChange={(newContent) => setDescription(newContent)}
-              onBlur={handleSave}
-              placeholder="Add a description... (supports markdown, [[wiki-links]], #tags)"
-              minHeight="200px"
-            />
-          )}
+          {/* Editor/Preview based on view mode - wrapped with context menu */}
+          <div
+            className="flex-1"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setEditorContextMenu({ x: e.clientX, y: e.clientY });
+            }}
+          >
+            {viewMode === "edit" && (
+              <CardMarkdownEditor
+                content={description}
+                onChange={(newContent) => setDescription(newContent)}
+                onBlur={handleSave}
+                placeholder="Add a description... (supports markdown, [[wiki-links]], #tags)"
+                minHeight="200px"
+              />
+            )}
 
-          {viewMode === "preview" && (
-            <CardPreviewPane
-              content={description}
-              minHeight="200px"
-            />
-          )}
+            {viewMode === "preview" && (
+              <CardPreviewPane
+                content={description}
+                minHeight="200px"
+              />
+            )}
 
-          {viewMode === "split" && (
-            <div className="flex gap-2 flex-1 min-h-0">
-              <div className="flex-1 min-w-0">
-                <CardMarkdownEditor
-                  content={description}
-                  onChange={(newContent) => setDescription(newContent)}
-                  onBlur={handleSave}
-                  placeholder="Add a description..."
-                  minHeight="200px"
-                />
+            {viewMode === "split" && (
+              <div className="flex gap-2 flex-1 min-h-0">
+                <div className="flex-1 min-w-0">
+                  <CardMarkdownEditor
+                    content={description}
+                    onChange={(newContent) => setDescription(newContent)}
+                    onBlur={handleSave}
+                    placeholder="Add a description..."
+                    minHeight="200px"
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <CardPreviewPane
+                    content={description}
+                    minHeight="200px"
+                  />
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <CardPreviewPane
-                  content={description}
-                  minHeight="200px"
-                />
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Linked Note */}
@@ -666,6 +816,17 @@ export function CardDetailPanel() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Editor Context Menu */}
+      {editorContextMenu && (
+        <EditorContextMenu
+          x={editorContextMenu.x}
+          y={editorContextMenu.y}
+          onClose={() => setEditorContextMenu(null)}
+          viewMode={viewMode}
+          onSetViewMode={handleViewModeChange}
+        />
       )}
     </div>
   );

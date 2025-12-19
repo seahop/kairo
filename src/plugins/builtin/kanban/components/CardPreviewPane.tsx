@@ -5,6 +5,7 @@ import rehypeRaw from "rehype-raw";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { useNoteStore } from "@/stores/noteStore";
 import { useKanbanStore } from "../store";
+import { LinkContextMenu, useContextMenu } from "@/components/common/LinkContextMenu";
 
 // Icon for external links
 const ExternalLinkIcon = () => (
@@ -69,6 +70,7 @@ export function CardPreviewPane({
   const { openNoteByReference, resolveNoteReference } = useNoteStore();
   const { loadBoard } = useKanbanStore();
   const [vaultPath, setVaultPath] = useState<string | null>(null);
+  const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
 
   // Fetch vault path for resolving relative image paths
   useEffect(() => {
@@ -152,6 +154,60 @@ export function CardPreviewPane({
     [loadBoard]
   );
 
+  // Context menu handlers
+  const handleWikiContextMenu = useCallback(
+    (e: React.MouseEvent, reference: string) => {
+      const resolved = resolveNoteReference(reference);
+      const items = [
+        {
+          label: resolved ? "Open note" : "Note not found",
+          onClick: () => resolved && openNoteByReference(reference),
+          disabled: !resolved,
+        },
+        {
+          label: "Copy link",
+          onClick: () => navigator.clipboard.writeText(`[[${reference}]]`),
+        },
+      ];
+      showContextMenu(e, items);
+    },
+    [resolveNoteReference, openNoteByReference, showContextMenu]
+  );
+
+  const handleCardContextMenu = useCallback(
+    (e: React.MouseEvent, reference: string) => {
+      const items = [
+        {
+          label: "Go to card",
+          onClick: () => handleCardLinkClick(e, reference),
+        },
+        {
+          label: "Copy link",
+          onClick: () => navigator.clipboard.writeText(`[[card:${reference}]]`),
+        },
+      ];
+      showContextMenu(e, items);
+    },
+    [handleCardLinkClick, showContextMenu]
+  );
+
+  const handleExternalContextMenu = useCallback(
+    (e: React.MouseEvent, url: string) => {
+      const items = [
+        {
+          label: "Open in browser",
+          onClick: () => window.open(url, "_blank"),
+        },
+        {
+          label: "Copy URL",
+          onClick: () => navigator.clipboard.writeText(url),
+        },
+      ];
+      showContextMenu(e, items);
+    },
+    [showContextMenu]
+  );
+
   if (!content.trim()) {
     return (
       <div
@@ -211,8 +267,9 @@ export function CardPreviewPane({
                   <a
                     href="#"
                     onClick={(e) => handleCardLinkClick(e, reference)}
+                    onContextMenu={(e) => handleCardContextMenu(e, reference)}
                     className="cursor-pointer transition-colors text-orange-400 hover:text-orange-300 underline decoration-dotted"
-                    title={`Go to card: ${reference}`}
+                    title={`Go to card: ${reference} (right-click for options)`}
                     {...props}
                   >
                     <span className="mr-1">🎯</span>
@@ -231,6 +288,7 @@ export function CardPreviewPane({
                   <a
                     href="#"
                     onClick={(e) => handleWikiLinkClick(e, reference)}
+                    onContextMenu={(e) => handleWikiContextMenu(e, reference)}
                     className={`cursor-pointer transition-colors ${
                       exists
                         ? "text-accent-primary hover:text-accent-secondary underline decoration-dotted"
@@ -238,7 +296,7 @@ export function CardPreviewPane({
                     }`}
                     title={
                       exists
-                        ? `Go to: ${resolved.path}`
+                        ? `Go to: ${resolved.path} (right-click for options)`
                         : `Note not found: ${reference}`
                     }
                     {...props}
@@ -254,6 +312,7 @@ export function CardPreviewPane({
                   href={href}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onContextMenu={(e) => href && handleExternalContextMenu(e, href)}
                   className="text-blue-400 hover:text-blue-300 underline"
                   {...props}
                 >
@@ -363,6 +422,16 @@ export function CardPreviewPane({
           {processedContent}
         </ReactMarkdown>
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <LinkContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.items}
+          onClose={hideContextMenu}
+        />
+      )}
     </div>
   );
 }
