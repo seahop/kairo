@@ -187,9 +187,41 @@ function ContextMenu({ x, y, onClose, currentMode, onSetMode }: ContextMenuProps
         {currentMode === "split" && <span className="ml-auto text-xs">✓</span>}
       </button>
       <div className="border-t border-dark-700 my-1" />
-      <div className="px-3 py-1.5 text-xs text-dark-500">
-        Right-click to change view
+      <div className="px-3 py-1.5 text-xs text-dark-500 uppercase tracking-wide">
+        Edit
       </div>
+      <button
+        className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-dark-800 text-dark-200"
+        onClick={() => { document.execCommand("cut"); onClose(); }}
+      >
+        <span>✂️</span>
+        <span>Cut</span>
+        <span className="ml-auto text-xs text-dark-500">Ctrl+X</span>
+      </button>
+      <button
+        className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-dark-800 text-dark-200"
+        onClick={() => { document.execCommand("copy"); onClose(); }}
+      >
+        <span>📋</span>
+        <span>Copy</span>
+        <span className="ml-auto text-xs text-dark-500">Ctrl+C</span>
+      </button>
+      <button
+        className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-dark-800 text-dark-200"
+        onClick={() => { document.execCommand("paste"); onClose(); }}
+      >
+        <span>📄</span>
+        <span>Paste</span>
+        <span className="ml-auto text-xs text-dark-500">Ctrl+V</span>
+      </button>
+      <button
+        className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-dark-800 text-dark-200"
+        onClick={() => { document.execCommand("selectAll"); onClose(); }}
+      >
+        <span>📝</span>
+        <span>Select All</span>
+        <span className="ml-auto text-xs text-dark-500">Ctrl+A</span>
+      </button>
     </div>
   );
 }

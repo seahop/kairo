@@ -301,6 +301,31 @@ function App() {
         }
       }
 
+      // Clipboard operations - handle explicitly for non-input elements (like preview mode)
+      // Don't prevent default - let native handling work if available, but also trigger execCommand as backup
+      const activeElement = document.activeElement;
+      const isInEditor = activeElement?.closest('.cm-editor') !== null;
+      const isInInput = activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA' || (activeElement as HTMLElement)?.isContentEditable;
+
+      if (!isInEditor && !isInInput) {
+        if ((e.ctrlKey || e.metaKey) && e.key === "c" && !e.shiftKey) {
+          // Copy - use clipboard API for better compatibility
+          const selection = window.getSelection();
+          if (selection && selection.toString()) {
+            navigator.clipboard.writeText(selection.toString()).catch(() => {
+              // Fallback to execCommand
+              document.execCommand("copy");
+            });
+          }
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === "v" && !e.shiftKey) {
+          // Paste is only meaningful in editable contexts, skip for preview
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === "x" && !e.shiftKey) {
+          // Cut is only meaningful in editable contexts, skip for preview
+        }
+      }
+
       // Check registered commands for matching shortcuts (extensions, plugins)
       const commands = useCommands.getState().getCommands();
       for (const command of commands) {
