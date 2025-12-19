@@ -28,20 +28,41 @@ const ExternalLinkIcon = () => (
 // Also transforms card links [[card:title]] and [[card:title|display]]
 function preprocessWikiLinks(content: string): string {
   // First, handle card links: [[card:title]] or [[card:board/title]] or [[card:title|display]]
+  // Use hash-based URL to avoid protocol sanitization in react-markdown v9
   let processed = content.replace(
     /\[\[card:([^\]|]+)(?:\|([^\]]+))?\]\]/g,
     (_, cardRef, display) => {
       const displayText = display || cardRef;
-      return `[${displayText}](cardlink:${encodeURIComponent(cardRef)})`;
+      return `[${displayText}](#cardlink:${encodeURIComponent(cardRef)})`;
+    }
+  );
+
+  // Handle kanban links (alias for card links): [[kanban:board/title]] or [[kanban:board/title|display]]
+  processed = processed.replace(
+    /\[\[kanban:([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+    (_, cardRef, display) => {
+      const displayText = display || cardRef;
+      return `[${displayText}](#cardlink:${encodeURIComponent(cardRef)})`;
+    }
+  );
+
+  // Handle note links: [[note:title]] or [[note:title|display]]
+  // This extracts just the title part and converts to a regular wikilink
+  processed = processed.replace(
+    /\[\[note:([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+    (_, noteRef, display) => {
+      const displayText = display || noteRef;
+      return `[${displayText}](#wikilink:${encodeURIComponent(noteRef)})`;
     }
   );
 
   // Then handle regular wiki links: [[path]] or [[path|display text]]
+  // Use hash-based URL to avoid protocol sanitization in react-markdown v9
   processed = processed.replace(
     /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
     (_, path, display) => {
       const displayText = display || path;
-      return `[${displayText}](wikilink:${encodeURIComponent(path)})`;
+      return `[${displayText}](#wikilink:${encodeURIComponent(path)})`;
     }
   );
 
@@ -68,7 +89,7 @@ export function CardPreviewPane({
   minHeight = "200px",
 }: CardPreviewPaneProps) {
   const { openNoteByReference, resolveNoteReference } = useNoteStore();
-  const { loadBoard } = useKanbanStore();
+  const { loadBoard, closeCardDetail, toggleView } = useKanbanStore();
   const [vaultPath, setVaultPath] = useState<string | null>(null);
   const { contextMenu, showContextMenu, hideContextMenu } = useContextMenu();
 
@@ -103,11 +124,15 @@ export function CardPreviewPane({
     async (e: React.MouseEvent, reference: string) => {
       e.preventDefault();
       const success = await openNoteByReference(reference);
-      if (!success) {
+      if (success) {
+        // Close the card detail panel and hide the kanban view to show the note
+        closeCardDetail();
+        toggleView();
+      } else {
         console.warn(`Note not found: ${reference}`);
       }
     },
-    [openNoteByReference]
+    [openNoteByReference, closeCardDetail, toggleView]
   );
 
   // Handle card link clicks
@@ -161,7 +186,15 @@ export function CardPreviewPane({
       const items = [
         {
           label: resolved ? "Open note" : "Note not found",
-          onClick: () => resolved && openNoteByReference(reference),
+          onClick: async () => {
+            if (resolved) {
+              const success = await openNoteByReference(reference);
+              if (success) {
+                closeCardDetail();
+                toggleView();
+              }
+            }
+          },
           disabled: !resolved,
         },
         {
@@ -171,7 +204,7 @@ export function CardPreviewPane({
       ];
       showContextMenu(e, items);
     },
-    [resolveNoteReference, openNoteByReference, showContextMenu]
+    [resolveNoteReference, openNoteByReference, closeCardDetail, toggleView, showContextMenu]
   );
 
   const handleCardContextMenu = useCallback(
@@ -260,9 +293,9 @@ export function CardPreviewPane({
             },
             // Custom rendering for links
             a({ href, children, ...props }) {
-              // Check if it's a card link
-              if (href?.startsWith("cardlink:")) {
-                const reference = decodeURIComponent(href.slice(9));
+              // Check if it's a card link (hash-based URL)
+              if (href?.startsWith("#cardlink:")) {
+                const reference = decodeURIComponent(href.slice(10));
                 return (
                   <a
                     href="#"
@@ -278,9 +311,9 @@ export function CardPreviewPane({
                 );
               }
 
-              // Check if it's a wiki link
-              if (href?.startsWith("wikilink:")) {
-                const reference = decodeURIComponent(href.slice(9));
+              // Check if it's a wiki link (hash-based URL)
+              if (href?.startsWith("#wikilink:")) {
+                const reference = decodeURIComponent(href.slice(10));
                 const resolved = resolveNoteReference(reference);
                 const exists = resolved !== null;
 
