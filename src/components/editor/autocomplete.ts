@@ -17,12 +17,20 @@ interface DiagramBoardSummary {
   name: string;
 }
 
+// Alias info type for autocomplete
+interface AliasInfo {
+  alias: string;
+  note_path: string;
+  note_title: string;
+}
+
 // Cache for autocomplete data
 let noteCache: NoteMetadata[] = [];
 let tagCache: string[] = [];
 let mentionCache: string[] = [];
 let cardCache: KanbanCardSummary[] = [];
 let diagramCache: DiagramBoardSummary[] = [];
+let aliasCache: AliasInfo[] = [];
 let lastCacheUpdate = 0;
 const CACHE_TTL = 5000; // 5 seconds
 
@@ -36,18 +44,20 @@ async function refreshCache() {
     // Get notes from store
     noteCache = useNoteStore.getState().notes;
 
-    // Fetch tags, mentions, cards, and diagrams from backend
-    const [tags, mentions, cards, diagrams] = await Promise.all([
+    // Fetch tags, mentions, cards, diagrams, and aliases from backend
+    const [tags, mentions, cards, diagrams, aliases] = await Promise.all([
       invoke<string[]>("get_all_tags").catch(() => []),
       invoke<string[]>("get_all_mentions").catch(() => []),
       invoke<KanbanCardSummary[]>("kanban_get_all_cards").catch(() => []),
       invoke<DiagramBoardSummary[]>("diagram_list_boards").catch(() => []),
+      invoke<AliasInfo[]>("get_all_aliases").catch(() => []),
     ]);
 
     tagCache = tags;
     mentionCache = mentions;
     cardCache = cards;
     diagramCache = diagrams;
+    aliasCache = aliases;
     lastCacheUpdate = now;
   } catch (err) {
     console.error("Failed to refresh autocomplete cache:", err);
@@ -561,25 +571,39 @@ function syncCompletions(context: CompletionContext): CompletionResult | null {
     };
   }
 
-  // Check for [[note: pattern - show notes
+  // Check for [[note: pattern - show notes and aliases
   const noteMatch = textBeforeCursor.match(/\[\[note:([^\]]*)$/);
   if (noteMatch) {
     const query = noteMatch[1].toLowerCase();
     const bracketStart = textBeforeCursor.lastIndexOf("[[");
 
-    // Filter notes by query
-    const matches = noteCache
+    // Filter notes by query (title or path)
+    const noteMatches = noteCache
       .filter(n => n.title.toLowerCase().includes(query) || n.path.toLowerCase().includes(query))
-      .slice(0, 20);
+      .slice(0, 15)
+      .map(n => ({
+        label: `[[note:${n.title}]]`,
+        detail: n.path,
+        type: "text" as const,
+      }));
 
-    if (matches.length > 0) {
+    // Filter aliases by query
+    const aliasMatches = aliasCache
+      .filter(a => a.alias.toLowerCase().includes(query))
+      .slice(0, 5)
+      .map(a => ({
+        label: `[[note:${a.alias}]]`,
+        detail: `→ ${a.note_title} (alias)`,
+        type: "text" as const,
+        boost: -1, // Lower priority than direct matches
+      }));
+
+    const allMatches = [...noteMatches, ...aliasMatches];
+
+    if (allMatches.length > 0) {
       return {
         from: line.from + bracketStart,
-        options: matches.map(n => ({
-          label: `[[note:${n.title}]]`,
-          detail: n.path,
-          type: "text",
-        })),
+        options: allMatches,
       };
     }
     // If no matches yet, show placeholder
@@ -591,25 +615,39 @@ function syncCompletions(context: CompletionContext): CompletionResult | null {
     };
   }
 
-  // Check for ![[  pattern (transclusion) - show notes to embed
+  // Check for ![[  pattern (transclusion) - show notes and aliases to embed
   const transclusionMatch = textBeforeCursor.match(/!\[\[([^\]#]*)$/);
   if (transclusionMatch) {
     const query = transclusionMatch[1].toLowerCase();
     const bracketStart = textBeforeCursor.lastIndexOf("![[");
 
     // Filter notes by query
-    const matches = noteCache
+    const noteMatches = noteCache
       .filter(n => !n.archived && (n.title.toLowerCase().includes(query) || n.path.toLowerCase().includes(query)))
-      .slice(0, 20);
+      .slice(0, 15)
+      .map(n => ({
+        label: `![[${n.title}]]`,
+        detail: `Embed: ${n.path}`,
+        type: "function" as const,
+      }));
 
-    if (matches.length > 0) {
+    // Filter aliases by query
+    const aliasMatches = aliasCache
+      .filter(a => a.alias.toLowerCase().includes(query))
+      .slice(0, 5)
+      .map(a => ({
+        label: `![[${a.alias}]]`,
+        detail: `Embed: ${a.note_title} (alias)`,
+        type: "function" as const,
+        boost: -1,
+      }));
+
+    const allMatches = [...noteMatches, ...aliasMatches];
+
+    if (allMatches.length > 0) {
       return {
         from: line.from + bracketStart,
-        options: matches.map(n => ({
-          label: `![[${n.title}]]`,
-          detail: `Embed: ${n.path}`,
-          type: "function",
-        })),
+        options: allMatches,
       };
     }
     return {

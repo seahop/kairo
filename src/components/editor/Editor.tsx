@@ -4,6 +4,7 @@ import { MarkdownPane } from "./MarkdownPane";
 import { PreviewPane } from "./PreviewPane";
 import { ImageUpload } from "./ImageUpload";
 import { NoteHistory } from "./NoteHistory";
+import { VersionHistory } from "./VersionHistory";
 import { TableEditorModal } from "./table/TableEditorModal";
 import { useNoteStore } from "@/stores/noteStore";
 import { useUIStore, EditorViewMode } from "@/stores/uiStore";
@@ -67,6 +68,17 @@ const HistoryIcon = () => (
       strokeLinejoin="round"
       strokeWidth={2}
       d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
+  </svg>
+);
+
+const VersionsIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
     />
   </svg>
 );
@@ -233,6 +245,7 @@ export function Editor() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [showImageUpload, setShowImageUpload] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
 
   // Open table editor with a new table (insert at cursor or end)
   const handleInsertTable = useCallback(() => {
@@ -274,8 +287,15 @@ export function Editor() {
         e.preventDefault();
         goForward();
       }
+      // Version history: Ctrl/Cmd + Shift + H
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "H") {
+        e.preventDefault();
+        if (currentNote) {
+          setShowVersionHistory(prev => !prev);
+        }
+      }
     },
-    [saveNote, hasUnsavedChanges, goBack, goForward]
+    [saveNote, hasUnsavedChanges, goBack, goForward, currentNote]
   );
 
   useEffect(() => {
@@ -395,7 +415,7 @@ export function Editor() {
             <span className="hidden sm:inline">Upload Image</span>
           </button>
 
-          {/* History button */}
+          {/* Git History button */}
           {currentNote && (
             <button
               className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs ${
@@ -404,10 +424,26 @@ export function Editor() {
                   : "text-dark-400 hover:text-dark-200 hover:bg-dark-800"
               }`}
               onClick={() => setShowHistory(!showHistory)}
-              title="View version history"
+              title="View git history"
             >
               <HistoryIcon />
-              <span className="hidden sm:inline">History</span>
+              <span className="hidden sm:inline">Git</span>
+            </button>
+          )}
+
+          {/* Version History button */}
+          {currentNote && (
+            <button
+              className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs ${
+                showVersionHistory
+                  ? "bg-accent-primary/20 text-accent-primary"
+                  : "text-dark-400 hover:text-dark-200 hover:bg-dark-800"
+              }`}
+              onClick={() => setShowVersionHistory(!showVersionHistory)}
+              title="View snapshots (Ctrl+Shift+H)"
+            >
+              <VersionsIcon />
+              <span className="hidden sm:inline">Versions</span>
             </button>
           )}
 
@@ -493,6 +529,12 @@ export function Editor() {
       {showHistory && currentNote && (
         <NoteHistory onClose={() => setShowHistory(false)} />
       )}
+
+      {/* Version history modal */}
+      <VersionHistory
+        isOpen={showVersionHistory}
+        onClose={() => setShowVersionHistory(false)}
+      />
 
       {/* Table editor modal */}
       <TableEditorModal />

@@ -427,5 +427,58 @@ fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
         )?;
     }
 
+    // Migration: Add starred column to notes for bookmarking
+    let has_starred = conn.prepare("SELECT starred FROM notes LIMIT 0").is_ok();
+
+    if !has_starred {
+        conn.execute_batch(
+            r#"
+            ALTER TABLE notes ADD COLUMN starred INTEGER DEFAULT 0;
+            CREATE INDEX IF NOT EXISTS idx_notes_starred ON notes(starred);
+            "#,
+        )?;
+    }
+
+    // Migration: Create aliases table for note aliases
+    let has_aliases_table = conn.prepare("SELECT id FROM aliases LIMIT 0").is_ok();
+
+    if !has_aliases_table {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS aliases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id TEXT REFERENCES notes(id) ON DELETE CASCADE,
+                alias TEXT NOT NULL,
+                UNIQUE(note_id, alias)
+            );
+            CREATE INDEX IF NOT EXISTS idx_aliases_alias ON aliases(alias);
+            CREATE INDEX IF NOT EXISTS idx_aliases_note ON aliases(note_id);
+            CREATE INDEX IF NOT EXISTS idx_aliases_alias_lower ON aliases(LOWER(alias));
+            "#,
+        )?;
+    }
+
+    // Migration: Create note_versions table for version history
+    let has_versions_table = conn.prepare("SELECT id FROM note_versions LIMIT 0").is_ok();
+
+    if !has_versions_table {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS note_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id TEXT REFERENCES notes(id) ON DELETE CASCADE,
+                content TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                trigger TEXT NOT NULL,
+                label TEXT,
+                UNIQUE(note_id, content_hash)
+            );
+            CREATE INDEX IF NOT EXISTS idx_note_versions_note ON note_versions(note_id);
+            CREATE INDEX IF NOT EXISTS idx_note_versions_created ON note_versions(created_at);
+            "#,
+        )?;
+    }
+
     Ok(())
 }

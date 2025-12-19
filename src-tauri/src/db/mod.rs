@@ -84,3 +84,235 @@ pub fn get_note_count(app: &AppHandle) -> Result<usize, Box<dyn std::error::Erro
         Ok(count as usize)
     })
 }
+
+/// Get starred status for a note
+pub fn get_note_starred(app: &AppHandle, note_id: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        let starred: i32 = conn
+            .query_row(
+                "SELECT COALESCE(starred, 0) FROM notes WHERE id = ?1",
+                rusqlite::params![note_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        Ok(starred != 0)
+    })
+}
+
+/// Set starred status for a note
+pub fn set_note_starred(
+    app: &AppHandle,
+    note_id: &str,
+    starred: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        conn.execute(
+            "UPDATE notes SET starred = ?1 WHERE id = ?2",
+            rusqlite::params![if starred { 1 } else { 0 }, note_id],
+        )?;
+        Ok(())
+    })
+}
+
+/// Get aliases for a note
+pub fn get_note_aliases(
+    app: &AppHandle,
+    note_id: &str,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        let mut stmt = conn.prepare("SELECT alias FROM aliases WHERE note_id = ?1")?;
+        let aliases = stmt
+            .query_map(rusqlite::params![note_id], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(aliases)
+    })
+}
+
+/// Resolve a note path by alias (case-insensitive)
+pub fn resolve_note_by_alias(
+    app: &AppHandle,
+    alias: &str,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        let path: Result<String, _> = conn.query_row(
+            r#"
+            SELECT n.path FROM notes n
+            JOIN aliases a ON n.id = a.note_id
+            WHERE LOWER(a.alias) = LOWER(?1)
+            LIMIT 1
+            "#,
+            rusqlite::params![alias],
+            |row| row.get(0),
+        );
+        Ok(path.ok())
+    })
+}
+
+/// Get all aliases with their note paths (for autocomplete)
+pub fn get_all_aliases(
+    app: &AppHandle,
+) -> Result<Vec<(String, String, String)>, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT a.alias, n.path, n.title FROM aliases a
+            JOIN notes n ON a.note_id = n.id
+            ORDER BY a.alias
+            "#,
+        )?;
+        let aliases = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(aliases)
+    })
+}
+
+// ============================================================================
+// Note Versioning Functions
+// ============================================================================
+
+/// Create a new version of a note (auto-deduplicates based on content hash)
+pub fn create_note_version(
+    app: &AppHandle,
+    note_id: &str,
+    content: &str,
+    trigger: &str, // "save", "auto", "manual"
+    label: Option<&str>,
+) -> Result<Option<i64>, Box<dyn std::error::Error>> {
+    use sha2::{Digest, Sha256};
+
+    // Hash the content
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    let result = hasher.finalize();
+    let content_hash = hex::encode(&result[..16]);
+
+    with_db(app, |conn| {
+        // Check if this exact version already exists (deduplication)
+        let existing: Result<i64, _> = conn.query_row(
+            "SELECT id FROM note_versions WHERE note_id = ?1 AND content_hash = ?2",
+            rusqlite::params![note_id, content_hash],
+            |row| row.get(0),
+        );
+
+        if existing.is_ok() {
+            // Version already exists, don't create duplicate
+            return Ok(None);
+        }
+
+        // Get current timestamp
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        // Insert new version
+        conn.execute(
+            r#"
+            INSERT INTO note_versions (note_id, content, content_hash, created_at, trigger, label)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "#,
+            rusqlite::params![note_id, content, content_hash, created_at, trigger, label],
+        )?;
+
+        let version_id = conn.last_insert_rowid();
+
+        // Prune old versions (keep last 50 per note)
+        conn.execute(
+            r#"
+            DELETE FROM note_versions
+            WHERE note_id = ?1 AND id NOT IN (
+                SELECT id FROM note_versions WHERE note_id = ?1
+                ORDER BY created_at DESC LIMIT 50
+            )
+            "#,
+            rusqlite::params![note_id],
+        )?;
+
+        Ok(Some(version_id))
+    })
+}
+
+/// Version info for listing
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NoteVersionInfo {
+    pub id: i64,
+    pub note_id: String,
+    pub created_at: i64,
+    pub trigger: String,
+    pub label: Option<String>,
+    pub content_preview: String, // First 100 chars
+}
+
+/// Get version history for a note
+pub fn get_note_versions(
+    app: &AppHandle,
+    note_id: &str,
+) -> Result<Vec<NoteVersionInfo>, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, note_id, created_at, trigger, label, content
+            FROM note_versions
+            WHERE note_id = ?1
+            ORDER BY created_at DESC
+            "#,
+        )?;
+
+        let versions = stmt
+            .query_map(rusqlite::params![note_id], |row| {
+                let content: String = row.get(5)?;
+                let preview = content.chars().take(100).collect::<String>();
+                Ok(NoteVersionInfo {
+                    id: row.get(0)?,
+                    note_id: row.get(1)?,
+                    created_at: row.get(2)?,
+                    trigger: row.get(3)?,
+                    label: row.get(4)?,
+                    content_preview: preview,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(versions)
+    })
+}
+
+/// Get a specific version's content
+pub fn get_version_content(
+    app: &AppHandle,
+    version_id: i64,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        let content: Result<String, _> = conn.query_row(
+            "SELECT content FROM note_versions WHERE id = ?1",
+            rusqlite::params![version_id],
+            |row| row.get(0),
+        );
+        Ok(content.ok())
+    })
+}
+
+/// Label a version (for manual snapshots)
+pub fn label_version(
+    app: &AppHandle,
+    version_id: i64,
+    label: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    with_db(app, |conn| {
+        conn.execute(
+            "UPDATE note_versions SET label = ?1 WHERE id = ?2",
+            rusqlite::params![label, version_id],
+        )?;
+        Ok(())
+    })
+}

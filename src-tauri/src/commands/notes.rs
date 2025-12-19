@@ -60,6 +60,7 @@ pub struct NoteMetadata {
     pub modified_at: i64,
     pub created_at: i64,
     pub archived: bool,
+    pub starred: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -150,6 +151,15 @@ pub async fn write_note(
         return Err(format!("Note not found: {}", path));
     }
 
+    // Create a version of the current content before saving (if file exists)
+    if note_path.exists() {
+        let note_id = generate_note_id(&path);
+        if let Ok(current_content) = fs::read_to_string(&note_path) {
+            // Create version (auto-deduplicates, so no duplicates if content hasn't changed)
+            let _ = db::create_note_version(&app, &note_id, &current_content, "save", None);
+        }
+    }
+
     // Ensure parent directory exists
     if let Some(parent) = note_path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -185,6 +195,7 @@ pub async fn write_note(
     let title = extract_title(&content, &path);
     let id = generate_note_id(&path);
     let archived = extract_archived(&content);
+    let starred = db::get_note_starred(&app, &id).unwrap_or(false);
 
     Ok(NoteMetadata {
         id,
@@ -193,6 +204,7 @@ pub async fn write_note(
         modified_at,
         created_at,
         archived,
+        starred,
     })
 }
 
@@ -272,6 +284,7 @@ pub async fn rename_note(
     let title = extract_title(&content, &new_path);
     let id = generate_note_id(&new_path);
     let archived = extract_archived(&content);
+    let starred = db::get_note_starred(&app, &id).unwrap_or(false);
 
     Ok(NoteMetadata {
         id,
@@ -280,6 +293,7 @@ pub async fn rename_note(
         modified_at,
         created_at,
         archived,
+        starred,
     })
 }
 
@@ -345,6 +359,9 @@ pub async fn set_note_archived(
     let title = extract_title(&new_content, &path);
     let id = generate_note_id(&path);
 
+    // Get starred status from database
+    let starred = db::get_note_starred(&app, &id).unwrap_or(false);
+
     Ok(NoteMetadata {
         id,
         path,
@@ -352,6 +369,62 @@ pub async fn set_note_archived(
         modified_at,
         created_at,
         archived,
+        starred,
+    })
+}
+
+/// Set the starred status of a note
+#[tauri::command]
+pub async fn set_note_starred(
+    app: AppHandle,
+    path: String,
+    starred: bool,
+) -> Result<NoteMetadata, String> {
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
+    let note_path = validate_vault_path(&vault_path, &path)?;
+
+    if !note_path.exists() {
+        return Err(format!("Note not found: {}", path));
+    }
+
+    let id = generate_note_id(&path);
+
+    // Update starred in database only (not in frontmatter - it's UI state)
+    db::set_note_starred(&app, &id, starred).map_err(|e| e.to_string())?;
+
+    // Read note for metadata
+    let content = fs::read_to_string(&note_path).map_err(|e| e.to_string())?;
+    let metadata = fs::metadata(&note_path).map_err(|e| e.to_string())?;
+
+    let modified_at = metadata
+        .modified()
+        .map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        })
+        .unwrap_or(0);
+
+    let created_at = metadata
+        .created()
+        .map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        })
+        .unwrap_or(modified_at);
+
+    let title = extract_title(&content, &path);
+    let archived = extract_archived(&content);
+
+    Ok(NoteMetadata {
+        id,
+        path,
+        title,
+        modified_at,
+        created_at,
+        archived,
+        starred,
     })
 }
 
@@ -612,7 +685,7 @@ pub fn list_blocks_for_note(app: AppHandle, note_path: String) -> Result<Vec<Blo
     Ok(Vec::new())
 }
 
-/// Resolve a note reference (title, path, or partial path) to an actual path
+/// Resolve a note reference (title, path, alias, or partial path) to an actual path
 fn resolve_note_path(
     app: &AppHandle,
     vault_path: &Path,
@@ -633,11 +706,27 @@ fn resolve_note_path(
         }
     }
 
-    // Try to find by title in the database
+    // Try to find by title or alias in the database
     let result = db::with_db(app, |conn| {
         // Case-insensitive title match
         let path: Result<String, _> = conn.query_row(
             "SELECT path FROM notes WHERE LOWER(title) = LOWER(?1) LIMIT 1",
+            rusqlite::params![reference],
+            |row| row.get(0),
+        );
+
+        if let Ok(p) = path {
+            return Ok(Some(p));
+        }
+
+        // Try alias match (case-insensitive)
+        let path: Result<String, _> = conn.query_row(
+            r#"
+            SELECT n.path FROM notes n
+            JOIN aliases a ON n.id = a.note_id
+            WHERE LOWER(a.alias) = LOWER(?1)
+            LIMIT 1
+            "#,
             rusqlite::params![reference],
             |row| row.get(0),
         );
@@ -686,4 +775,167 @@ fn strip_frontmatter_and_title(content: &str) -> String {
     // Trim leading whitespace but preserve structure
     let result = lines.join("\n");
     result.trim_start_matches('\n').to_string()
+}
+
+// ============================================================================
+// Alias Commands
+// ============================================================================
+
+/// Alias info for a note
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AliasInfo {
+    pub alias: String,
+    pub note_path: String,
+    pub note_title: String,
+}
+
+/// Get all aliases for a note by path
+#[tauri::command]
+pub fn get_note_aliases(app: AppHandle, path: String) -> Result<Vec<String>, String> {
+    let note_id = generate_note_id(&path);
+    db::get_note_aliases(&app, &note_id).map_err(|e| e.to_string())
+}
+
+/// Get all aliases in the vault (for autocomplete)
+#[tauri::command]
+pub fn get_all_aliases(app: AppHandle) -> Result<Vec<AliasInfo>, String> {
+    let aliases = db::get_all_aliases(&app).map_err(|e| e.to_string())?;
+    Ok(aliases
+        .into_iter()
+        .map(|(alias, path, title)| AliasInfo {
+            alias,
+            note_path: path,
+            note_title: title,
+        })
+        .collect())
+}
+
+/// Resolve an alias to a note path
+#[tauri::command]
+pub fn resolve_alias(app: AppHandle, alias: String) -> Result<Option<String>, String> {
+    db::resolve_note_by_alias(&app, &alias).map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Note Version Commands
+// ============================================================================
+
+/// Re-export NoteVersionInfo for use in commands
+pub use db::NoteVersionInfo;
+
+/// Get version history for a note
+#[tauri::command]
+pub fn get_note_versions(app: AppHandle, path: String) -> Result<Vec<NoteVersionInfo>, String> {
+    let note_id = generate_note_id(&path);
+    db::get_note_versions(&app, &note_id).map_err(|e| e.to_string())
+}
+
+/// Get the content of a specific version
+#[tauri::command]
+pub fn get_version_content(app: AppHandle, version_id: i64) -> Result<Option<String>, String> {
+    db::get_version_content(&app, version_id).map_err(|e| e.to_string())
+}
+
+/// Create a manual snapshot of the current note
+#[tauri::command]
+pub fn create_note_snapshot(
+    app: AppHandle,
+    path: String,
+    label: Option<String>,
+) -> Result<Option<i64>, String> {
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
+    let note_path = validate_vault_path(&vault_path, &path)?;
+
+    if !note_path.exists() {
+        return Err(format!("Note not found: {}", path));
+    }
+
+    let content = fs::read_to_string(&note_path).map_err(|e| e.to_string())?;
+    let note_id = generate_note_id(&path);
+
+    db::create_note_version(&app, &note_id, &content, "manual", label.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// Restore a note to a previous version
+#[tauri::command]
+pub async fn restore_note_version(
+    app: AppHandle,
+    path: String,
+    version_id: i64,
+) -> Result<NoteMetadata, String> {
+    let vault_path = db::get_current_vault_path(&app).ok_or("No vault open")?;
+    let note_path = validate_vault_path(&vault_path, &path)?;
+
+    if !note_path.exists() {
+        return Err(format!("Note not found: {}", path));
+    }
+
+    // Get the version content
+    let content = db::get_version_content(&app, version_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Version not found")?;
+
+    // Save current content as a version before restoring (so user can undo)
+    let current_content = fs::read_to_string(&note_path).map_err(|e| e.to_string())?;
+    let note_id = generate_note_id(&path);
+    let _ = db::create_note_version(
+        &app,
+        &note_id,
+        &current_content,
+        "auto",
+        Some("Before restore"),
+    );
+
+    // Write the restored content
+    fs::write(&note_path, &content).map_err(|e| e.to_string())?;
+
+    // Re-index the note
+    db::index_single_note(&app, &vault_path, &PathBuf::from(&path))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Get updated metadata
+    let metadata = fs::metadata(&note_path).map_err(|e| e.to_string())?;
+    let modified_at = metadata
+        .modified()
+        .map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        })
+        .unwrap_or(0);
+
+    let created_at = metadata
+        .created()
+        .map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        })
+        .unwrap_or(modified_at);
+
+    let title = extract_title(&content, &path);
+    let archived = extract_archived(&content);
+    let starred = db::get_note_starred(&app, &note_id).unwrap_or(false);
+
+    Ok(NoteMetadata {
+        id: note_id,
+        path,
+        title,
+        modified_at,
+        created_at,
+        archived,
+        starred,
+    })
+}
+
+/// Label a version
+#[tauri::command]
+pub fn label_note_version(
+    app: AppHandle,
+    version_id: i64,
+    label: String,
+) -> Result<(), String> {
+    db::label_version(&app, version_id, &label).map_err(|e| e.to_string())
 }

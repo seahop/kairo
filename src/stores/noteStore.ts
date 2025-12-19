@@ -10,6 +10,7 @@ export interface NoteMetadata {
   modified_at: number;
   created_at: number;
   archived: boolean;
+  starred: boolean;
 }
 
 export interface Note {
@@ -57,6 +58,8 @@ interface NoteState {
   deleteNote: (path: string) => Promise<void>;
   renameNote: (oldPath: string, newPath: string) => Promise<void>;
   setNoteArchived: (path: string, archived: boolean) => Promise<void>;
+  setNoteStarred: (path: string, starred: boolean) => Promise<void>;
+  getStarredNotes: () => NoteMetadata[];
   createFolder: (path: string) => Promise<void>;
   setEditorContent: (content: string) => void;
   closeNote: () => void;
@@ -213,22 +216,48 @@ export const useNoteStore = create<NoteState>((set, get) => ({
 
   // Open a note by wiki-style reference
   openNoteByReference: async (reference: string): Promise<boolean> => {
+    // First try direct resolution (path, title, filename)
     const resolved = get().resolveNoteReference(reference);
     if (resolved) {
       await get().openNote(resolved.path);
       return true;
     }
+
+    // Then try alias resolution via backend
+    try {
+      const aliasPath = await invoke<string | null>("resolve_alias", { alias: reference });
+      if (aliasPath) {
+        await get().openNote(aliasPath);
+        return true;
+      }
+    } catch (err) {
+      console.warn(`Alias resolution failed for: ${reference}`, err);
+    }
+
     console.warn(`Could not resolve note reference: ${reference}`);
     return false;
   },
 
   // Open a note by wiki-style reference in the secondary pane
   openNoteByReferenceInSecondary: async (reference: string): Promise<boolean> => {
+    // First try direct resolution (path, title, filename)
     const resolved = get().resolveNoteReference(reference);
     if (resolved) {
       await get().openNoteInSecondary(resolved.path);
       return true;
     }
+
+    // Then try alias resolution via backend
+    try {
+      const aliasPath = await invoke<string | null>("resolve_alias", { alias: reference });
+      if (aliasPath) {
+        await get().openNoteInSecondary(aliasPath);
+        return true;
+      }
+    } catch (err) {
+      console.warn(`Alias resolution failed for secondary pane: ${reference}`, err);
+    }
+
     console.warn(`Could not resolve note reference for secondary pane: ${reference}`);
     return false;
   },
@@ -357,6 +386,29 @@ export const useNoteStore = create<NoteState>((set, get) => ({
     } catch (error) {
       set({ error: String(error) });
     }
+  },
+
+  setNoteStarred: async (path: string, starred: boolean) => {
+    try {
+      const metadata = await invoke<NoteMetadata>("set_note_starred", {
+        path,
+        starred,
+      });
+
+      // Update the note in the list
+      const { notes } = get();
+      const updatedNotes = notes.map(n =>
+        n.path === path ? { ...n, starred: metadata.starred } : n
+      );
+      set({ notes: updatedNotes });
+    } catch (error) {
+      set({ error: String(error) });
+    }
+  },
+
+  getStarredNotes: () => {
+    const { notes, showArchived } = get();
+    return notes.filter(n => n.starred && (showArchived || !n.archived));
   },
 
   createFolder: async (path: string) => {

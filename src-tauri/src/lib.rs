@@ -49,10 +49,21 @@ pub fn run() {
             commands::notes::rename_note,
             commands::notes::create_folder,
             commands::notes::set_note_archived,
+            commands::notes::set_note_starred,
             // Transclusion commands
             commands::notes::get_note_content_for_transclusion,
             commands::notes::get_block_content,
             commands::notes::list_blocks_for_note,
+            // Alias commands
+            commands::notes::get_note_aliases,
+            commands::notes::get_all_aliases,
+            commands::notes::resolve_alias,
+            // Note versioning commands
+            commands::notes::get_note_versions,
+            commands::notes::get_version_content,
+            commands::notes::create_note_snapshot,
+            commands::notes::restore_note_version,
+            commands::notes::label_note_version,
             // Search commands
             commands::search::search_notes,
             commands::search::search_entities,

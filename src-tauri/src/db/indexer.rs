@@ -123,7 +123,7 @@ pub async fn index_single_note(
             params![id, path_str, title, content, content_hash, created_at, modified_at, frontmatter, archived as i32],
         )?;
 
-        // Clear existing entities, tags, code blocks, backlinks, card backlinks, and blocks for this note
+        // Clear existing entities, tags, code blocks, backlinks, card backlinks, blocks, and aliases for this note
         conn.execute("DELETE FROM entities WHERE note_id = ?1", params![id])?;
         conn.execute("DELETE FROM tags WHERE note_id = ?1", params![id])?;
         conn.execute("DELETE FROM code_blocks WHERE note_id = ?1", params![id])?;
@@ -133,6 +133,7 @@ pub async fn index_single_note(
             params![id],
         )?;
         conn.execute("DELETE FROM blocks WHERE note_id = ?1", params![id])?;
+        conn.execute("DELETE FROM aliases WHERE note_id = ?1", params![id])?;
 
         // Extract and insert entities
         let entities = extract_entities(&content);
@@ -210,6 +211,15 @@ pub async fn index_single_note(
             )?;
         }
 
+        // Extract and insert aliases from frontmatter
+        let aliases = extract_aliases(&frontmatter);
+        for alias in aliases {
+            conn.execute(
+                "INSERT OR IGNORE INTO aliases (note_id, alias) VALUES (?1, ?2)",
+                params![id, alias],
+            )?;
+        }
+
         Ok(())
     })
 }
@@ -229,7 +239,7 @@ pub fn remove_note_from_index(
 pub fn list_all_notes(app: &AppHandle) -> Result<Vec<NoteMetadata>, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, path, title, modified_at, created_at, COALESCE(archived, 0) FROM notes ORDER BY modified_at DESC",
+            "SELECT id, path, title, modified_at, created_at, COALESCE(archived, 0), COALESCE(starred, 0) FROM notes ORDER BY modified_at DESC",
         )?;
 
         let notes = stmt
@@ -241,6 +251,7 @@ pub fn list_all_notes(app: &AppHandle) -> Result<Vec<NoteMetadata>, Box<dyn std:
                     modified_at: row.get(3)?,
                     created_at: row.get(4)?,
                     archived: row.get::<_, i32>(5)? != 0,
+                    starred: row.get::<_, i32>(6)? != 0,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -311,28 +322,89 @@ fn extract_archived(frontmatter: &Option<String>) -> bool {
 }
 
 fn serde_yaml_to_json(yaml: &str) -> Result<String, Box<dyn std::error::Error>> {
-    // Simple key: value parsing
     use std::collections::HashMap;
     let mut map: HashMap<String, serde_json::Value> = HashMap::new();
 
-    for line in yaml.lines() {
-        if let Some((key, value)) = line.split_once(':') {
-            let key = key.trim().to_string();
-            let value = value.trim();
+    let lines: Vec<&str> = yaml.lines().collect();
+    let mut i = 0;
 
-            // Handle arrays
-            if value.starts_with('[') && value.ends_with(']') {
-                let items: Vec<String> = value[1..value.len() - 1]
-                    .split(',')
-                    .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
-                    .collect();
-                map.insert(key, serde_json::json!(items));
+    while i < lines.len() {
+        let line = lines[i];
+
+        // Skip empty lines
+        if line.trim().is_empty() {
+            i += 1;
+            continue;
+        }
+
+        // Check for key: value pattern at root level (no leading whitespace)
+        if !line.starts_with(' ') && !line.starts_with('\t') {
+            if let Some((key, value)) = line.split_once(':') {
+                let key = key.trim().to_string();
+                let value = value.trim();
+
+                // Handle inline arrays: key: [item1, item2]
+                if value.starts_with('[') && value.ends_with(']') {
+                    let items: Vec<String> = value[1..value.len() - 1]
+                        .split(',')
+                        .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    map.insert(key, serde_json::json!(items));
+                    i += 1;
+                }
+                // Handle multi-line arrays: key:\n  - item1\n  - item2
+                else if value.is_empty() {
+                    // Look ahead for array items
+                    let mut items: Vec<String> = Vec::new();
+                    i += 1;
+
+                    while i < lines.len() {
+                        let next_line = lines[i];
+                        let trimmed = next_line.trim();
+
+                        // Check if it's an array item (starts with -)
+                        if trimmed.starts_with('-') {
+                            let item = trimmed[1..].trim().trim_matches('"').trim_matches('\'').to_string();
+                            if !item.is_empty() {
+                                items.push(item);
+                            }
+                            i += 1;
+                        }
+                        // Check if we've hit another root-level key or end
+                        else if !next_line.starts_with(' ') && !next_line.starts_with('\t') && !trimmed.is_empty() {
+                            break;
+                        }
+                        // Skip empty lines within the array
+                        else if trimmed.is_empty() {
+                            i += 1;
+                        }
+                        // Anything else (non-array nested content), skip
+                        else {
+                            i += 1;
+                        }
+                    }
+
+                    if !items.is_empty() {
+                        map.insert(key, serde_json::json!(items));
+                    } else {
+                        // Empty value, store as empty string
+                        map.insert(key, serde_json::json!(""));
+                    }
+                }
+                // Simple key: value
+                else {
+                    map.insert(
+                        key,
+                        serde_json::json!(value.trim_matches('"').trim_matches('\'')),
+                    );
+                    i += 1;
+                }
             } else {
-                map.insert(
-                    key,
-                    serde_json::json!(value.trim_matches('"').trim_matches('\'')),
-                );
+                i += 1;
             }
+        } else {
+            i += 1;
         }
     }
 
@@ -531,6 +603,53 @@ fn extract_links(content: &str) -> Vec<(String, String)> {
     }
 
     links
+}
+
+/// Extract aliases from frontmatter
+/// Returns: Vec<String> of aliases
+fn extract_aliases(frontmatter: &Option<String>) -> Vec<String> {
+    let mut aliases = Vec::new();
+
+    if let Some(fm) = frontmatter {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(fm) {
+            // Handle array format: aliases: [alias1, alias2]
+            if let Some(alias_array) = json.get("aliases").and_then(|a| a.as_array()) {
+                for alias in alias_array {
+                    if let Some(a) = alias.as_str() {
+                        let trimmed = a.trim();
+                        if !trimmed.is_empty() {
+                            aliases.push(trimmed.to_string());
+                        }
+                    }
+                }
+            }
+            // Handle single string format: aliases: my-alias
+            else if let Some(alias_str) = json.get("aliases").and_then(|a| a.as_str()) {
+                let trimmed = alias_str.trim();
+                if !trimmed.is_empty() {
+                    aliases.push(trimmed.to_string());
+                }
+            }
+            // Also check for singular "alias" key
+            if let Some(alias_array) = json.get("alias").and_then(|a| a.as_array()) {
+                for alias in alias_array {
+                    if let Some(a) = alias.as_str() {
+                        let trimmed = a.trim();
+                        if !trimmed.is_empty() && !aliases.contains(&trimmed.to_string()) {
+                            aliases.push(trimmed.to_string());
+                        }
+                    }
+                }
+            } else if let Some(alias_str) = json.get("alias").and_then(|a| a.as_str()) {
+                let trimmed = alias_str.trim();
+                if !trimmed.is_empty() && !aliases.contains(&trimmed.to_string()) {
+                    aliases.push(trimmed.to_string());
+                }
+            }
+        }
+    }
+
+    aliases
 }
 
 /// Extract block references from content: lines ending with ^block-id

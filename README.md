@@ -22,6 +22,9 @@
 - **Templates** - Built-in templates (Zettelkasten, PARA, Daily Notes) plus custom templates
 - **Snippets** - Quick insertion with `/` trigger for boilerplate content
 - **Daily Notes** - One-click creation of date-stamped journal entries
+- **Stars/Bookmarks** - Star important notes for quick access in a dedicated sidebar section
+- **Note Aliases** - Define multiple names for a note via frontmatter (`aliases: [name1, name2]`)
+- **Version History** - Automatic snapshots on save with manual snapshot creation and restore
 
 ### Kanban Boards
 - **Personal Boards** - Each team member gets their own board automatically
@@ -140,6 +143,7 @@ Build artifacts are output to the `dist/` folder.
 [[Another Note]]
 [[folder/nested-note]]
 [[note|Custom Display Text]]
+[[My Alias]]              <!-- Link via alias -->
 
 <!-- Card links -->
 [[card:Task Title]]
@@ -148,6 +152,43 @@ Build artifacts are output to the `dist/` folder.
 <!-- Diagram links -->
 [[diagram:Architecture Diagram]]
 ```
+
+### Note Aliases
+
+Define aliases in a note's frontmatter to reference it by multiple names:
+
+```yaml
+---
+title: My Important Note
+aliases:
+  - important
+  - key-note
+  - MIN
+---
+```
+
+Now you can link to this note using any of its aliases: `[[important]]`, `[[key-note]]`, or `[[MIN]]`. Aliases are case-insensitive and appear in autocomplete suggestions.
+
+### Version History
+
+Every time you save a note, Kairo automatically creates a snapshot (deduplicated by content hash). You can:
+
+- **View all versions** - Open the Versions panel from the toolbar or press `Ctrl+Shift+H`
+- **Preview any version** - Click a version to see its content
+- **Create manual snapshots** - Save labeled checkpoints before major changes
+- **Restore previous versions** - Roll back to any saved version with one click
+
+Kairo keeps the last 50 versions per note automatically.
+
+### Stars/Bookmarks
+
+Star your most important notes to keep them easily accessible:
+
+- **Star a note** - Right-click any note in the sidebar and select "Star"
+- **View starred notes** - Starred notes appear in a dedicated section at the top of the sidebar
+- **Toggle star** - Click the star icon or use the context menu to unstar
+
+Starred notes are stored in the database and persist across sessions.
 
 ### Keyboard Shortcuts
 
@@ -163,6 +204,7 @@ Build artifacts are output to the `dist/` folder.
 | `Ctrl+G` | Local Graph (current note) |
 | `Ctrl+Shift+K` | Kanban Board |
 | `Ctrl+Shift+D` | Diagram Editor |
+| `Ctrl+Shift+H` | Version History |
 | `Escape` | Close Modal / Back |
 
 ### Dataview Queries

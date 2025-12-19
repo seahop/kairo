@@ -21,14 +21,23 @@ const ExternalLinkIcon = () => (
   </svg>
 );
 
+// Strip YAML frontmatter from content
+function stripFrontmatter(content: string): string {
+  // Match frontmatter: starts with ---, ends with ---
+  const frontmatterRegex = /^---\n[\s\S]*?\n---\n?/;
+  return content.replace(frontmatterRegex, '');
+}
+
 // Transform wiki-style links [[note]] and [[note|display]] to markdown links
 // Also transforms card/kanban links, diagram links, and transclusions
 function preprocessWikiLinks(content: string): string {
+  // First strip frontmatter
+  const contentWithoutFrontmatter = stripFrontmatter(content);
   // IMPORTANT: Handle transclusions FIRST (before regular links)
   // This ensures ![[note]] is processed before [[note]]
 
   // 1. Block transclusion: ![[note#^block-id]] or ![[note#^block-id|alias]]
-  let processed = content.replace(
+  let processed = contentWithoutFrontmatter.replace(
     /!\[\[([^\]#|]+)#\^([a-zA-Z0-9_-]+)(?:\|([^\]]+))?\]\]/g,
     (_, noteRef, blockId, alias) => {
       const encodedRef = encodeURIComponent(noteRef.trim());
