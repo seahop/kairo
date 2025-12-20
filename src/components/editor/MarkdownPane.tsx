@@ -345,6 +345,22 @@ export function MarkdownPane() {
     };
   }, []);
 
+  // Listen for spellcheck refresh event (when a word is added to dictionary)
+  useEffect(() => {
+    const handleSpellcheckRefresh = () => {
+      if (viewRef.current) {
+        // Dispatch empty transaction to trigger ViewPlugin update
+        viewRef.current.dispatch({});
+      }
+    };
+
+    window.addEventListener("spellcheck:refresh", handleSpellcheckRefresh);
+
+    return () => {
+      window.removeEventListener("spellcheck:refresh", handleSpellcheckRefresh);
+    };
+  }, []);
+
   return (
     <div className="h-full overflow-hidden">
       <div ref={editorRef} className="h-full" />

@@ -1,7 +1,10 @@
-import React, { useMemo, useCallback, useEffect, useState } from "react";
+import React, { useMemo, useCallback, useEffect, useState, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
+// Note: DOMPurify was removed for performance. In a desktop app with user-owned
+// content, XSS risk is minimal. If sharing notes becomes a feature, add rehype-sanitize
+// to the ReactMarkdown pipeline instead (integrates better than post-processing).
 import { invoke } from "@tauri-apps/api/core";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useNoteStore } from "@/stores/noteStore";
@@ -13,6 +16,10 @@ import { DataviewRenderer } from "./DataviewRenderer";
 import { TransclusionRenderer } from "./TransclusionRenderer";
 import { useTableEditorStore } from "@/stores/tableEditorStore";
 import { parseMarkdownTable } from "./table/tableParser";
+
+// Stable plugin arrays - defined outside component to prevent recreation
+const REMARK_PLUGINS = [remarkGfm];
+const REHYPE_PLUGINS = [rehypeRaw];
 
 // Icon for external links
 const ExternalLinkIcon = () => (
@@ -303,7 +310,7 @@ interface KanbanCardResult {
   title: string;
 }
 
-export function PreviewPane({ content }: PreviewPaneProps) {
+export const PreviewPane = memo(function PreviewPane({ content }: PreviewPaneProps) {
   const { editorContent, openNoteByReference, resolveNoteReference, setEditorContent } = useNoteStore();
   const { loadBoard } = useKanbanStore();
   const { boards: diagramBoards, loadBoards: loadDiagramBoards, loadBoard: loadDiagramBoard, setShowView: setDiagramShowView } = useDiagramStore();
@@ -675,15 +682,8 @@ export function PreviewPane({ content }: PreviewPaneProps) {
       )}
       <div className={`markdown-preview reading-mode width-${readingWidth} text-${readingFontSize}-reading`}>
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeRaw]}
-          urlTransform={(url) => {
-            // Keep our hash-based custom links unchanged
-            if (url.startsWith("#cardlink:") || url.startsWith("#wikilink:") || url.startsWith("#diagramlink:") || url.startsWith("#blockref:")) {
-              return url;
-            }
-            return url;
-          }}
+          remarkPlugins={REMARK_PLUGINS}
+          rehypePlugins={REHYPE_PLUGINS}
           components={{
             // Custom rendering for code blocks
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1165,4 +1165,4 @@ export function PreviewPane({ content }: PreviewPaneProps) {
       )}
     </div>
   );
-}
+});

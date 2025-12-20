@@ -264,7 +264,14 @@ fn build_condition(condition: &SerializedCondition) -> Result<(String, Vec<Strin
             let sql_field = map_field_to_sql(field);
             let (sql_op, sql_value) = map_operator_and_value(operator, value)?;
 
-            Ok((format!("{} {} ?", sql_field, sql_op), vec![sql_value]))
+            // Add ESCAPE clause for LIKE operators to support escaped wildcards
+            let sql = if sql_op == "LIKE" {
+                format!("{} {} ? ESCAPE '\\'", sql_field, sql_op)
+            } else {
+                format!("{} {} ?", sql_field, sql_op)
+            };
+
+            Ok((sql, vec![sql_value]))
         }
         "and" => {
             let conditions = condition
@@ -312,6 +319,16 @@ fn build_condition(condition: &SerializedCondition) -> Result<(String, Vec<Strin
     }
 }
 
+/// Validate that a field name is safe for use in SQL
+/// Only allows alphanumeric characters, underscores, dots, and hyphens
+fn is_safe_field_name(field: &str) -> bool {
+    !field.is_empty()
+        && field.len() <= 64
+        && field
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '.' || c == '-')
+}
+
 fn map_field_to_sql(field: &str) -> String {
     match field {
         "file.name" | "title" => "n.title".to_string(),
@@ -323,10 +340,22 @@ fn map_field_to_sql(field: &str) -> String {
         }
         "file.tags" | "tags" => "t.tag".to_string(),
         _ => {
-            // Assume it's a frontmatter field
+            // Validate field name to prevent SQL injection
+            if !is_safe_field_name(field) {
+                // Return a safe fallback that will return NULL
+                return "NULL".to_string();
+            }
+            // Safe to use in json_extract - field name is validated
             format!("json_extract(n.frontmatter, '$.{}')", field)
         }
     }
+}
+
+/// Escape SQL LIKE pattern special characters
+fn escape_like_pattern(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 fn map_operator_and_value(
@@ -348,9 +377,18 @@ fn map_operator_and_value(
         "<" => "<",
         ">=" => ">=",
         "<=" => "<=",
-        "CONTAINS" => return Ok(("LIKE".to_string(), format!("%{}%", sql_value))),
-        "STARTSWITH" => return Ok(("LIKE".to_string(), format!("{}%", sql_value))),
-        "ENDSWITH" => return Ok(("LIKE".to_string(), format!("%{}", sql_value))),
+        "CONTAINS" => {
+            let escaped = escape_like_pattern(&sql_value);
+            return Ok(("LIKE".to_string(), format!("%{}%", escaped)));
+        }
+        "STARTSWITH" => {
+            let escaped = escape_like_pattern(&sql_value);
+            return Ok(("LIKE".to_string(), format!("{}%", escaped)));
+        }
+        "ENDSWITH" => {
+            let escaped = escape_like_pattern(&sql_value);
+            return Ok(("LIKE".to_string(), format!("%{}", escaped)));
+        }
         _ => return Err(format!("Unknown operator: {}", operator)),
     };
 

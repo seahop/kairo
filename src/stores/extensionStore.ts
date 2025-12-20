@@ -704,6 +704,21 @@ const BLOCKED_GLOBALS = [
   'Deno', 'Bun'  // Other runtimes
 ];
 
+// Check if dynamic code execution is allowed by CSP
+function isDynamicCodeAllowed(): boolean {
+  try {
+    // Try to create a simple function - this will fail if CSP blocks 'unsafe-eval'
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    new Function('return true');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Cache the CSP check result
+let dynamicCodeAllowed: boolean | null = null;
+
 // Evaluate extension code with restricted scope
 function evaluateExtensionCode(
   code: string,
@@ -713,6 +728,26 @@ function evaluateExtensionCode(
   const moduleExports: { initialize?: (api: ReturnType<typeof createExtensionApi>) => void | Promise<void>; cleanup?: (api: ReturnType<typeof createExtensionApi>) => void } = {};
 
   try {
+    // Check CSP once and cache result
+    if (dynamicCodeAllowed === null) {
+      dynamicCodeAllowed = isDynamicCodeAllowed();
+    }
+
+    // If CSP blocks dynamic code execution, extensions cannot run
+    // This is intentional for security - extensions require 'unsafe-eval' which is dangerous
+    if (!dynamicCodeAllowed) {
+      api.log.warn(
+        `Extension ${extensionId} cannot run: dynamic code execution is blocked by Content Security Policy. ` +
+        `This is a security feature. Custom extensions are disabled for security.`
+      );
+      console.warn(
+        `[Security] Extension "${extensionId}" blocked: CSP prevents dynamic code execution. ` +
+        `Extensions require 'unsafe-eval' which is disabled for security. ` +
+        `Only built-in plugins are available.`
+      );
+      return moduleExports;
+    }
+
     // Validate extension code before execution
     const validationError = validateExtensionCode(code, extensionId);
     if (validationError) {
@@ -728,6 +763,7 @@ function evaluateExtensionCode(
     // Use Function constructor instead of eval - it's slightly safer as it creates
     // a new function scope and doesn't have access to local variables
     // The blocked scope prevents access to dangerous globals
+    // NOTE: This still requires 'unsafe-eval' in CSP and is not fully secure
     const argNames = ['kairo', 'exports', ...BLOCKED_GLOBALS];
     const argValues = [api, moduleExports, ...BLOCKED_GLOBALS.map(() => undefined)];
 
@@ -738,6 +774,7 @@ function evaluateExtensionCode(
     `;
 
     // Create and execute the sandboxed function
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
     const sandboxedFn = new Function(...argNames, wrappedCode);
     sandboxedFn(...argValues);
 

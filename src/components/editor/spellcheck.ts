@@ -1,4 +1,5 @@
-import { linter, Diagnostic, lintGutter } from "@codemirror/lint";
+// Note: linter was removed for performance - dict.suggest() calls were too expensive
+// We just use decorations (wavy underlines) now
 import { Extension } from "@codemirror/state";
 import { EditorView, Decoration, DecorationSet, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import Typo from "typo-js";
@@ -48,8 +49,11 @@ async function loadDictionary(): Promise<Typo> {
   return dictionaryLoading;
 }
 
-// Initialize dictionary on module load
-loadDictionary();
+// Preload dictionary during app initialization (called from App.tsx)
+// This loads during the loading screen so the app is ready when it appears
+export function preloadDictionary(): Promise<void> {
+  return loadDictionary().then(() => {});
+}
 
 // Words to ignore (common markdown/code patterns)
 const ignorePatterns = [
@@ -60,6 +64,37 @@ const ignorePatterns = [
   /^[a-z]+\d+/i,       // Alphanumeric identifiers
   /^[@#]/,             // Mentions and tags
 ];
+
+// Track dictionary changes to trigger decoration refresh
+let dictionaryVersion = 0;
+
+// LocalStorage key for persisted ignored words
+const IGNORED_WORDS_KEY = "kairo-ignored-words";
+
+// Load persisted ignored words from localStorage
+function loadIgnoredWords(): string[] {
+  try {
+    const stored = localStorage.getItem(IGNORED_WORDS_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.warn("Failed to load ignored words:", e);
+  }
+  return [];
+}
+
+// Save ignored words to localStorage
+function saveIgnoredWords(words: string[]): void {
+  try {
+    localStorage.setItem(IGNORED_WORDS_KEY, JSON.stringify(words));
+  } catch (e) {
+    console.warn("Failed to save ignored words:", e);
+  }
+}
+
+// User-ignored words (persisted)
+const userIgnoredWords = new Set<string>(loadIgnoredWords());
 
 // Common words to skip (proper nouns, tech terms, etc.)
 const customDictionary = new Set([
@@ -90,8 +125,13 @@ function shouldIgnoreWord(word: string): boolean {
     if (pattern.test(word)) return true;
   }
 
+  const lowerWord = word.toLowerCase();
+
+  // Check user-ignored words (persisted)
+  if (userIgnoredWords.has(lowerWord)) return true;
+
   // Check custom dictionary (case insensitive)
-  if (customDictionary.has(word.toLowerCase())) return true;
+  if (customDictionary.has(lowerWord)) return true;
 
   return false;
 }
@@ -173,13 +213,47 @@ const spellErrorMark = Decoration.mark({ class: "cm-spell-error" });
 const spellCheckPlugin = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
+    private view: EditorView;
+    private pollTimer: number | null = null;
+    private lastDictVersion: number = dictionaryVersion;
 
     constructor(view: EditorView) {
+      this.view = view;
       this.decorations = this.computeDecorations(view);
+
+      // If dictionary isn't loaded yet, poll until it is
+      if (!dictionary && dictionaryLoading) {
+        this.waitForDictionary();
+      }
+    }
+
+    private waitForDictionary() {
+      // Wait for dictionary to load, then trigger a re-render
+      dictionaryLoading?.then(() => {
+        // Dispatch an empty transaction to trigger update cycle
+        // This causes update() to be called which will recompute decorations
+        if (this.view) {
+          this.view.dispatch({});
+        }
+      });
+    }
+
+    destroy() {
+      if (this.pollTimer) {
+        clearTimeout(this.pollTimer);
+      }
     }
 
     update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged) {
+      // Check if dictionary was modified (word added to ignore list)
+      const dictChanged = this.lastDictVersion !== dictionaryVersion;
+      if (dictChanged) {
+        this.lastDictVersion = dictionaryVersion;
+      }
+
+      // Recompute on doc change, viewport change, dictionary change, or if we have no decorations but dictionary is now ready
+      const needsInitialCompute = this.decorations === Decoration.none && dictionary;
+      if (update.docChanged || update.viewportChanged || dictChanged || needsInitialCompute) {
         this.decorations = this.computeDecorations(update.view);
       }
     }
@@ -190,15 +264,19 @@ const spellCheckPlugin = ViewPlugin.fromClass(
       }
 
       const decorations: Array<{ from: number; to: number }> = [];
-      const text = view.state.doc.toString();
-      const words = extractWords(text);
 
-      for (const { word, from, to } of words) {
-        if (shouldIgnoreWord(word)) continue;
+      // Only check visible ranges for performance
+      for (const { from, to } of view.visibleRanges) {
+        const text = view.state.doc.sliceString(from, to);
+        const words = extractWords(text);
 
-        // Check spelling
-        if (!dictionary.check(word)) {
-          decorations.push({ from, to });
+        for (const { word, from: wordFrom, to: wordTo } of words) {
+          if (shouldIgnoreWord(word)) continue;
+
+          // Check spelling - adjust positions to document coordinates
+          if (!dictionary.check(word)) {
+            decorations.push({ from: from + wordFrom, to: from + wordTo });
+          }
         }
       }
 
@@ -214,94 +292,50 @@ const spellCheckPlugin = ViewPlugin.fromClass(
   }
 );
 
-// Spell checker linter (for diagnostics with suggestions)
-function createSpellLinter() {
-  return linter(
-    async (view: EditorView) => {
-      const dict = await loadDictionary();
-      const diagnostics: Diagnostic[] = [];
-      const text = view.state.doc.toString();
-      const words = extractWords(text);
-
-      for (const { word, from, to } of words) {
-        if (shouldIgnoreWord(word)) continue;
-
-        if (!dict.check(word)) {
-          const suggestions = dict.suggest(word).slice(0, 5);
-
-          const diagnostic: Diagnostic = {
-            from,
-            to,
-            severity: "warning",
-            message: `"${word}" may be misspelled`,
-            actions: suggestions.map(suggestion => ({
-              name: suggestion,
-              apply(view: EditorView, actionFrom: number, actionTo: number) {
-                view.dispatch({
-                  changes: { from: actionFrom, to: actionTo, insert: suggestion }
-                });
-              }
-            }))
-          };
-
-          diagnostics.push(diagnostic);
-        }
-      }
-
-      return diagnostics;
-    },
-    {
-      delay: 500, // Debounce spell checking
+// Inject spellcheck CSS directly into document (bypasses CodeMirror theme issues)
+function injectSpellCheckCSS() {
+  if (document.getElementById('spellcheck-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'spellcheck-styles';
+  // Use dotted border to simulate squiggly line (wavy not supported in WebKit)
+  style.textContent = `
+    .cm-spell-error {
+      border-bottom: 1px dotted #ef4444 !important;
+      padding-bottom: 1px !important;
     }
-  );
+  `;
+  document.head.appendChild(style);
 }
 
-// Spell check theme (red wavy underline)
-const spellCheckTheme = EditorView.baseTheme({
+// Spell check theme (kept as fallback)
+const spellCheckTheme = EditorView.theme({
   ".cm-spell-error": {
-    textDecoration: "underline wavy #ef4444",
-    textDecorationSkipInk: "none",
-  },
-  // Lint panel styling
-  ".cm-lint-marker-warning": {
-    content: '""',
-  },
-  ".cm-diagnostic-warning": {
-    borderLeft: "3px solid #f59e0b",
-    backgroundColor: "rgba(245, 158, 11, 0.1)",
-    padding: "3px 6px",
-    marginLeft: "0",
-  },
-  ".cm-diagnosticAction": {
-    backgroundColor: "#1e293b",
-    color: "#e2e8f0",
-    border: "1px solid #334155",
-    borderRadius: "3px",
-    padding: "2px 6px",
-    marginLeft: "4px",
-    cursor: "pointer",
-    fontSize: "12px",
-  },
-  ".cm-diagnosticAction:hover": {
-    backgroundColor: "#334155",
+    borderBottom: "1px dotted #ef4444",
+    paddingBottom: "1px",
   },
 });
 
 // Main extension export
+// Uses only the ViewPlugin for decorations - linter was removed for performance
+// (dict.suggest() calls were causing ~25% CPU usage when switching notes)
 export function spellCheckExtension(enabled: boolean): Extension {
   if (!enabled) {
     return [];
   }
 
+  // Inject CSS directly into document
+  injectSpellCheckCSS();
+
   return [
     spellCheckPlugin,
-    createSpellLinter(),
-    lintGutter(),
     spellCheckTheme,
   ];
 }
 
-// Add word to custom dictionary (for this session)
+// Add word to custom dictionary (persisted across sessions)
 export function addToCustomDictionary(word: string): void {
-  customDictionary.add(word.toLowerCase());
+  const lowerWord = word.toLowerCase();
+  userIgnoredWords.add(lowerWord);
+  saveIgnoredWords(Array.from(userIgnoredWords));
+  dictionaryVersion++; // Trigger decoration refresh
 }

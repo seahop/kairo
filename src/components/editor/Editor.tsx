@@ -9,6 +9,7 @@ import { TableEditorModal } from "./table/TableEditorModal";
 import { useNoteStore } from "@/stores/noteStore";
 import { useUIStore, EditorViewMode } from "@/stores/uiStore";
 import { useTableEditorStore } from "@/stores/tableEditorStore";
+import { addToCustomDictionary } from "./spellcheck";
 
 // View mode icons
 const EditorOnlyIcon = () => (
@@ -112,9 +113,11 @@ interface ContextMenuProps {
   onClose: () => void;
   currentMode: EditorViewMode;
   onSetMode: (mode: EditorViewMode) => void;
+  misspelledWord?: string;
+  onIgnoreWord?: (word: string) => void;
 }
 
-function ContextMenu({ x, y, onClose, currentMode, onSetMode }: ContextMenuProps) {
+function ContextMenu({ x, y, onClose, currentMode, onSetMode, misspelledWord, onIgnoreWord }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x, y });
 
@@ -177,6 +180,22 @@ function ContextMenu({ x, y, onClose, currentMode, onSetMode }: ContextMenuProps
       className="fixed bg-dark-850 border border-dark-700 rounded-lg shadow-xl py-1 z-50 min-w-[180px]"
       style={{ left: position.x, top: position.y }}
     >
+      {/* Spell check option - only shown when right-clicking a misspelled word */}
+      {misspelledWord && onIgnoreWord && (
+        <>
+          <div className="px-3 py-1.5 text-xs text-dark-500 uppercase tracking-wide">
+            Spelling
+          </div>
+          <button
+            className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-dark-800 text-dark-200"
+            onClick={() => { onIgnoreWord(misspelledWord); onClose(); }}
+          >
+            <span className="text-green-400">✓</span>
+            <span>Ignore "{misspelledWord}"</span>
+          </button>
+          <div className="border-t border-dark-700 my-1" />
+        </>
+      )}
       <div className="px-3 py-1.5 text-xs text-dark-500 uppercase tracking-wide">
         View Mode
       </div>
@@ -254,7 +273,7 @@ export function Editor() {
   const { saveNote, hasUnsavedChanges, goBack, goForward, canGoBack, canGoForward, currentNote, editorContent, setEditorContent } = useNoteStore();
   const { editorViewMode, setEditorViewMode, editorSplitRatio, setEditorSplitRatio, spellcheckEnabled, toggleSpellcheck, readingFontSize, setReadingFontSize, readingWidth, setReadingWidth } = useUIStore();
   const { openEditor } = useTableEditorStore();
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; misspelledWord?: string } | null>(null);
   const [showImageUpload, setShowImageUpload] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showReadingSettings, setShowReadingSettings] = useState(false);
@@ -318,9 +337,26 @@ export function Editor() {
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
+
+    // Check if clicking on a misspelled word
+    let misspelledWord: string | undefined;
+    const target = e.target as HTMLElement;
+    const spellErrorEl = target.closest('.cm-spell-error') as HTMLElement | null;
+    if (spellErrorEl) {
+      misspelledWord = spellErrorEl.textContent?.trim();
+    }
+
     // Offset y to align menu with cursor (accounts for Tauri window chrome + menu padding)
-    setContextMenu({ x: e.clientX, y: e.clientY - 16 });
+    setContextMenu({ x: e.clientX, y: e.clientY - 16, misspelledWord });
   };
+
+  // Handle ignoring a word from spell check
+  const handleIgnoreWord = useCallback((word: string) => {
+    addToCustomDictionary(word);
+    // Force a re-render of the editor to update decorations
+    // We can do this by dispatching a custom event that MarkdownPane can listen to
+    window.dispatchEvent(new CustomEvent("spellcheck:refresh"));
+  }, []);
 
   const renderContent = () => {
     switch (editorViewMode) {
@@ -596,6 +632,8 @@ export function Editor() {
           onClose={() => setContextMenu(null)}
           currentMode={editorViewMode}
           onSetMode={setEditorViewMode}
+          misspelledWord={contextMenu.misspelledWord}
+          onIgnoreWord={handleIgnoreWord}
         />
       )}
 

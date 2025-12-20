@@ -1,3 +1,4 @@
+use once_cell::sync::Lazy;
 use regex::Regex;
 use rusqlite::params;
 use sha2::{Digest, Sha256};
@@ -6,6 +7,17 @@ use tauri::AppHandle;
 use walkdir::WalkDir;
 
 use super::with_db;
+
+// Pre-compiled regex patterns for entity extraction (compiled once, reused)
+static IP_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b").unwrap());
+static DOMAIN_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\b([a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})?)\b").unwrap()
+});
+static CVE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b(CVE-\d{4}-\d{4,})\b").unwrap());
+static USERNAME_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\b((?:admin|root|user|guest|administrator)[\w]*)\b").unwrap());
+static MENTION_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"@(\w+)").unwrap());
 
 /// Safely find a character boundary at or before the given byte index
 fn floor_char_boundary(s: &str, index: usize) -> usize {
@@ -477,27 +489,12 @@ fn serde_yaml_to_json(yaml: &str) -> Result<String, Box<dyn std::error::Error>> 
 fn extract_entities(content: &str) -> Vec<(String, String, String, i32)> {
     let mut entities = Vec::new();
 
-    // IP addresses (IPv4)
-    let ip_re = Regex::new(r"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b").unwrap();
-
-    // Domains
-    let domain_re =
-        Regex::new(r"\b([a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})?)\b").unwrap();
-
-    // CVEs
-    let cve_re = Regex::new(r"\b(CVE-\d{4}-\d{4,})\b").unwrap();
-
-    // Usernames (common patterns)
-    let username_re = Regex::new(r"\b((?:admin|root|user|guest|administrator)[\w]*)\b").unwrap();
-
-    // @mentions
-    let mention_re = Regex::new(r"@(\w+)").unwrap();
-
+    // Use pre-compiled static regex patterns for performance
     for (line_num, line) in content.lines().enumerate() {
         let line_num = (line_num + 1) as i32;
         let context = line.chars().take(100).collect::<String>();
 
-        for cap in ip_re.captures_iter(line) {
+        for cap in IP_REGEX.captures_iter(line) {
             entities.push((
                 "ip".to_string(),
                 cap[1].to_string(),
@@ -506,7 +503,7 @@ fn extract_entities(content: &str) -> Vec<(String, String, String, i32)> {
             ));
         }
 
-        for cap in domain_re.captures_iter(line) {
+        for cap in DOMAIN_REGEX.captures_iter(line) {
             let domain = &cap[1];
             // Filter out common non-domains
             if !domain.ends_with(".md") && !domain.ends_with(".rs") && !domain.ends_with(".ts") {
@@ -519,7 +516,7 @@ fn extract_entities(content: &str) -> Vec<(String, String, String, i32)> {
             }
         }
 
-        for cap in cve_re.captures_iter(line) {
+        for cap in CVE_REGEX.captures_iter(line) {
             entities.push((
                 "cve".to_string(),
                 cap[1].to_string(),
@@ -528,7 +525,7 @@ fn extract_entities(content: &str) -> Vec<(String, String, String, i32)> {
             ));
         }
 
-        for cap in username_re.captures_iter(line) {
+        for cap in USERNAME_REGEX.captures_iter(line) {
             entities.push((
                 "username".to_string(),
                 cap[1].to_string(),
@@ -537,7 +534,7 @@ fn extract_entities(content: &str) -> Vec<(String, String, String, i32)> {
             ));
         }
 
-        for cap in mention_re.captures_iter(line) {
+        for cap in MENTION_REGEX.captures_iter(line) {
             entities.push((
                 "mention".to_string(),
                 cap[1].to_string(),

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback, memo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNoteStore } from "@/stores/noteStore";
 
@@ -10,13 +10,14 @@ interface Backlink {
   archived: boolean;
 }
 
-const LinkIcon = () => (
+const LinkIcon = memo(() => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
   </svg>
-);
+));
+LinkIcon.displayName = "LinkIcon";
 
-const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
+const ChevronIcon = memo(({ expanded }: { expanded: boolean }) => (
   <svg
     className={`w-4 h-4 transition-transform ${expanded ? "rotate-90" : ""}`}
     fill="none"
@@ -25,13 +26,55 @@ const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
   >
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
   </svg>
-);
+));
+ChevronIcon.displayName = "ChevronIcon";
 
-export function BacklinksPanel() {
+// Memoized backlink item to prevent unnecessary re-renders
+interface BacklinkItemProps {
+  link: Backlink;
+  onOpen: (path: string) => void;
+  isArchived?: boolean;
+}
+
+const BacklinkItem = memo(({ link, onOpen, isArchived }: BacklinkItemProps) => {
+  const handleClick = useCallback(() => {
+    onOpen(link.source_path);
+  }, [onOpen, link.source_path]);
+
+  return (
+    <button
+      className="w-full text-left p-2 rounded-lg hover:bg-dark-800 transition-colors group"
+      onClick={handleClick}
+    >
+      <div className={`text-sm font-medium ${isArchived ? "text-dark-300 group-hover:text-dark-200" : "text-dark-200 group-hover:text-accent-primary"}`}>
+        {link.source_title}
+      </div>
+      {link.context && (
+        <div className={`text-xs mt-1 line-clamp-2 ${isArchived ? "text-dark-600" : "text-dark-500"}`}>
+          ...{link.context}...
+        </div>
+      )}
+    </button>
+  );
+});
+BacklinkItem.displayName = "BacklinkItem";
+
+export const BacklinksPanel = memo(function BacklinksPanel() {
   const { currentNote, openNote } = useNoteStore();
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+
+  // Memoize filtered lists to avoid recomputing on every render
+  const { activeBacklinks, archivedBacklinks } = useMemo(() => ({
+    activeBacklinks: backlinks.filter(l => !l.archived),
+    archivedBacklinks: backlinks.filter(l => l.archived),
+  }), [backlinks]);
+
+  // Memoize toggle handler
+  const handleToggle = useCallback(() => {
+    setIsExpanded(prev => !prev);
+  }, []);
 
   useEffect(() => {
     if (!currentNote) {
@@ -64,7 +107,7 @@ export function BacklinksPanel() {
       {/* Header */}
       <button
         className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-dark-800 transition-colors"
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={handleToggle}
       >
         <ChevronIcon expanded={isExpanded} />
         <LinkIcon />
@@ -86,44 +129,27 @@ export function BacklinksPanel() {
           ) : (
             <div className="space-y-2">
               {/* Active backlinks */}
-              {backlinks.filter(l => !l.archived).map((link) => (
-                <button
+              {activeBacklinks.map((link) => (
+                <BacklinkItem
                   key={link.source_id}
-                  className="w-full text-left p-2 rounded-lg hover:bg-dark-800 transition-colors group"
-                  onClick={() => openNote(link.source_path)}
-                >
-                  <div className="text-sm font-medium text-dark-200 group-hover:text-accent-primary">
-                    {link.source_title}
-                  </div>
-                  {link.context && (
-                    <div className="text-xs text-dark-500 mt-1 line-clamp-2">
-                      ...{link.context}...
-                    </div>
-                  )}
-                </button>
+                  link={link}
+                  onOpen={openNote}
+                />
               ))}
 
               {/* Archived backlinks (shown dimmed) */}
-              {backlinks.filter(l => l.archived).length > 0 && (
+              {archivedBacklinks.length > 0 && (
                 <div className="opacity-50 mt-3 pt-3 border-t border-dark-800">
                   <div className="text-xs text-dark-500 mb-2">
-                    Archived ({backlinks.filter(l => l.archived).length})
+                    Archived ({archivedBacklinks.length})
                   </div>
-                  {backlinks.filter(l => l.archived).map((link) => (
-                    <button
+                  {archivedBacklinks.map((link) => (
+                    <BacklinkItem
                       key={link.source_id}
-                      className="w-full text-left p-2 rounded-lg hover:bg-dark-800 transition-colors group"
-                      onClick={() => openNote(link.source_path)}
-                    >
-                      <div className="text-sm font-medium text-dark-300 group-hover:text-dark-200">
-                        {link.source_title}
-                      </div>
-                      {link.context && (
-                        <div className="text-xs text-dark-600 mt-1 line-clamp-2">
-                          ...{link.context}...
-                        </div>
-                      )}
-                    </button>
+                      link={link}
+                      onOpen={openNote}
+                      isArchived
+                    />
                   ))}
                 </div>
               )}
@@ -133,4 +159,4 @@ export function BacklinksPanel() {
       )}
     </div>
   );
-}
+});

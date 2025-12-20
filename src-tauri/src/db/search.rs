@@ -33,6 +33,13 @@ use crate::commands::search::{
     EntityResult, SavedSearch, SearchFilters, SearchMatch, SearchResult,
 };
 
+/// Escape SQL LIKE pattern special characters to prevent pattern injection
+fn escape_like_pattern(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 /// Search notes using FTS5
 pub fn search_notes(
     app: &AppHandle,
@@ -63,13 +70,15 @@ pub fn search_notes(
                 SELECT n.id, n.path, n.title, cb.content, cb.language, COALESCE(n.archived, 0)
                 FROM code_blocks cb
                 JOIN notes n ON cb.note_id = n.id
-                WHERE cb.content LIKE ?1
+                WHERE cb.content LIKE ?1 ESCAPE '\'
                 AND (COALESCE(n.archived, 0) = 0 OR ?2 = 1)
                 LIMIT ?3
                 "#,
             )?;
 
-            let pattern = format!("%{}%", fts_query.replace('*', "%"));
+            // Escape SQL wildcards in user input, then allow * as a user wildcard
+            let escaped = escape_like_pattern(&fts_query);
+            let pattern = format!("%{}%", escaped.replace('*', "%"));
             let rows = stmt.query_map(
                 params![pattern, include_archived as i32, limit as i64],
                 |row| {
@@ -233,7 +242,11 @@ pub fn search_entities(
     limit: usize,
 ) -> Result<Vec<EntityResult>, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
-        let pattern_like = pattern.map(|p| p.replace('*', "%"));
+        // Escape SQL wildcards, then allow * as user wildcard
+        let pattern_like = pattern.map(|p| {
+            let escaped = escape_like_pattern(p);
+            escaped.replace('*', "%")
+        });
 
         // Build query based on what filters are present
         let (query, params_vec): (String, Vec<Box<dyn rusqlite::ToSql>>) =
@@ -242,7 +255,7 @@ pub fn search_entities(
                     r#"SELECT e.entity_type, e.value, n.path, n.title, e.context
                    FROM entities e
                    JOIN notes n ON e.note_id = n.id
-                   WHERE e.entity_type = ?1 AND e.value LIKE ?2
+                   WHERE e.entity_type = ?1 AND e.value LIKE ?2 ESCAPE '\'
                    ORDER BY e.value LIMIT ?3"#
                         .to_string(),
                     vec![
@@ -267,7 +280,7 @@ pub fn search_entities(
                     r#"SELECT e.entity_type, e.value, n.path, n.title, e.context
                    FROM entities e
                    JOIN notes n ON e.note_id = n.id
-                   WHERE e.value LIKE ?1
+                   WHERE e.value LIKE ?1 ESCAPE '\'
                    ORDER BY e.value LIMIT ?2"#
                         .to_string(),
                     vec![
@@ -502,7 +515,7 @@ pub fn get_backlinks(
             SELECT n.id, n.path, n.title, b.context, COALESCE(n.archived, 0)
             FROM backlinks b
             JOIN notes n ON b.source_id = n.id
-            WHERE b.target_path = ?1 OR b.target_path LIKE ?2
+            WHERE b.target_path = ?1 OR b.target_path LIKE ?2 ESCAPE '\'
             "#,
         )?;
 
@@ -512,16 +525,21 @@ pub fn get_backlinks(
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
 
+        // Escape filename for LIKE pattern safety
+        let escaped_filename = escape_like_pattern(&filename);
         let backlinks = stmt
-            .query_map(params![note_path, format!("%{}", filename)], |row| {
-                Ok(Backlink {
-                    source_id: row.get(0)?,
-                    source_path: row.get(1)?,
-                    source_title: row.get(2)?,
-                    context: row.get(3)?,
-                    archived: row.get::<_, i32>(4)? != 0,
-                })
-            })?
+            .query_map(
+                params![note_path, format!("%{}", escaped_filename)],
+                |row| {
+                    Ok(Backlink {
+                        source_id: row.get(0)?,
+                        source_path: row.get(1)?,
+                        source_title: row.get(2)?,
+                        context: row.get(3)?,
+                        archived: row.get::<_, i32>(4)? != 0,
+                    })
+                },
+            )?
             .filter_map(|r| r.ok())
             .collect();
 
@@ -824,19 +842,29 @@ pub fn get_vault_health(app: &AppHandle) -> Result<VaultHealth, Box<dyn std::err
             0.0
         };
 
-        // Most connected notes (top 5)
+        // Most connected notes (top 5) - using CTEs for efficient aggregation
         let mut connected_stmt = conn.prepare(
             r#"
+            WITH outgoing_links AS (
+                SELECT source_id, COUNT(*) as out_count
+                FROM backlinks
+                GROUP BY source_id
+            ),
+            incoming_links AS (
+                SELECT n.id as note_id, COUNT(DISTINCT b.source_id) as in_count
+                FROM notes n
+                LEFT JOIN backlinks b ON b.target_path = n.path
+                   OR b.target_path LIKE '%' || replace(replace(n.path, 'notes/', ''), '.md', '') || '%'
+                GROUP BY n.id
+            )
             SELECT n.id, n.path, n.title,
-                   (SELECT COUNT(*) FROM backlinks WHERE source_id = n.id) as out_links,
-                   (SELECT COUNT(*) FROM backlinks b2
-                    JOIN notes n2 ON b2.source_id = n2.id
-                    WHERE b2.target_path = n.path
-                       OR b2.target_path LIKE '%' || replace(replace(n.path, 'notes/', ''), '.md', '') || '%'
-                   ) as in_links,
+                   COALESCE(ol.out_count, 0) as out_links,
+                   COALESCE(il.in_count, 0) as in_links,
                    COALESCE(n.archived, 0)
             FROM notes n
-            ORDER BY (out_links + in_links) DESC
+            LEFT JOIN outgoing_links ol ON ol.source_id = n.id
+            LEFT JOIN incoming_links il ON il.note_id = n.id
+            ORDER BY (COALESCE(ol.out_count, 0) + COALESCE(il.in_count, 0)) DESC
             LIMIT 5
             "#,
         )?;
@@ -981,6 +1009,18 @@ pub fn get_unlinked_mentions(
 
         let mut unlinked = Vec::new();
 
+        // Prepare FTS5 search statement once outside the loop for performance
+        let mut search_stmt = conn.prepare(
+            r#"
+            SELECT n.id, n.path, n.title, n.content
+            FROM notes_fts
+            JOIN notes n ON notes_fts.rowid = n.rowid
+            WHERE notes_fts MATCH ?1
+            AND n.id != ?2
+            LIMIT 50
+            "#,
+        )?;
+
         // For each note, use FTS5 to find other notes containing the title
         // This is O(n * log(m)) instead of O(n * m) where m is total content size
         for (note_id, note_path, note_title) in &notes {
@@ -997,17 +1037,6 @@ pub fn get_unlinked_mentions(
             // Use FTS5 to search for notes containing this title
             // Quote the title to search for exact phrase
             let fts_query = format!("\"{}\"", note_title.replace('"', ""));
-
-            let mut search_stmt = conn.prepare(
-                r#"
-                SELECT n.id, n.path, n.title, n.content
-                FROM notes_fts
-                JOIN notes n ON notes_fts.rowid = n.rowid
-                WHERE notes_fts MATCH ?1
-                AND n.id != ?2
-                LIMIT 50
-                "#,
-            )?;
 
             let matches = search_stmt
                 .query_map(params![fts_query, note_id], |row| {
@@ -1087,18 +1116,29 @@ pub fn get_potential_mocs(
     min_links: usize,
 ) -> Result<Vec<GraphNode>, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
+        // Use CTEs to pre-aggregate link counts (avoids correlated subqueries)
         let mut stmt = conn.prepare(
             r#"
+            WITH outgoing_links AS (
+                SELECT source_id, COUNT(*) as out_count
+                FROM backlinks
+                GROUP BY source_id
+            ),
+            incoming_links AS (
+                SELECT n.id as note_id, COUNT(DISTINCT b.source_id) as in_count
+                FROM notes n
+                LEFT JOIN backlinks b ON b.target_path = n.path
+                   OR b.target_path LIKE '%' || replace(replace(n.path, 'notes/', ''), '.md', '') || '%'
+                GROUP BY n.id
+            )
             SELECT n.id, n.path, n.title,
-                   (SELECT COUNT(*) FROM backlinks WHERE source_id = n.id) as out_links,
-                   (SELECT COUNT(*) FROM backlinks b2
-                    JOIN notes n2 ON b2.source_id = n2.id
-                    WHERE b2.target_path = n.path
-                       OR b2.target_path LIKE '%' || replace(replace(n.path, 'notes/', ''), '.md', '') || '%'
-                   ) as in_links,
+                   COALESCE(ol.out_count, 0) as out_links,
+                   COALESCE(il.in_count, 0) as in_links,
                    COALESCE(n.archived, 0)
             FROM notes n
-            WHERE (SELECT COUNT(*) FROM backlinks WHERE source_id = n.id) >= ?1
+            LEFT JOIN outgoing_links ol ON ol.source_id = n.id
+            LEFT JOIN incoming_links il ON il.note_id = n.id
+            WHERE COALESCE(ol.out_count, 0) >= ?1
             ORDER BY out_links DESC
             "#,
         )?;
@@ -1127,9 +1167,10 @@ pub fn get_notes_by_folder(
     folder_prefix: &str,
 ) -> Result<Vec<OrphanNote>, Box<dyn std::error::Error>> {
     with_db(app, |conn| {
-        let pattern = format!("{}%", folder_prefix);
+        let escaped = escape_like_pattern(folder_prefix);
+        let pattern = format!("{}%", escaped);
         let mut stmt = conn.prepare(
-            "SELECT id, path, title, created_at, modified_at FROM notes WHERE path LIKE ?1 ORDER BY modified_at DESC"
+            "SELECT id, path, title, created_at, modified_at FROM notes WHERE path LIKE ?1 ESCAPE '\\' ORDER BY modified_at DESC"
         )?;
 
         let notes: Vec<OrphanNote> = stmt

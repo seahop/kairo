@@ -19,6 +19,7 @@ import { useExtensionStore } from "./stores/extensionStore";
 import { useCommands } from "./plugins/api";
 import { useFileWatcher } from "./hooks/useFileWatcher";
 import { invoke } from "@tauri-apps/api/core";
+import { preloadDictionary } from "./components/editor/spellcheck";
 
 // Plugin components
 import {
@@ -190,6 +191,11 @@ function App() {
     if (!pluginsInitialized) {
       initBuiltinPlugins();
       pluginsInitialized = true;
+
+      // Preload spellcheck dictionary during startup (runs in parallel)
+      preloadDictionary().catch(err => {
+        console.warn("Failed to preload dictionary:", err);
+      });
     }
 
     // Load recent vaults and try to open last vault
