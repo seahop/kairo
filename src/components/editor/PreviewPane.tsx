@@ -167,15 +167,10 @@ function preprocessHeadingSections(content: string): string {
 
 // Convert single newlines to <br> for consistent line break behavior
 // This replaces remark-breaks functionality with preprocessing
-// Preserves code blocks, paragraph breaks, and proper heading separation
+// Preserves paragraph breaks and proper heading separation
+// NOTE: Code blocks should already be extracted before calling this function
 function normalizeLineBreaks(content: string): string {
-  // First, preserve code blocks by replacing them with placeholders
-  const codeBlocks: string[] = [];
-  let processed = content.replace(/```[\s\S]*?```/g, (match) => {
-    const placeholder = `__CODE_BLOCK_LB_${codeBlocks.length}__`;
-    codeBlocks.push(match);
-    return placeholder;
-  });
+  let processed = content;
 
   // Preserve inline code
   const inlineCode: string[] = [];
@@ -199,14 +194,9 @@ function normalizeLineBreaks(content: string): string {
   // Restore paragraph breaks (convert back to double newlines)
   processed = processed.replace(/__PARA_BREAK_(\d+)__/g, (_, count) => '\n'.repeat(parseInt(count)));
 
-  // Restore inline code
+  // Restore inline code (use function to avoid special char interpretation)
   inlineCode.forEach((code, index) => {
-    processed = processed.replace(`__INLINE_CODE_LB_${index}__`, code);
-  });
-
-  // Restore code blocks
-  codeBlocks.forEach((code, index) => {
-    processed = processed.replace(`__CODE_BLOCK_LB_${index}__`, code);
+    processed = processed.replace(`__INLINE_CODE_LB_${index}__`, () => code);
   });
 
   return processed;
@@ -218,22 +208,11 @@ function preprocessWikiLinks(content: string): string {
   // First strip frontmatter
   const contentWithoutFrontmatter = stripFrontmatter(content);
 
-  // Normalize line breaks - convert single newlines to <br> for consistent preview
-  const contentWithNormalizedLines = normalizeLineBreaks(contentWithoutFrontmatter);
-
-  // Process callouts before other transformations
-  const contentWithCallouts = preprocessCallouts(contentWithNormalizedLines);
-
-  // Process heading sections for folding
-  const contentWithSections = preprocessHeadingSections(contentWithCallouts);
-
-  // IMPORTANT: Preserve code blocks and inline code before processing wiki links
-  // This prevents [[...]] inside code from being converted to links
+  // IMPORTANT: Extract code blocks at the VERY START before any other preprocessing
+  // This prevents callouts/headings processing from corrupting code block content
+  // (e.g., Python comments starting with # would be treated as headings)
   const codeBlockPlaceholders: string[] = [];
-  const inlineCodePlaceholders: string[] = [];
-
-  // Extract fenced code blocks first (```...```)
-  let processed = contentWithSections.replace(
+  let processed = contentWithoutFrontmatter.replace(
     /```[\s\S]*?```/g,
     (match) => {
       const placeholder = `__CODE_BLOCK_${codeBlockPlaceholders.length}__`;
@@ -242,7 +221,17 @@ function preprocessWikiLinks(content: string): string {
     }
   );
 
-  // Extract inline code (`...`) - but not empty backticks
+  // Normalize line breaks - convert single newlines to <br> for consistent preview
+  processed = normalizeLineBreaks(processed);
+
+  // Process callouts before other transformations
+  processed = preprocessCallouts(processed);
+
+  // Process heading sections for folding
+  processed = preprocessHeadingSections(processed);
+
+  // Extract inline code for wiki link processing (`...`) - but not empty backticks
+  const inlineCodePlaceholders: string[] = [];
   processed = processed.replace(
     /`[^`]+`/g,
     (match) => {
@@ -337,14 +326,25 @@ function preprocessWikiLinks(content: string): string {
   );
 
   // Restore inline code (do this before code blocks to maintain order)
+  // Use function to avoid special char interpretation in replacement
   inlineCodePlaceholders.forEach((code, index) => {
-    processed = processed.replace(`__INLINE_CODE_${index}__`, code);
+    processed = processed.replace(`__INLINE_CODE_${index}__`, () => code);
   });
 
   // Restore code blocks
+  // Use function to avoid special char interpretation in replacement
   codeBlockPlaceholders.forEach((code, index) => {
-    processed = processed.replace(`__CODE_BLOCK_${index}__`, code);
+    processed = processed.replace(`__CODE_BLOCK_${index}__`, () => code);
   });
+
+  // Clean up: ensure code block fences are on their own lines
+  // This is needed because normalizeLineBreaks may have converted newlines around
+  // the placeholder to <br>, which breaks markdown code fence parsing
+  // Opening fence must be at start of line (after newline or start)
+  processed = processed.replace(/<br>(```\w*\n)/g, '\n$1');
+  // Closing fence must be followed by newline
+  processed = processed.replace(/```<br>/g, '```\n');
+  processed = processed.replace(/```(<div|<\/div)/g, '```\n$1');
 
   return processed;
 }
@@ -753,7 +753,22 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
 
               // Handle dataview queries
               if (language === "dataview") {
-                const queryText = String(children).trim();
+                // Extract text content from children, handling various React child types
+                // This is needed because children might be a string, array, or React element
+                const extractText = (child: React.ReactNode): string => {
+                  if (typeof child === 'string') return child;
+                  if (typeof child === 'number') return String(child);
+                  if (Array.isArray(child)) return child.map(extractText).join('');
+                  if (child && typeof child === 'object' && 'props' in child) {
+                    // React element - extract children text recursively
+                    const elem = child as React.ReactElement;
+                    // Handle <br> elements as newlines
+                    if (elem.type === 'br') return '\n';
+                    return extractText(elem.props.children);
+                  }
+                  return '';
+                };
+                const queryText = extractText(children).trim();
                 return (
                   <div className="my-4 p-4 bg-dark-850 rounded-lg border border-dark-700">
                     <div className="text-xs text-dark-500 mb-2 flex items-center gap-2">
