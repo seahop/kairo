@@ -320,7 +320,7 @@ export const useNoteStore = create<NoteState>((set, get) => ({
     }
   },
 
-  createNote: async (path: string, content: string = "# New Note\n\n") => {
+  createNote: async (path: string, content: string = "# New Note\n<br>\n") => {
     set({ isLoading: true, error: null });
     try {
       await invoke<NoteMetadata>("write_note", {

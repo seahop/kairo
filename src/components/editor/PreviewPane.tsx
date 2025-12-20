@@ -1,7 +1,6 @@
 import React, { useMemo, useCallback, useEffect, useState, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import remarkBreaks from "remark-breaks";
 import rehypeRaw from "rehype-raw";
 // Note: DOMPurify was removed for performance. In a desktop app with user-owned
 // content, XSS risk is minimal. If sharing notes becomes a feature, add rehype-sanitize
@@ -19,7 +18,8 @@ import { useTableEditorStore } from "@/stores/tableEditorStore";
 import { parseMarkdownTable } from "./table/tableParser";
 
 // Stable plugin arrays - defined outside component to prevent recreation
-const REMARK_PLUGINS = [remarkGfm, remarkBreaks];
+// Note: remark-breaks removed - line breaks are handled in normalizeLineBreaks preprocessing
+const REMARK_PLUGINS = [remarkGfm];
 const REHYPE_PLUGINS = [rehypeRaw];
 
 // Icon for external links
@@ -165,14 +165,64 @@ function preprocessHeadingSections(content: string): string {
   return result.join('\n');
 }
 
+// Convert single newlines to <br> for consistent line break behavior
+// This replaces remark-breaks functionality with preprocessing
+// Preserves code blocks, paragraph breaks, and proper heading separation
+function normalizeLineBreaks(content: string): string {
+  // First, preserve code blocks by replacing them with placeholders
+  const codeBlocks: string[] = [];
+  let processed = content.replace(/```[\s\S]*?```/g, (match) => {
+    const placeholder = `__CODE_BLOCK_LB_${codeBlocks.length}__`;
+    codeBlocks.push(match);
+    return placeholder;
+  });
+
+  // Preserve inline code
+  const inlineCode: string[] = [];
+  processed = processed.replace(/`[^`]+`/g, (match) => {
+    const placeholder = `__INLINE_CODE_LB_${inlineCode.length}__`;
+    inlineCode.push(match);
+    return placeholder;
+  });
+
+  // Ensure headings are followed by double newlines (paragraph breaks)
+  // This prevents heading styles from bleeding into the next line
+  processed = processed.replace(/(^#{1,6}\s+[^\n]+)\n(?!\n)/gm, '$1\n\n');
+
+  // Convert single newlines to <br>, but preserve double newlines (paragraph breaks)
+  // First, mark paragraph breaks (double+ newlines) with a placeholder
+  processed = processed.replace(/\n\n+/g, (match) => `__PARA_BREAK_${match.length}__`);
+
+  // Now convert remaining single newlines to <br>
+  processed = processed.replace(/\n/g, '<br>');
+
+  // Restore paragraph breaks (convert back to double newlines)
+  processed = processed.replace(/__PARA_BREAK_(\d+)__/g, (_, count) => '\n'.repeat(parseInt(count)));
+
+  // Restore inline code
+  inlineCode.forEach((code, index) => {
+    processed = processed.replace(`__INLINE_CODE_LB_${index}__`, code);
+  });
+
+  // Restore code blocks
+  codeBlocks.forEach((code, index) => {
+    processed = processed.replace(`__CODE_BLOCK_LB_${index}__`, code);
+  });
+
+  return processed;
+}
+
 // Transform wiki-style links [[note]] and [[note|display]] to markdown links
 // Also transforms card/kanban links, diagram links, and transclusions
 function preprocessWikiLinks(content: string): string {
   // First strip frontmatter
   const contentWithoutFrontmatter = stripFrontmatter(content);
 
+  // Normalize line breaks - convert single newlines to <br> for consistent preview
+  const contentWithNormalizedLines = normalizeLineBreaks(contentWithoutFrontmatter);
+
   // Process callouts before other transformations
-  const contentWithCallouts = preprocessCallouts(contentWithoutFrontmatter);
+  const contentWithCallouts = preprocessCallouts(contentWithNormalizedLines);
 
   // Process heading sections for folding
   const contentWithSections = preprocessHeadingSections(contentWithCallouts);

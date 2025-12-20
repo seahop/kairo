@@ -88,7 +88,7 @@ export const useTemplateStore = create<TemplateState>((set, get) => ({
         editingTemplate: {
           id: `custom-${Date.now()}`,
           name: "",
-          content: "# New Template\n\n",
+          content: "# New Template\n<br>\n",
           category: "Custom",
           isBuiltin: false,
         },
@@ -244,11 +244,11 @@ function getBuiltinTemplates(): Template[] {
       filenamePattern: '{date}-{time}',
       isBuiltin: true,
       content: `# Quick Note
-
+<br>
 {datetime}
-
+<br>
 ---
-
+<br>
 `,
     },
     {
@@ -260,11 +260,11 @@ function getBuiltinTemplates(): Template[] {
       filenamePattern: '{title}',
       isBuiltin: true,
       content: `# {title}
-
+<br>
 Created: {date}
-
+<br>
 ---
-
+<br>
 `,
     },
     {
@@ -276,27 +276,27 @@ Created: {date}
       filenamePattern: '{date}-{title}',
       isBuiltin: true,
       content: `# Meeting: {title}
-
+<br>
 **Date:** {date} {time}
 **Attendees:**
-
+<br>
 ---
-
+<br>
 ## Agenda
 1.
-
+<br>
 ## Discussion Notes
-
-
+<br>
+<br>
 ## Action Items
 - [ ] @person -
-
+<br>
 ## Decisions Made
-
-
+<br>
+<br>
 ## Follow-up
 -
-
+<br>
 ---
 *Created: {datetime}*
 `,
@@ -312,16 +312,16 @@ Created: {date}
       filenamePattern: '{date}',
       isBuiltin: true,
       content: `# {weekday}, {month} {day}, {year}
-
+<br>
 ## Tasks
 - [ ]
-
+<br>
 ## Notes
-
-
+<br>
+<br>
 ## Links
 - [[{date}|Yesterday]]
-
+<br>
 ---
 *Created: {time}*
 `,
@@ -335,24 +335,24 @@ Created: {date}
       filenamePattern: 'week-{date}',
       isBuiltin: true,
       content: `# Weekly Review - {date}
-
+<br>
 ## What went well?
-
-
+<br>
+<br>
 ## What could be improved?
-
-
+<br>
+<br>
 ## Key learnings
-
-
+<br>
+<br>
 ## Next week's priorities
 1.
 2.
 3.
-
+<br>
 ## Notes to review
 -
-
+<br>
 ---
 *Created: {datetime}*
 `,
@@ -366,16 +366,16 @@ Created: {date}
       filenamePattern: 'standup-{date}',
       isBuiltin: true,
       content: `# Standup - {date}
-
+<br>
 ## Yesterday
 -
-
+<br>
 ## Today
 -
-
+<br>
 ## Blockers
 -
-
+<br>
 `,
     },
 
@@ -389,19 +389,19 @@ Created: {date}
       filenamePattern: '{zettel}-{title}',
       isBuiltin: true,
       content: `# {title}
-
+<br>
 <!-- Single idea goes here -->
-
-
-
+<br>
+<br>
+<br>
 ---
-
+<br>
 ## References
 -
-
+<br>
 ## Links
 -
-
+<br>
 ---
 *ID: {zettel}*
 *Created: {datetime}*
@@ -416,30 +416,30 @@ Created: {date}
       filenamePattern: '{title}',
       isBuiltin: true,
       content: `# {title}
-
+<br>
 **Source:**
 **Author:**
 **Date Read:** {date}
-
+<br>
 ---
-
+<br>
 ## Summary
-
-
+<br>
+<br>
 ## Key Ideas
 1.
 2.
 3.
-
+<br>
 ## Quotes
-
-
+<br>
+<br>
 ## My Thoughts
-
-
+<br>
+<br>
 ## Links to Permanent Notes
 -
-
+<br>
 ---
 *Created: {datetime}*
 `,
@@ -455,26 +455,26 @@ Created: {date}
       filenamePattern: 'moc-{title}',
       isBuiltin: true,
       content: `# {title} - Map of Content
-
+<br>
 > This MOC organizes notes related to **{title}**.
-
+<br>
 ---
-
+<br>
 ## Overview
-
-
+<br>
+<br>
 ## Core Concepts
 -
-
+<br>
 ## Related Notes
 -
-
+<br>
 ## Questions to Explore
 - [ ]
-
+<br>
 ## Resources
 -
-
+<br>
 ---
 *Last updated: {date}*
 `,
@@ -488,16 +488,16 @@ Created: {date}
       filenamePattern: 'index-{title}',
       isBuiltin: true,
       content: `# {title} Index
-
+<br>
 ## Quick Links
-
-
+<br>
+<br>
 ## Categories
-
-
+<br>
+<br>
 ## Recently Added
-
-
+<br>
+<br>
 ---
 *Updated: {date}*
 `,
@@ -513,33 +513,33 @@ Created: {date}
       filenamePattern: '{title}',
       isBuiltin: true,
       content: `# Project: {title}
-
+<br>
 **Status:** Active
 **Deadline:**
 **Created:** {date}
-
+<br>
 ---
-
+<br>
 ## Objective
-
-
+<br>
+<br>
 ## Key Results
 - [ ]
 - [ ]
 - [ ]
-
+<br>
 ## Tasks
 - [ ]
-
+<br>
 ## Notes
-
-
+<br>
+<br>
 ## Resources
 -
-
+<br>
 ## Related
 -
-
+<br>
 ---
 *Last updated: {date}*
 `,
@@ -553,27 +553,27 @@ Created: {date}
       filenamePattern: '{title}',
       isBuiltin: true,
       content: `# Area: {title}
-
+<br>
 **Category:**
 **Created:** {date}
-
+<br>
 ---
-
+<br>
 ## Overview
-
-
+<br>
+<br>
 ## Standards/Goals
-
-
+<br>
+<br>
 ## Active Projects
 -
-
+<br>
 ## Key Resources
 -
-
+<br>
 ## Notes
 -
-
+<br>
 ---
 *Last updated: {date}*
 `,
@@ -587,26 +587,26 @@ Created: {date}
       filenamePattern: '{title}',
       isBuiltin: true,
       content: `# Resource: {title}
-
+<br>
 **Topic:**
 **Created:** {date}
-
+<br>
 ---
-
+<br>
 ## Summary
-
-
+<br>
+<br>
 ## Key Points
 1.
 2.
 3.
-
+<br>
 ## Useful Links
 -
-
+<br>
 ## Related Notes
 -
-
+<br>
 ---
 *Last updated: {date}*
 `,
@@ -622,34 +622,34 @@ Created: {date}
       filenamePattern: 'runbook-{title}',
       isBuiltin: true,
       content: `# Runbook: {title}
-
+<br>
 ## Overview
 Brief description of the technique/procedure.
-
+<br>
 ## Prerequisites
 -
-
+<br>
 ## Steps
-
+<br>
 ### 1. [Step Name]
 \`\`\`bash
 # Commands here
 \`\`\`
-
+<br>
 ### 2. [Step Name]
 \`\`\`powershell
 # Commands here
 \`\`\`
-
+<br>
 ## Expected Output
-
-
+<br>
+<br>
 ## Troubleshooting
-
-
+<br>
+<br>
 ## References
 -
-
+<br>
 ---
 Tags: #runbook #redteam
 `,
@@ -663,7 +663,7 @@ Tags: #runbook #redteam
       filenamePattern: 'INC-{date}-{title}',
       isBuiltin: true,
       content: `# Incident Report - {title}
-
+<br>
 ## Summary
 | Field | Value |
 |-------|-------|
@@ -671,25 +671,25 @@ Tags: #runbook #redteam
 | Severity | |
 | Status | Open |
 | Reported By | |
-
+<br>
 ## Timeline
 - **{datetime}** -
-
+<br>
 ## Description
-
-
+<br>
+<br>
 ## Affected Systems
 -
-
+<br>
 ## Root Cause
-
-
+<br>
+<br>
 ## Remediation Steps
 1.
-
+<br>
 ## Lessons Learned
-
-
+<br>
+<br>
 ---
 Tags: #incident #security
 `,
@@ -703,38 +703,38 @@ Tags: #incident #security
       filenamePattern: 'tool-{title}',
       isBuiltin: true,
       content: `# Tool: {title}
-
+<br>
 ## Overview
 What the tool does and when to use it.
-
+<br>
 ## Installation
 \`\`\`bash
 # Installation commands
 \`\`\`
-
+<br>
 ## Basic Usage
 \`\`\`bash
 # Basic usage example
 \`\`\`
-
+<br>
 ## Common Options
 | Option | Description |
 |--------|-------------|
 | \`-h\` | Help |
-
+<br>
 ## Examples
-
+<br>
 ### Example 1: [Description]
 \`\`\`bash
 # Command
 \`\`\`
-
+<br>
 ## Detection
 How this tool might be detected.
-
+<br>
 ## References
 -
-
+<br>
 ---
 Tags: #tool #redteam
 `,
