@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import { useUIStore } from "./uiStore";
 import { triggerHook } from "@/plugins/api/hooks";
 
 export interface NoteMetadata {
@@ -40,6 +39,9 @@ interface NoteState {
   // Local editor content (for tracking changes)
   editorContent: string;
 
+  // Draft cache for soft-save (unsaved changes cached when switching notes)
+  draftCache: Map<string, string>; // path → draft content
+
   // Navigation history
   navigationHistory: string[]; // Stack of note paths
   navigationIndex: number; // Current position in history (-1 means no history)
@@ -50,6 +52,7 @@ interface NoteState {
   secondaryEditorContent: string;
   hasSecondaryUnsavedChanges: boolean;
   isSecondaryLoading: boolean;
+  secondaryDraftCache: Map<string, string>; // path → draft content for secondary pane
 
   // Archive visibility
   showArchived: boolean;
@@ -87,6 +90,12 @@ interface NoteState {
   saveSecondaryNote: () => Promise<void>;
   swapPanes: () => void;
 
+  // Draft cache actions
+  saveDraft: (path: string, content: string) => void;
+  clearDraft: (path: string) => void;
+  getDraft: (path: string) => string | undefined;
+  hasDraft: (path: string) => boolean;
+
   // Trash state
   trashItems: TrashItem[];
   isTrashLoading: boolean;
@@ -108,6 +117,9 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   hasUnsavedChanges: false,
   editorContent: "",
 
+  // Draft cache for soft-save
+  draftCache: new Map<string, string>(),
+
   // Navigation history state
   navigationHistory: [],
   navigationIndex: -1,
@@ -118,6 +130,7 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   secondaryEditorContent: "",
   hasSecondaryUnsavedChanges: false,
   isSecondaryLoading: false,
+  secondaryDraftCache: new Map<string, string>(),
 
   // Archive visibility
   showArchived: false,
@@ -137,70 +150,59 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   },
 
   openNote: async (path: string) => {
-    // Internal function to actually open the note
-    const doOpenNote = async () => {
-      const { isNavigating, navigationHistory, navigationIndex, currentNote: prevNote } = get();
+    const { isNavigating, navigationHistory, navigationIndex, currentNote: prevNote, hasUnsavedChanges, editorContent, draftCache } = get();
 
-      set({ isLoading: true, error: null });
-      try {
-        const note = await invoke<Note>("read_note", { path });
-
-        // Update navigation history (only if not navigating via back/forward)
-        let newHistory = navigationHistory;
-        let newIndex = navigationIndex;
-
-        if (!isNavigating && prevNote && prevNote.path !== path) {
-          // Trim any forward history when navigating to a new note
-          newHistory = navigationHistory.slice(0, navigationIndex + 1);
-          // Add the new path to history
-          newHistory.push(path);
-          newIndex = newHistory.length - 1;
-
-          // Limit history size to prevent memory issues
-          if (newHistory.length > 50) {
-            newHistory = newHistory.slice(-50);
-            newIndex = newHistory.length - 1;
-          }
-        } else if (!isNavigating && !prevNote) {
-          // First note opened - start history
-          newHistory = [path];
-          newIndex = 0;
-        }
-
-        set({
-          currentNote: note,
-          editorContent: note.content,
-          hasUnsavedChanges: false,
-          isLoading: false,
-          isNavigating: false,
-          navigationHistory: newHistory,
-          navigationIndex: newIndex,
-        });
-        // Trigger hook for extensions
-        triggerHook("onNoteOpen", { note, path });
-      } catch (error) {
-        set({ error: String(error), isLoading: false, isNavigating: false });
-      }
-    };
-
-    // Check for unsaved changes
-    const { hasUnsavedChanges, currentNote } = get();
-    if (hasUnsavedChanges && currentNote && currentNote.path !== path) {
-      // Show confirmation dialog
-      useUIStore.getState().showConfirmDialog({
-        title: "Unsaved Changes",
-        message: `You have unsaved changes in "${currentNote.title}". Do you want to discard them and open the new note?`,
-        confirmText: "Discard",
-        cancelText: "Cancel",
-        variant: "warning",
-        onConfirm: () => {
-          doOpenNote();
-        },
-      });
-      return;
+    // Save current content to draft cache before switching (soft-save)
+    if (hasUnsavedChanges && prevNote && prevNote.path !== path) {
+      draftCache.set(prevNote.path, editorContent);
+      set({ draftCache: new Map(draftCache) }); // Trigger state update
     }
 
-    await doOpenNote();
+    set({ isLoading: true, error: null });
+    try {
+      const note = await invoke<Note>("read_note", { path });
+
+      // Check if there's a draft for this note
+      const draft = draftCache.get(path);
+      const contentToUse = draft !== undefined ? draft : note.content;
+      const hasDraftChanges = draft !== undefined && draft !== note.content;
+
+      // Update navigation history (only if not navigating via back/forward)
+      let newHistory = navigationHistory;
+      let newIndex = navigationIndex;
+
+      if (!isNavigating && prevNote && prevNote.path !== path) {
+        // Trim any forward history when navigating to a new note
+        newHistory = navigationHistory.slice(0, navigationIndex + 1);
+        // Add the new path to history
+        newHistory.push(path);
+        newIndex = newHistory.length - 1;
+
+        // Limit history size to prevent memory issues
+        if (newHistory.length > 50) {
+          newHistory = newHistory.slice(-50);
+          newIndex = newHistory.length - 1;
+        }
+      } else if (!isNavigating && !prevNote) {
+        // First note opened - start history
+        newHistory = [path];
+        newIndex = 0;
+      }
+
+      set({
+        currentNote: note,
+        editorContent: contentToUse,
+        hasUnsavedChanges: hasDraftChanges,
+        isLoading: false,
+        isNavigating: false,
+        navigationHistory: newHistory,
+        navigationIndex: newIndex,
+      });
+      // Trigger hook for extensions
+      triggerHook("onNoteOpen", { note, path });
+    } catch (error) {
+      set({ error: String(error), isLoading: false, isNavigating: false });
+    }
   },
 
   // Resolve a wiki-style reference [[note]] to a note
@@ -285,7 +287,7 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   },
 
   saveNote: async () => {
-    const { currentNote, editorContent } = get();
+    const { currentNote, editorContent, draftCache } = get();
     if (!currentNote) return;
 
     set({ isSaving: true, error: null });
@@ -296,12 +298,16 @@ export const useNoteStore = create<NoteState>((set, get) => ({
         createIfMissing: false,
       });
 
+      // Clear draft for this note since we've saved it
+      draftCache.delete(currentNote.path);
+
       // Update current note with new metadata
       const updatedNote = { ...currentNote, content: editorContent, ...metadata };
       set({
         currentNote: updatedNote,
         hasUnsavedChanges: false,
         isSaving: false,
+        draftCache: new Map(draftCache), // Trigger state update
       });
 
       // Trigger hook for extensions
@@ -577,55 +583,25 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   },
 
   goBack: async () => {
-    const { navigationHistory, navigationIndex, hasUnsavedChanges, currentNote } = get();
+    const { navigationHistory, navigationIndex } = get();
 
     if (navigationIndex <= 0) return;
 
     const previousPath = navigationHistory[navigationIndex - 1];
 
-    // Handle unsaved changes
-    if (hasUnsavedChanges && currentNote) {
-      useUIStore.getState().showConfirmDialog({
-        title: "Unsaved Changes",
-        message: `You have unsaved changes in "${currentNote.title}". Do you want to discard them?`,
-        confirmText: "Discard",
-        cancelText: "Cancel",
-        variant: "warning",
-        onConfirm: async () => {
-          set({ isNavigating: true, navigationIndex: navigationIndex - 1 });
-          await get().openNote(previousPath);
-        },
-      });
-      return;
-    }
-
+    // Drafts are auto-saved by openNote, so just navigate
     set({ isNavigating: true, navigationIndex: navigationIndex - 1 });
     await get().openNote(previousPath);
   },
 
   goForward: async () => {
-    const { navigationHistory, navigationIndex, hasUnsavedChanges, currentNote } = get();
+    const { navigationHistory, navigationIndex } = get();
 
     if (navigationIndex >= navigationHistory.length - 1) return;
 
     const nextPath = navigationHistory[navigationIndex + 1];
 
-    // Handle unsaved changes
-    if (hasUnsavedChanges && currentNote) {
-      useUIStore.getState().showConfirmDialog({
-        title: "Unsaved Changes",
-        message: `You have unsaved changes in "${currentNote.title}". Do you want to discard them?`,
-        confirmText: "Discard",
-        cancelText: "Cancel",
-        variant: "warning",
-        onConfirm: async () => {
-          set({ isNavigating: true, navigationIndex: navigationIndex + 1 });
-          await get().openNote(nextPath);
-        },
-      });
-      return;
-    }
-
+    // Drafts are auto-saved by openNote, so just navigate
     set({ isNavigating: true, navigationIndex: navigationIndex + 1 });
     await get().openNote(nextPath);
   },
@@ -644,17 +620,22 @@ export const useNoteStore = create<NoteState>((set, get) => ({
   moveToTrash: async (path: string) => {
     try {
       // Get note info before moving for the hook
-      const { notes, currentNote } = get();
+      const { notes, currentNote, draftCache } = get();
       const noteToDelete = notes.find(n => n.path === path);
 
       await invoke<TrashItem>("move_to_trash", { path });
+
+      // Clear any draft for this note
+      draftCache.delete(path);
 
       // Trigger hook for extensions
       triggerHook("onNoteDelete", { path, note: noteToDelete });
 
       // If this was the current note, close it
       if (currentNote?.path === path) {
-        set({ currentNote: null, editorContent: "", hasUnsavedChanges: false });
+        set({ currentNote: null, editorContent: "", hasUnsavedChanges: false, draftCache: new Map(draftCache) });
+      } else {
+        set({ draftCache: new Map(draftCache) });
       }
 
       // Refresh notes and trash lists
@@ -697,5 +678,26 @@ export const useNoteStore = create<NoteState>((set, get) => ({
       set({ error: String(error) });
       return 0;
     }
+  },
+
+  // Draft cache actions
+  saveDraft: (path: string, content: string) => {
+    const { draftCache } = get();
+    draftCache.set(path, content);
+    set({ draftCache: new Map(draftCache) });
+  },
+
+  clearDraft: (path: string) => {
+    const { draftCache } = get();
+    draftCache.delete(path);
+    set({ draftCache: new Map(draftCache) });
+  },
+
+  getDraft: (path: string) => {
+    return get().draftCache.get(path);
+  },
+
+  hasDraft: (path: string) => {
+    return get().draftCache.has(path);
   },
 }));

@@ -1,6 +1,7 @@
 import React, { useMemo, useCallback, useEffect, useState, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import rehypeRaw from "rehype-raw";
 // Note: DOMPurify was removed for performance. In a desktop app with user-owned
 // content, XSS risk is minimal. If sharing notes becomes a feature, add rehype-sanitize
@@ -18,7 +19,7 @@ import { useTableEditorStore } from "@/stores/tableEditorStore";
 import { parseMarkdownTable } from "./table/tableParser";
 
 // Stable plugin arrays - defined outside component to prevent recreation
-const REMARK_PLUGINS = [remarkGfm];
+const REMARK_PLUGINS = [remarkGfm, remarkBreaks];
 const REHYPE_PLUGINS = [rehypeRaw];
 
 // Icon for external links
