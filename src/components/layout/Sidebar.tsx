@@ -309,11 +309,26 @@ interface FolderItemProps {
   onContextMenu: (e: React.MouseEvent, note: NoteMetadata) => void;
 }
 
+// Natural sort comparator - handles numbers in strings correctly (e.g., "note2" before "note10")
+function naturalSort(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+}
+
 function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }: FolderItemProps) {
   const [expanded, setExpanded] = useState(level < 2);
   const { currentNote, openNote } = useNoteStore();
 
   const hasChildren = folder.children.size > 0 || folder.notes.length > 0;
+
+  // Sort subfolders alphabetically (natural sort for numbers)
+  const sortedChildren = Array.from(folder.children.values()).sort((a, b) =>
+    naturalSort(a.name.toLowerCase(), b.name.toLowerCase())
+  );
+
+  // Sort notes alphabetically by title (natural sort for numbers)
+  const sortedNotes = [...folder.notes].sort((a, b) =>
+    naturalSort(a.title.toLowerCase(), b.title.toLowerCase())
+  );
 
   return (
     <div>
@@ -334,8 +349,8 @@ function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }
       {/* Children */}
       {expanded && (
         <div>
-          {/* Subfolders */}
-          {Array.from(folder.children.values()).map((child) => (
+          {/* Subfolders - sorted alphabetically */}
+          {sortedChildren.map((child) => (
             <FolderItem
               key={child.path}
               folder={child}
@@ -346,8 +361,8 @@ function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }
             />
           ))}
 
-          {/* Notes in this folder */}
-          {folder.notes.map((note) => (
+          {/* Notes in this folder - sorted alphabetically */}
+          {sortedNotes.map((note) => (
             <div
               key={note.id}
               className={clsx(
@@ -459,6 +474,12 @@ export function Sidebar() {
     [notes, showArchived]
   );
   const folderTree = useMemo(() => buildFolderTree(visibleNotes), [visibleNotes]);
+
+  // Memoize sorted starred notes
+  const sortedStarredNotes = useMemo(
+    () => getStarredNotes().sort((a, b) => naturalSort(a.title.toLowerCase(), b.title.toLowerCase())),
+    [getStarredNotes, notes] // Re-sort when notes change
+  );
 
   const handleNewNote = () => {
     const timestamp = new Date().toISOString().split("T")[0];
@@ -715,8 +736,8 @@ export function Sidebar() {
       {/* File tree */}
       {sidebarView === "files" && (
       <div className="flex-1 overflow-y-auto py-2" ref={sidebarRef} tabIndex={0}>
-        {/* Starred Notes Section */}
-        {getStarredNotes().length > 0 && (
+        {/* Starred Notes Section - sorted alphabetically */}
+        {sortedStarredNotes.length > 0 && (
           <div className="mb-2">
             <div
               className="flex items-center gap-2 px-3 py-1.5 text-dark-400 text-xs font-medium uppercase tracking-wider"
@@ -724,7 +745,7 @@ export function Sidebar() {
               <StarIcon filled className="w-3 h-3 text-yellow-500" />
               <span>Starred</span>
             </div>
-            {getStarredNotes().map((note) => (
+            {sortedStarredNotes.map((note) => (
               <div
                 key={`starred-${note.id}`}
                 className={clsx(
