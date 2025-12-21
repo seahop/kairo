@@ -1,7 +1,7 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import { useUIStore, TabInfo } from "@/stores/uiStore";
 import { useNoteStore } from "@/stores/noteStore";
-import { usePaneStore } from "@/stores/paneStore";
+import { usePaneStore, PaneNode } from "@/stores/paneStore";
 import clsx from "clsx";
 
 // Icons
@@ -29,6 +29,31 @@ const PlusIcon = () => (
   </svg>
 );
 
+const EditIcon = () => (
+  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+  </svg>
+);
+
+// Helper to find first leaf with a file in a pane tree
+const findFirstFileInTree = (node: PaneNode): string | null => {
+  if (node.type === 'leaf') {
+    return node.notePath;
+  }
+  // Check left child first, then right
+  const leftResult = findFirstFileInTree(node.children[0]);
+  if (leftResult) return leftResult;
+  return findFirstFileInTree(node.children[1]);
+};
+
+// Helper to collect all leaf paths from a pane tree
+const collectLeafPaths = (node: PaneNode): string[] => {
+  if (node.type === 'leaf') {
+    return node.notePath ? [node.notePath] : [];
+  }
+  return [...collectLeafPaths(node.children[0]), ...collectLeafPaths(node.children[1])];
+};
+
 interface TabContextMenuState {
   x: number;
   y: number;
@@ -38,12 +63,15 @@ interface TabContextMenuState {
 function TabContextMenu({
   state,
   onClose,
+  onRename,
 }: {
   state: TabContextMenuState;
   onClose: () => void;
+  onRename: (tabId: string) => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const { openTabs, closeTab, closeOtherTabs, closeAllTabs, pinTab, unpinTab } = useUIStore();
+  const { removeTabLayout, clearAllLayouts } = usePaneStore();
 
   const tab = openTabs.find(t => t.id === state.tabId);
 
@@ -72,6 +100,16 @@ function TabContextMenu({
       className="fixed z-50 min-w-44 bg-dark-850 border border-dark-700 rounded-lg shadow-xl py-1"
       style={{ left: state.x, top: state.y }}
     >
+      <button
+        className="w-full px-4 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 hover:text-dark-50 flex items-center gap-2"
+        onClick={() => {
+          onRename(state.tabId!);
+          onClose();
+        }}
+      >
+        <EditIcon />
+        Rename Tab
+      </button>
       {tab.isPinned ? (
         <button
           className="w-full px-4 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 hover:text-dark-50 flex items-center gap-2"
@@ -99,7 +137,13 @@ function TabContextMenu({
       <button
         className="w-full px-4 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 hover:text-dark-50"
         onClick={() => {
+          removeTabLayout(state.tabId!);
           closeTab(state.tabId!);
+          // If this was the last non-pinned tab, clear layouts
+          const remainingTabs = openTabs.filter(t => t.id !== state.tabId);
+          if (remainingTabs.length === 0) {
+            clearAllLayouts();
+          }
           onClose();
         }}
       >
@@ -109,6 +153,12 @@ function TabContextMenu({
       <button
         className="w-full px-4 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 hover:text-dark-50"
         onClick={() => {
+          // Remove layouts for all tabs except the current one and pinned tabs
+          openTabs.forEach(t => {
+            if (t.id !== state.tabId && !t.isPinned) {
+              removeTabLayout(t.id);
+            }
+          });
           closeOtherTabs(state.tabId!);
           onClose();
         }}
@@ -118,12 +168,94 @@ function TabContextMenu({
       <button
         className="w-full px-4 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 hover:text-dark-50"
         onClick={() => {
+          // Check if there will be any pinned tabs remaining
+          const pinnedTabs = openTabs.filter(t => t.isPinned);
+          if (pinnedTabs.length === 0) {
+            clearAllLayouts();
+          } else {
+            // Remove layouts for non-pinned tabs only
+            openTabs.forEach(t => {
+              if (!t.isPinned) {
+                removeTabLayout(t.id);
+              }
+            });
+          }
           closeAllTabs();
           onClose();
         }}
       >
         Close All Tabs
       </button>
+    </div>
+  );
+}
+
+// Rename Tab Modal
+function RenameTabModal({
+  tabId,
+  currentName,
+  onClose,
+  onRename,
+}: {
+  tabId: string;
+  currentName: string;
+  onClose: () => void;
+  onRename: (tabId: string, name: string | undefined) => void;
+}) {
+  const [name, setName] = useState(currentName);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onRename(tabId, name || undefined);
+    onClose();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={onClose}>
+      <div
+        className="bg-dark-850 border border-dark-700 rounded-lg p-4 w-80 shadow-xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <h3 className="text-sm font-medium text-dark-100 mb-3">Rename Tab</h3>
+        <form onSubmit={handleSubmit}>
+          <input
+            ref={inputRef}
+            type="text"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Tab name (leave empty for default)"
+            className="w-full px-3 py-2 bg-dark-900 border border-dark-700 rounded text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:border-accent-primary"
+          />
+          <div className="flex justify-end gap-2 mt-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 text-sm text-dark-300 hover:text-dark-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-3 py-1.5 text-sm bg-accent-primary text-white rounded hover:bg-accent-primary/80"
+            >
+              Save
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -217,30 +349,86 @@ function TabItem({
 }
 
 export function TabBar() {
-  const { openTabs, activeTabId, setActiveTab, closeTab } = useUIStore();
-  const { notes, createNote, hasDraft } = useNoteStore();
-  const { openNoteInActivePane } = usePaneStore();
+  const { openTabs, activeTabId, setActiveTab, closeTab, renameTab } = useUIStore();
+  const { notes } = useNoteStore();
+  const paneState = usePaneStore();
+  const { switchToTab, createLayoutForTab, removeTabLayout, clearAllLayouts, getAllLeafPanes, root, currentTabId, tabLayouts } = paneState;
   const [contextMenu, setContextMenu] = useState<TabContextMenuState>({ x: 0, y: 0, tabId: null });
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Get note title from path
-  const getNoteTitle = (notePath: string): string => {
+  const getNoteTitleFromPath = useCallback((notePath: string): string => {
+    if (!notePath) return "New Tab";
     const note = notes.find(n => n.path === notePath);
     return note?.title ?? notePath.split("/").pop()?.replace(/\.md$/, "") ?? "Untitled";
-  };
+  }, [notes]);
 
-  // Check if tab has unsaved changes
-  const hasUnsavedChanges = (notePath: string): boolean => {
-    return hasDraft(notePath);
-  };
+  // Get the pane tree for a tab
+  const getPaneTreeForTab = useCallback((tabId: string): PaneNode | null => {
+    if (currentTabId === tabId && root) {
+      return root;
+    }
+    const savedLayout = tabLayouts.get(tabId);
+    return savedLayout?.root ?? null;
+  }, [currentTabId, root, tabLayouts]);
+
+  // Get tab title - check custom name first, then derive from panes
+  const getTabTitle = useCallback((tab: TabInfo): string => {
+    // Custom name takes priority
+    if (tab.customName) {
+      return tab.customName;
+    }
+
+    // Try to derive from pane tree
+    const paneTree = getPaneTreeForTab(tab.id);
+    if (paneTree) {
+      const paths = collectLeafPaths(paneTree);
+      if (paths.length === 0) {
+        return "New Tab";
+      } else if (paths.length === 1) {
+        return getNoteTitleFromPath(paths[0]);
+      } else {
+        // Multiple files - show first file + count
+        const firstTitle = getNoteTitleFromPath(paths[0]);
+        return `${firstTitle} +${paths.length - 1}`;
+      }
+    }
+
+    // Fallback to legacy notePath on tab
+    return getNoteTitleFromPath(tab.notePath);
+  }, [getPaneTreeForTab, getNoteTitleFromPath]);
+
+  // Check if tab has unsaved changes (check all panes in the tab's layout)
+  const hasUnsavedChanges = useCallback((tabId: string): boolean => {
+    const paneTree = getPaneTreeForTab(tabId);
+    if (!paneTree) return false;
+
+    // Check current panes for the active tab
+    if (currentTabId === tabId) {
+      const panes = getAllLeafPanes();
+      return panes.some(p => p.hasUnsavedChanges);
+    }
+
+    // For inactive tabs, we can't easily check - would need to store state
+    return false;
+  }, [getPaneTreeForTab, currentTabId, getAllLeafPanes]);
 
   const handleTabActivate = (tab: TabInfo) => {
     setActiveTab(tab.id);
-    openNoteInActivePane(tab.notePath);
+    // Switch to this tab's pane layout
+    switchToTab(tab.id);
   };
 
   const handleTabClose = (tabId: string) => {
+    // Remove the tab's pane layout
+    removeTabLayout(tabId);
     closeTab(tabId);
+    // If this was the last tab, clear all layouts
+    const remainingTabs = openTabs.filter(t => t.id !== tabId);
+    if (remainingTabs.length === 0) {
+      clearAllLayouts();
+    }
   };
 
   const handleContextMenu = (e: React.MouseEvent, tabId: string) => {
@@ -249,11 +437,10 @@ export function TabBar() {
   };
 
   const handleNewTab = () => {
-    const timestamp = new Date().toISOString().split("T")[0];
-    const fileName = `notes/new-note-${timestamp}-${Date.now()}.md`;
-    // Create tab FIRST, then create note (so openNote finds the tab already exists)
-    useUIStore.getState().openTab(fileName);
-    createNote(fileName);
+    // Create a new empty tab (no file creation)
+    const newTabId = useUIStore.getState().openTab("", { forceNew: true });
+    // Create a fresh pane layout for this tab
+    createLayoutForTab(newTabId);
   };
 
   // If no tabs, show empty state
@@ -285,8 +472,8 @@ export function TabBar() {
             key={tab.id}
             tab={tab}
             isActive={tab.id === activeTabId}
-            noteTitle={getNoteTitle(tab.notePath)}
-            hasUnsavedChanges={hasUnsavedChanges(tab.notePath)}
+            noteTitle={getTabTitle(tab)}
+            hasUnsavedChanges={hasUnsavedChanges(tab.id)}
             onActivate={() => handleTabActivate(tab)}
             onClose={() => handleTabClose(tab.id)}
             onContextMenu={(e) => handleContextMenu(e, tab.id)}
@@ -308,7 +495,18 @@ export function TabBar() {
       <TabContextMenu
         state={contextMenu}
         onClose={() => setContextMenu({ x: 0, y: 0, tabId: null })}
+        onRename={(tabId) => setRenamingTabId(tabId)}
       />
+
+      {/* Rename tab modal */}
+      {renamingTabId && (
+        <RenameTabModal
+          tabId={renamingTabId}
+          currentName={openTabs.find(t => t.id === renamingTabId)?.customName ?? getTabTitle(openTabs.find(t => t.id === renamingTabId)!)}
+          onClose={() => setRenamingTabId(null)}
+          onRename={renameTab}
+        />
+      )}
     </div>
   );
 }

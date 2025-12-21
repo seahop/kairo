@@ -28,15 +28,18 @@ const EmptyState = () => (
 function PaneContentArea() {
   const root = usePaneStore((s) => s.root);
   const initializePane = usePaneStore((s) => s.initializePane);
+  const { openTabs } = useUIStore();
 
-  // Initialize pane system if not already done
+  // Initialize pane system if not already done, but only if we have tabs
+  // (or are starting fresh - initialization happens in App.tsx)
   useEffect(() => {
-    if (!root) {
+    if (!root && openTabs.length > 0) {
       initializePane();
     }
-  }, [root, initializePane]);
+  }, [root, initializePane, openTabs.length]);
 
-  if (!root) {
+  // If no tabs or no root, show empty state
+  if (!root || openTabs.length === 0) {
     return <EmptyState />;
   }
 

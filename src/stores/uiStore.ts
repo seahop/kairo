@@ -8,14 +8,15 @@ export interface TabInfo {
   id: string;
   notePath: string;
   isPinned: boolean;
+  customName?: string; // User-defined tab name (overrides derived name)
   // Per-tab navigation history
   history: string[];
   historyIndex: number;
 }
 
 interface PersistedTabState {
-  tabs: Array<{ notePath: string; isPinned: boolean }>;
-  activeTabPath: string | null;
+  tabs: Array<{ id: string; notePath: string; isPinned: boolean; customName?: string }>;
+  activeTabId: string | null;
 }
 
 const TABS_STORAGE_KEY = 'kairo-open-tabs';
@@ -114,6 +115,7 @@ interface UIState {
   pinTab: (tabId: string) => void;
   unpinTab: (tabId: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
+  renameTab: (tabId: string, name: string | undefined) => void;
   getTabByPath: (notePath: string) => TabInfo | undefined;
   getActiveTab: () => TabInfo | undefined;
   initializeTabsFromStorage: (validateNote: (path: string) => boolean) => void;
@@ -127,10 +129,9 @@ interface UIState {
 // Helper to save tabs to localStorage
 function saveTabsToStorage(tabs: TabInfo[], activeTabId: string | null) {
   try {
-    const activeTab = tabs.find(t => t.id === activeTabId);
     const state: PersistedTabState = {
-      tabs: tabs.map(t => ({ notePath: t.notePath, isPinned: t.isPinned })),
-      activeTabPath: activeTab?.notePath ?? null,
+      tabs: tabs.map(t => ({ id: t.id, notePath: t.notePath, isPinned: t.isPinned, customName: t.customName })),
+      activeTabId,
     };
     localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
@@ -481,6 +482,25 @@ export const useUIStore = create<UIState>((set, get) => ({
     saveTabsToStorage(newTabs, activeTabId);
   },
 
+  renameTab: (tabId: string, name: string | undefined) => {
+    const { openTabs, activeTabId } = get();
+    const tabIndex = openTabs.findIndex(t => t.id === tabId);
+    if (tabIndex === -1) return;
+
+    const updatedTab: TabInfo = {
+      ...openTabs[tabIndex],
+      customName: name?.trim() || undefined, // Remove empty strings
+    };
+    const newTabs = [
+      ...openTabs.slice(0, tabIndex),
+      updatedTab,
+      ...openTabs.slice(tabIndex + 1),
+    ];
+
+    set({ openTabs: newTabs });
+    saveTabsToStorage(newTabs, activeTabId);
+  },
+
   getTabByPath: (notePath: string) => {
     return get().openTabs.find(t => t.notePath === notePath);
   },
@@ -579,28 +599,38 @@ export const useUIStore = create<UIState>((set, get) => ({
         return;
       }
 
-      const { tabs, activeTabPath } = JSON.parse(stored) as PersistedTabState;
+      const persisted = JSON.parse(stored) as PersistedTabState;
+
+      // Handle legacy format (activeTabPath instead of activeTabId)
+      const legacyActiveTabPath = (persisted as unknown as { activeTabPath?: string }).activeTabPath;
 
       // Validate and restore tabs
       const restoredTabs: TabInfo[] = [];
-      for (const tab of tabs) {
+      for (const tab of persisted.tabs) {
         if (validateNote(tab.notePath)) {
           restoredTabs.push({
-            id: generateTabId(),
+            // Use saved tab ID if available, otherwise generate new one (legacy support)
+            id: tab.id || generateTabId(),
             notePath: tab.notePath,
             isPinned: tab.isPinned,
-            history: [tab.notePath],
-            historyIndex: 0,
+            customName: tab.customName,
+            history: tab.notePath ? [tab.notePath] : [],
+            historyIndex: tab.notePath ? 0 : -1,
           });
         } else {
           console.warn(`Tab for deleted note skipped: ${tab.notePath}`);
         }
       }
 
-      // Find active tab
+      // Find active tab - prefer saved activeTabId, fallback to legacy activeTabPath
       let activeTabId: string | null = null;
-      if (activeTabPath) {
-        const activeTab = restoredTabs.find(t => t.notePath === activeTabPath);
+      if (persisted.activeTabId) {
+        // Check if the saved activeTabId exists in restored tabs
+        const activeTab = restoredTabs.find(t => t.id === persisted.activeTabId);
+        activeTabId = activeTab?.id ?? (restoredTabs.length > 0 ? restoredTabs[0].id : null);
+      } else if (legacyActiveTabPath) {
+        // Legacy support: find by path
+        const activeTab = restoredTabs.find(t => t.notePath === legacyActiveTabPath);
         activeTabId = activeTab?.id ?? (restoredTabs.length > 0 ? restoredTabs[0].id : null);
       } else if (restoredTabs.length > 0) {
         activeTabId = restoredTabs[0].id;

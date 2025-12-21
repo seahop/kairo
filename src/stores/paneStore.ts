@@ -6,6 +6,197 @@ import { EditorViewMode } from "@/stores/uiStore";
 // Types
 export type SplitDirection = 'horizontal' | 'vertical';
 
+// Persistence types - minimal data for saving/restoring layout
+interface PersistedLeaf {
+  type: 'leaf';
+  notePath: string | null;
+  viewMode: EditorViewMode;
+}
+
+interface PersistedSplit {
+  type: 'split';
+  direction: SplitDirection;
+  ratio: number;
+  children: [PersistedNode, PersistedNode];
+}
+
+type PersistedNode = PersistedLeaf | PersistedSplit;
+
+interface PersistedPaneState {
+  root: PersistedNode | null;
+  activePaneIndex: number; // Index in leaf order
+}
+
+// Per-tab layout persistence
+interface PersistedTabLayout {
+  root: PersistedNode;
+  activePaneIndex: number;
+}
+
+interface PersistedTabLayouts {
+  currentTabId: string | null;
+  layouts: Record<string, PersistedTabLayout>; // tabId -> layout
+}
+
+const PANE_STORAGE_KEY = 'kairo-pane-layout';
+const TAB_LAYOUTS_STORAGE_KEY = 'kairo-tab-layouts';
+
+// Helper to serialize pane tree for persistence
+const serializePaneTree = (node: PaneNode): PersistedNode => {
+  if (node.type === 'leaf') {
+    return {
+      type: 'leaf',
+      notePath: node.notePath,
+      viewMode: node.viewMode,
+    };
+  }
+  return {
+    type: 'split',
+    direction: node.direction,
+    ratio: node.ratio,
+    children: [
+      serializePaneTree(node.children[0]),
+      serializePaneTree(node.children[1]),
+    ],
+  };
+};
+
+// Helper to collect leaves (forward declaration for serializePaneTree)
+const collectLeafPanesFromNode = (node: PaneNode): PaneLeaf[] => {
+  if (node.type === 'leaf') return [node];
+  return [...collectLeafPanesFromNode(node.children[0]), ...collectLeafPanesFromNode(node.children[1])];
+};
+
+// Helper to deserialize pane tree from persistence
+const deserializePaneTree = (persisted: PersistedNode): PaneNode => {
+  if (persisted.type === 'leaf') {
+    return {
+      type: 'leaf',
+      id: generatePaneId(),
+      notePath: persisted.notePath,
+      editorContent: '',
+      originalContent: '',
+      hasUnsavedChanges: false,
+      viewMode: persisted.viewMode,
+      isLoading: false,
+      note: null,
+      history: persisted.notePath ? [persisted.notePath] : [],
+      historyIndex: persisted.notePath ? 0 : -1,
+    };
+  }
+  return {
+    type: 'split',
+    id: generatePaneId(),
+    direction: persisted.direction,
+    ratio: persisted.ratio,
+    children: [
+      deserializePaneTree(persisted.children[0]),
+      deserializePaneTree(persisted.children[1]),
+    ],
+  };
+};
+
+// Helper to load pane layout from localStorage (legacy - single layout)
+const loadPaneLayout = (): { root: PaneNode; activePaneId: string } | null => {
+  try {
+    const stored = localStorage.getItem(PANE_STORAGE_KEY);
+    if (!stored) return null;
+
+    const persisted: PersistedPaneState = JSON.parse(stored);
+    if (!persisted.root) return null;
+
+    const root = deserializePaneTree(persisted.root);
+    const leaves = collectLeafPanesFromNode(root);
+
+    // Get active pane by index
+    const activePaneIndex = Math.min(persisted.activePaneIndex, leaves.length - 1);
+    const activePaneId = leaves[Math.max(0, activePaneIndex)]?.id;
+
+    if (!activePaneId) return null;
+
+    return { root, activePaneId };
+  } catch (e) {
+    console.warn('Failed to load pane layout:', e);
+    return null;
+  }
+};
+
+// Helper to save all tab layouts to localStorage
+const saveAllTabLayouts = (
+  currentTabId: string | null,
+  currentRoot: PaneNode | null,
+  currentActivePaneId: string | null,
+  tabLayouts: Map<string, TabPaneLayout>
+) => {
+  try {
+    const layouts: Record<string, PersistedTabLayout> = {};
+
+    // Save current tab's layout
+    if (currentTabId && currentRoot && currentActivePaneId) {
+      const leaves = collectLeafPanesFromNode(currentRoot);
+      const activePaneIndex = leaves.findIndex(p => p.id === currentActivePaneId);
+      layouts[currentTabId] = {
+        root: serializePaneTree(currentRoot),
+        activePaneIndex: activePaneIndex >= 0 ? activePaneIndex : 0,
+      };
+    }
+
+    // Save other tabs' layouts from the map
+    tabLayouts.forEach((layout, tabId) => {
+      if (tabId !== currentTabId) { // Don't overwrite current tab
+        const leaves = collectLeafPanesFromNode(layout.root);
+        const activePaneIndex = leaves.findIndex(p => p.id === layout.activePaneId);
+        layouts[tabId] = {
+          root: serializePaneTree(layout.root),
+          activePaneIndex: activePaneIndex >= 0 ? activePaneIndex : 0,
+        };
+      }
+    });
+
+    const persisted: PersistedTabLayouts = {
+      currentTabId,
+      layouts,
+    };
+
+    localStorage.setItem(TAB_LAYOUTS_STORAGE_KEY, JSON.stringify(persisted));
+  } catch (e) {
+    console.warn('Failed to save tab layouts:', e);
+  }
+};
+
+// Helper to load all tab layouts from localStorage
+const loadAllTabLayouts = (): {
+  currentTabId: string | null;
+  tabLayouts: Map<string, TabPaneLayout>;
+} | null => {
+  try {
+    const stored = localStorage.getItem(TAB_LAYOUTS_STORAGE_KEY);
+    if (!stored) return null;
+
+    const persisted: PersistedTabLayouts = JSON.parse(stored);
+    const tabLayouts = new Map<string, TabPaneLayout>();
+
+    for (const [tabId, layout] of Object.entries(persisted.layouts)) {
+      const root = deserializePaneTree(layout.root);
+      const leaves = collectLeafPanesFromNode(root);
+      const activePaneIndex = Math.min(layout.activePaneIndex, leaves.length - 1);
+      const activePaneId = leaves[Math.max(0, activePaneIndex)]?.id;
+
+      if (activePaneId) {
+        tabLayouts.set(tabId, { root, activePaneId });
+      }
+    }
+
+    return {
+      currentTabId: persisted.currentTabId,
+      tabLayouts,
+    };
+  } catch (e) {
+    console.warn('Failed to load tab layouts:', e);
+    return null;
+  }
+};
+
 export interface Note {
   id: string;
   path: string;
@@ -58,9 +249,19 @@ const createLeafPane = (notePath: string | null = null): PaneLeaf => ({
   historyIndex: notePath ? 0 : -1,
 });
 
+// Per-tab pane layout storage
+interface TabPaneLayout {
+  root: PaneNode;
+  activePaneId: string;
+}
+
 interface PaneState {
   root: PaneNode | null;
   activePaneId: string | null;
+
+  // Per-tab pane layouts
+  currentTabId: string | null;
+  tabLayouts: Map<string, TabPaneLayout>;
 
   // Draft cache for soft-save (unsaved changes cached when switching notes)
   draftCache: Map<string, string>;
@@ -77,6 +278,12 @@ interface PaneState {
   setPaneViewMode: (paneId: string, mode: EditorViewMode) => void;
   savePaneNote: (paneId: string) => Promise<void>;
   setPaneRatio: (splitId: string, ratio: number) => void;
+
+  // Tab-pane management
+  switchToTab: (tabId: string) => void;
+  createLayoutForTab: (tabId: string) => void;
+  removeTabLayout: (tabId: string) => void;
+  clearAllLayouts: () => void;
 
   // Navigation within pane
   goBackInPane: (paneId: string) => Promise<void>;
@@ -199,9 +406,66 @@ const replaceNodeInTree = (
 export const usePaneStore = create<PaneState>((set, get) => ({
   root: null,
   activePaneId: null,
+  currentTabId: null,
+  tabLayouts: new Map<string, TabPaneLayout>(),
   draftCache: new Map<string, string>(),
 
   initializePane: () => {
+    // Try to restore per-tab layouts first
+    const tabLayoutsData = loadAllTabLayouts();
+    if (tabLayoutsData && tabLayoutsData.tabLayouts.size > 0) {
+      // We have per-tab layouts - set them up
+      // Set an initial empty pane as placeholder - switchToTab will load the real content
+      const initialPane = createLeafPane(null);
+      set({
+        tabLayouts: tabLayoutsData.tabLayouts,
+        root: initialPane,
+        activePaneId: initialPane.id,
+        currentTabId: null, // Important: leave null so switchToTab is called from App.tsx
+      });
+      return;
+    }
+
+    // Try legacy single-pane layout
+    const restored = loadPaneLayout();
+    if (restored) {
+      set({
+        root: restored.root,
+        activePaneId: restored.activePaneId,
+      });
+
+      // Load note content for all panes that have a notePath
+      const leaves = collectLeafPanes(restored.root);
+      leaves.forEach(async (pane) => {
+        if (pane.notePath) {
+          try {
+            const note = await invoke<Note>("read_note", { path: pane.notePath });
+            const { root, draftCache } = get();
+            if (!root) return;
+
+            // Check for draft
+            const draft = draftCache.get(pane.notePath);
+            const contentToUse = draft !== undefined ? draft : note.content;
+            const hasDraftChanges = draft !== undefined && draft !== note.content;
+
+            set({
+              root: updatePaneInTree(root, pane.id, (p) => ({
+                ...p,
+                note,
+                editorContent: contentToUse,
+                originalContent: note.content,
+                hasUnsavedChanges: hasDraftChanges,
+              })),
+            });
+          } catch (error) {
+            console.warn(`Failed to load note for pane: ${pane.notePath}`, error);
+          }
+        }
+      });
+      return;
+    }
+
+    // No saved layout, create default
     const initialPane = createLeafPane(null);
     set({
       root: initialPane,
@@ -235,6 +499,10 @@ export const usePaneStore = create<PaneState>((set, get) => ({
       root: newRoot,
       activePaneId: newPane.id, // Focus the new pane
     });
+
+    // Save all tab layouts
+    const { currentTabId, tabLayouts } = get();
+    saveAllTabLayouts(currentTabId, newRoot, newPane.id, tabLayouts);
   },
 
   closePane: (paneId: string) => {
@@ -278,12 +546,19 @@ export const usePaneStore = create<PaneState>((set, get) => ({
       root: newRoot,
       activePaneId: newActivePaneId,
     });
+
+    // Save all tab layouts
+    const { currentTabId, tabLayouts } = get();
+    saveAllTabLayouts(currentTabId, newRoot, newActivePaneId, tabLayouts);
   },
 
   setActivePane: (paneId: string) => {
-    const pane = findPaneInTree(get().root, paneId);
+    const { root, currentTabId, tabLayouts } = get();
+    const pane = findPaneInTree(root, paneId);
     if (pane) {
       set({ activePaneId: paneId });
+      // Save all tab layouts (active pane changed)
+      saveAllTabLayouts(currentTabId, root, paneId, tabLayouts);
     }
   },
 
@@ -353,6 +628,10 @@ export const usePaneStore = create<PaneState>((set, get) => ({
 
       // Trigger hook for extensions
       triggerHook("onNoteOpen", { note, path: notePath });
+
+      // Save all tab layouts (note changed in pane)
+      const { root: updatedRoot, activePaneId, currentTabId, tabLayouts } = get();
+      saveAllTabLayouts(currentTabId, updatedRoot, activePaneId, tabLayouts);
     } catch (error) {
       console.error("Failed to open note:", error);
       set({
@@ -365,10 +644,33 @@ export const usePaneStore = create<PaneState>((set, get) => ({
   },
 
   openNoteInActivePane: async (notePath: string) => {
-    const { activePaneId, openNoteInPane } = get();
-    if (activePaneId) {
+    const { activePaneId, openNoteInPane, root } = get();
+
+    // If we have an active pane, use it
+    if (activePaneId && root) {
       await openNoteInPane(activePaneId, notePath);
+      return;
     }
+
+    // No active pane - need to create a new tab first
+    // Import useUIStore dynamically to avoid circular dependency issues
+    const { useUIStore } = await import('./uiStore');
+    const uiStore = useUIStore.getState();
+
+    // Create a new tab for this note
+    const newTabId = uiStore.openTab(notePath);
+
+    // Create a layout for the new tab with a pane containing this note
+    const newPane = createLeafPane(null);
+    set({
+      root: newPane,
+      activePaneId: newPane.id,
+      currentTabId: newTabId,
+      tabLayouts: new Map(get().tabLayouts),
+    });
+
+    // Now open the note in this pane
+    await openNoteInPane(newPane.id, notePath);
   },
 
   openNoteInNewPane: async (notePath: string, direction: SplitDirection = 'horizontal') => {
@@ -422,15 +724,19 @@ export const usePaneStore = create<PaneState>((set, get) => ({
   },
 
   setPaneViewMode: (paneId: string, mode: EditorViewMode) => {
-    const { root } = get();
+    const { root, activePaneId } = get();
     if (!root) return;
 
-    set({
-      root: updatePaneInTree(root, paneId, (p) => ({
-        ...p,
-        viewMode: mode,
-      })),
-    });
+    const newRoot = updatePaneInTree(root, paneId, (p) => ({
+      ...p,
+      viewMode: mode,
+    }));
+
+    set({ root: newRoot });
+
+    // Save all tab layouts (view mode changed)
+    const { currentTabId, tabLayouts } = get();
+    saveAllTabLayouts(currentTabId, newRoot, activePaneId, tabLayouts);
   },
 
   savePaneNote: async (paneId: string) => {
@@ -483,7 +789,7 @@ export const usePaneStore = create<PaneState>((set, get) => ({
   },
 
   setPaneRatio: (splitId: string, ratio: number) => {
-    const { root } = get();
+    const { root, activePaneId } = get();
     if (!root) return;
 
     const updateSplit = (node: PaneNode): PaneNode => {
@@ -499,7 +805,12 @@ export const usePaneStore = create<PaneState>((set, get) => ({
       };
     };
 
-    set({ root: updateSplit(root) });
+    const newRoot = updateSplit(root);
+    set({ root: newRoot });
+
+    // Save all tab layouts (ratio changed)
+    const { currentTabId, tabLayouts } = get();
+    saveAllTabLayouts(currentTabId, newRoot, activePaneId, tabLayouts);
   },
 
   // Navigation
@@ -603,5 +914,143 @@ export const usePaneStore = create<PaneState>((set, get) => ({
 
   hasDraft: (path: string) => {
     return get().draftCache.has(path);
+  },
+
+  // Tab-pane management
+  switchToTab: (tabId: string) => {
+    const { root, activePaneId, currentTabId, tabLayouts } = get();
+
+    // If switching to the same tab, do nothing
+    if (currentTabId === tabId) return;
+
+    // Check if we have a saved layout for the new tab FIRST
+    // This is important for initial load where currentTabId is null but we have saved layouts
+    const savedLayout = tabLayouts.get(tabId);
+
+    // Special case: If this is the first tab (no currentTabId), no saved layout,
+    // and we have an existing layout, just associate the current layout with this tab
+    if (!currentTabId && !savedLayout && root && activePaneId) {
+      set({
+        currentTabId: tabId,
+        tabLayouts: new Map(tabLayouts),
+      });
+      return;
+    }
+
+    // Save current layout for the current tab (if we have one)
+    if (currentTabId && root && activePaneId) {
+      tabLayouts.set(currentTabId, { root, activePaneId });
+    }
+
+    if (savedLayout) {
+      // Restore the saved layout
+      set({
+        root: savedLayout.root,
+        activePaneId: savedLayout.activePaneId,
+        currentTabId: tabId,
+        tabLayouts: new Map(tabLayouts),
+      });
+
+      // Reload content for all panes
+      const leaves = collectLeafPanes(savedLayout.root);
+      leaves.forEach(async (pane) => {
+        if (pane.notePath) {
+          try {
+            const note = await invoke<Note>("read_note", { path: pane.notePath });
+            const { root: currentRoot, draftCache } = get();
+            if (!currentRoot) return;
+
+            const draft = draftCache.get(pane.notePath);
+            const contentToUse = draft !== undefined ? draft : note.content;
+            const hasDraftChanges = draft !== undefined && draft !== note.content;
+
+            set({
+              root: updatePaneInTree(currentRoot, pane.id, (p) => ({
+                ...p,
+                note,
+                editorContent: contentToUse,
+                originalContent: note.content,
+                hasUnsavedChanges: hasDraftChanges,
+              })),
+            });
+          } catch (error) {
+            console.warn(`Failed to load note for pane: ${pane.notePath}`, error);
+          }
+        }
+      });
+    } else {
+      // No saved layout - create a fresh empty pane for this tab
+      const newPane = createLeafPane(null);
+      set({
+        root: newPane,
+        activePaneId: newPane.id,
+        currentTabId: tabId,
+        tabLayouts: new Map(tabLayouts),
+      });
+    }
+
+    // Save all tab layouts
+    const { root: newRoot, activePaneId: newActiveId, currentTabId: newCurrentTabId, tabLayouts: newTabLayouts } = get();
+    saveAllTabLayouts(newCurrentTabId, newRoot, newActiveId, newTabLayouts);
+  },
+
+  createLayoutForTab: (tabId: string) => {
+    const { tabLayouts, currentTabId, root, activePaneId } = get();
+
+    // If this is the first tab and we don't have a current tab, set it
+    if (!currentTabId) {
+      // Create a fresh pane for this tab
+      const newPane = createLeafPane(null);
+      set({
+        root: newPane,
+        activePaneId: newPane.id,
+        currentTabId: tabId,
+      });
+      return;
+    }
+
+    // Save current layout before creating new
+    if (currentTabId && root && activePaneId) {
+      tabLayouts.set(currentTabId, { root, activePaneId });
+    }
+
+    // Create a fresh empty pane for the new tab
+    const newPane = createLeafPane(null);
+    set({
+      root: newPane,
+      activePaneId: newPane.id,
+      currentTabId: tabId,
+      tabLayouts: new Map(tabLayouts),
+    });
+
+    // Save all tab layouts
+    saveAllTabLayouts(tabId, newPane, newPane.id, tabLayouts);
+  },
+
+  removeTabLayout: (tabId: string) => {
+    const { tabLayouts, root, activePaneId, currentTabId } = get();
+    if (tabLayouts.has(tabId)) {
+      tabLayouts.delete(tabId);
+      set({ tabLayouts: new Map(tabLayouts) });
+      // Save updated layouts
+      saveAllTabLayouts(currentTabId, root, activePaneId, tabLayouts);
+    }
+  },
+
+  clearAllLayouts: () => {
+    // Reset to empty state - no tabs, no panes
+    set({
+      root: null,
+      activePaneId: null,
+      currentTabId: null,
+      tabLayouts: new Map(),
+    });
+    // Clear persisted layouts
+    try {
+      localStorage.removeItem(TAB_LAYOUTS_STORAGE_KEY);
+      localStorage.removeItem(PANE_STORAGE_KEY);
+    } catch (e) {
+      console.warn('Failed to clear layout storage:', e);
+    }
   },
 }));

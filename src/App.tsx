@@ -15,6 +15,7 @@ import { CreateNoteModal } from "./components/modals/CreateNoteModal";
 import { useVaultStore } from "./stores/vaultStore";
 import { useUIStore } from "./stores/uiStore";
 import { useNoteStore } from "./stores/noteStore";
+import { usePaneStore } from "./stores/paneStore";
 import { useExtensionStore } from "./stores/extensionStore";
 import { useCommands } from "./plugins/api";
 import { useFileWatcher } from "./hooks/useFileWatcher";
@@ -168,8 +169,8 @@ function matchShortcut(e: KeyboardEvent, shortcut: string): boolean {
 
 function App() {
   const { vault, isLoading, openVault, tryOpenLastVault, loadRecentVaults } = useVaultStore();
-  const { isSearchOpen, setSearchOpen, toggleSidebar, mainViewMode, setMainViewMode, openModal, isSidebarCollapsed, setSidebarWidth, openTabs, activeTabId, initializeTabsFromStorage } = useUIStore();
-  const { createNote, createFolder, openDailyNote, notes, openNote } = useNoteStore();
+  const { isSearchOpen, setSearchOpen, toggleSidebar, mainViewMode, setMainViewMode, openModal, isSidebarCollapsed, setSidebarWidth, activeTabId, initializeTabsFromStorage } = useUIStore();
+  const { createNote, createFolder, openDailyNote, notes } = useNoteStore();
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [isShortcutsOpen, setShortcutsOpen] = useState(false);
   const [isAboutOpen, setAboutOpen] = useState(false);
@@ -242,30 +243,50 @@ function App() {
     loadExtensions();
   }, [vault?.path, loadSettings, loadExtensionsFromFolder]);
 
+  // Initialize pane system
+  useEffect(() => {
+    const paneState = usePaneStore.getState();
+    if (!paneState.root) {
+      paneState.initializePane();
+    }
+  }, []);
+
   // Initialize tabs from localStorage when notes are loaded
+  // Also create an initial tab if none exist
   useEffect(() => {
     if (notes.length > 0) {
       // Validate that a note exists by checking against loaded notes
       const validateNote = (notePath: string) => {
+        // Empty notePath is valid for new tabs
+        if (!notePath) return true;
         return notes.some(n => n.path === notePath);
       };
       initializeTabsFromStorage(validateNote);
-    }
-  }, [notes, initializeTabsFromStorage]);
 
-  // Open the active tab's note when active tab changes (e.g., clicking a tab)
-  useEffect(() => {
-    if (activeTabId) {
-      const activeTab = openTabs.find(t => t.id === activeTabId);
-      if (activeTab) {
-        // Only open if it's different from current note to avoid loops
-        const { currentNote } = useNoteStore.getState();
-        if (currentNote?.path !== activeTab.notePath) {
-          openNote(activeTab.notePath);
+      // After initialization, check if we need to create an initial tab
+      const uiState = useUIStore.getState();
+      if (uiState.openTabs.length === 0) {
+        // Create an initial empty tab
+        const initialTabId = uiState.openTab("", { forceNew: true });
+        // Link it to the current pane layout
+        const paneState = usePaneStore.getState();
+        if (!paneState.currentTabId) {
+          paneState.switchToTab(initialTabId);
         }
       }
     }
-  }, [activeTabId, openTabs, openNote]);
+  }, [notes, initializeTabsFromStorage]);
+
+  // Link pane layout to active tab when tab changes
+  useEffect(() => {
+    if (activeTabId) {
+      const paneState = usePaneStore.getState();
+      // Only switch if we're not already on this tab
+      if (paneState.currentTabId !== activeTabId) {
+        paneState.switchToTab(activeTabId);
+      }
+    }
+  }, [activeTabId]);
 
   // Use refs to store current values of handlers to avoid recreating event listeners
   const handlersRef = useRef<Record<string, () => void>>({});

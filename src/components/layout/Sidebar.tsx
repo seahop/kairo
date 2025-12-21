@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { useNoteStore, NoteMetadata } from "@/stores/noteStore";
-import { usePaneStore } from "@/stores/paneStore";
 import { useVaultStore } from "@/stores/vaultStore";
 import { useUIStore } from "@/stores/uiStore";
+import { usePaneStore } from "@/stores/paneStore";
 import { useContextMenuStore, ContextMenuContext } from "@/plugins/api/contextMenu";
 import { TrashModal } from "@/components/common/TrashModal";
 import { TagPane } from "@/components/layout/TagPane";
@@ -319,8 +319,8 @@ function naturalSort(a: string, b: string): number {
 function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }: FolderItemProps) {
   const [expanded, setExpanded] = useState(level < 2);
   const { currentNote } = useNoteStore();
-  const { openNoteInActivePane } = usePaneStore();
   const { openTab } = useUIStore();
+  const { openNoteInActivePane } = usePaneStore();
 
   const hasChildren = folder.children.size > 0 || folder.notes.length > 0;
 
@@ -383,7 +383,7 @@ function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }
                   openTab(note.path, { background: true, forceNew: true });
                   onSelectNote(null);
                 } else {
-                  // Regular click: open in active pane
+                  // Regular click: open in active pane of current tab
                   openNoteInActivePane(note.path);
                   onSelectNote(null);
                 }
@@ -772,7 +772,7 @@ export function Sidebar() {
                     useUIStore.getState().openTab(note.path, { background: true, forceNew: true });
                     setSelectedNote(null);
                   } else {
-                    // Regular click: open in active pane
+                    // Regular click: open in active pane of current tab
                     usePaneStore.getState().openNoteInActivePane(note.path);
                     setSelectedNote(null);
                   }
