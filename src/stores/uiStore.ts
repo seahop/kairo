@@ -148,7 +148,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   confirmDialog: null,
   editorSplitRatio: 50,
   showPreview: true,
-  editorViewMode: 'split',
+  editorViewMode: 'preview',
   mainViewMode: 'notes',
   sidePaneContent: null,
   sidePaneWidth: 350,
