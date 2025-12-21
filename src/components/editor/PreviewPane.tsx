@@ -9,6 +9,7 @@ import rehypeRaw from "rehype-raw";
 import { invoke } from "@tauri-apps/api/core";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useNoteStore } from "@/stores/noteStore";
+import { usePaneStore } from "@/stores/paneStore";
 import { useUIStore } from "@/stores/uiStore";
 import { useKanbanStore } from "@/plugins/builtin/kanban/store";
 import { useDiagramStore } from "@/plugins/builtin/diagram/store";
@@ -351,6 +352,7 @@ function preprocessWikiLinks(content: string): string {
 }
 
 interface PreviewPaneProps {
+  paneId?: string;
   content?: string;
 }
 
@@ -362,8 +364,9 @@ interface KanbanCardResult {
   title: string;
 }
 
-export const PreviewPane = memo(function PreviewPane({ content }: PreviewPaneProps) {
+export const PreviewPane = memo(function PreviewPane({ paneId: _paneId, content }: PreviewPaneProps) {
   const { editorContent, openNoteByReference, resolveNoteReference, setEditorContent } = useNoteStore();
+  const { openNoteInNewPane } = usePaneStore();
   const { loadBoard } = useKanbanStore();
   const { boards: diagramBoards, loadBoards: loadDiagramBoards, loadBoard: loadDiagramBoard, setShowView: setDiagramShowView } = useDiagramStore();
   const { openSidePane, readingFontSize, readingWidth } = useUIStore();
@@ -608,6 +611,17 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
     [resolveNoteReference]
   );
 
+  // Open a note in a new split pane
+  const openInNewSplitPane = useCallback(
+    async (reference: string) => {
+      const resolved = resolveNoteReference(reference);
+      if (resolved) {
+        openNoteInNewPane(resolved.path, 'horizontal');
+      }
+    },
+    [resolveNoteReference, openNoteInNewPane]
+  );
+
   // Context menu for wiki links
   const handleWikiContextMenu = useCallback(
     (e: React.MouseEvent, reference: string) => {
@@ -623,6 +637,11 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
           onClick: () => openNoteInNewTab(reference),
         },
         {
+          label: "Open in New Pane",
+          icon: "⬜",
+          onClick: () => openInNewSplitPane(reference),
+        },
+        {
           label: "Open in Side Pane",
           icon: "📄",
           onClick: () => openNoteInPane(reference),
@@ -635,7 +654,7 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
         },
       ]);
     },
-    [showContextMenu, handleWikiLinkClick, openNoteInNewTab, openNoteInPane, copyLink]
+    [showContextMenu, handleWikiLinkClick, openNoteInNewTab, openInNewSplitPane, openNoteInPane, copyLink]
   );
 
   // Context menu for external links

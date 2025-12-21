@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { MarkdownPane } from "./MarkdownPane";
 import { PreviewPane } from "./PreviewPane";
@@ -7,6 +8,7 @@ import { NoteHistory } from "./NoteHistory";
 import { VersionHistory } from "./VersionHistory";
 import { TableEditorModal } from "./table/TableEditorModal";
 import { useNoteStore } from "@/stores/noteStore";
+import { usePaneStore } from "@/stores/paneStore";
 import { useUIStore, EditorViewMode } from "@/stores/uiStore";
 import { useTableEditorStore } from "@/stores/tableEditorStore";
 import { addToCustomDictionary } from "./spellcheck";
@@ -107,6 +109,25 @@ const ReadingModeIcon = () => (
   </svg>
 );
 
+// Pane icons
+const SplitRightIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+  </svg>
+);
+
+const SplitDownIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+  </svg>
+);
+
+const ClosePaneIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
+
 interface ContextMenuProps {
   x: number;
   y: number;
@@ -115,9 +136,15 @@ interface ContextMenuProps {
   onSetMode: (mode: EditorViewMode) => void;
   misspelledWord?: string;
   onIgnoreWord?: (word: string) => void;
+  // Pane options
+  paneId?: string;
+  onSplitRight?: () => void;
+  onSplitDown?: () => void;
+  onClosePane?: () => void;
+  canClosePane?: boolean;
 }
 
-function ContextMenu({ x, y, onClose, currentMode, onSetMode, misspelledWord, onIgnoreWord }: ContextMenuProps) {
+function ContextMenu({ x, y, onClose, currentMode, onSetMode, misspelledWord, onIgnoreWord, paneId, onSplitRight, onSplitDown, onClosePane, canClosePane }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x, y });
 
@@ -145,9 +172,10 @@ function ContextMenu({ x, y, onClose, currentMode, onSetMode, misspelledWord, on
       newX = Math.max(padding, newX);
       newY = Math.max(padding, newY);
 
-      if (newX !== x || newY !== y) {
-        setPosition({ x: newX, y: newY });
-      }
+      setPosition({ x: newX, y: newY });
+    } else {
+      // Before ref is available, use raw coordinates
+      setPosition({ x, y });
     }
   }, [x, y]);
 
@@ -174,7 +202,7 @@ function ContextMenu({ x, y, onClose, currentMode, onSetMode, misspelledWord, on
     onClose();
   };
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
       className="fixed bg-dark-850 border border-dark-700 rounded-lg shadow-xl py-1 z-50 min-w-[180px]"
@@ -265,13 +293,138 @@ function ContextMenu({ x, y, onClose, currentMode, onSetMode, misspelledWord, on
         <span>Select All</span>
         <span className="ml-auto text-xs text-dark-500">Ctrl+A</span>
       </button>
-    </div>
+      {/* Pane section - only show when in pane context */}
+      {paneId && (
+        <>
+          <div className="border-t border-dark-700 my-1" />
+          <div className="px-3 py-1.5 text-xs text-dark-500 uppercase tracking-wide">
+            Pane
+          </div>
+          <button
+            className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-dark-800 text-dark-200"
+            onClick={() => { onSplitRight?.(); onClose(); }}
+          >
+            <SplitRightIcon />
+            <span>Split Right</span>
+          </button>
+          <button
+            className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-dark-800 text-dark-200"
+            onClick={() => { onSplitDown?.(); onClose(); }}
+          >
+            <SplitDownIcon />
+            <span>Split Down</span>
+          </button>
+          <button
+            className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
+              canClosePane ? "hover:bg-dark-800 text-dark-200" : "text-dark-600 cursor-not-allowed"
+            }`}
+            onClick={() => { if (canClosePane) { onClosePane?.(); onClose(); } }}
+            disabled={!canClosePane}
+          >
+            <ClosePaneIcon />
+            <span>Close Pane</span>
+          </button>
+        </>
+      )}
+    </div>,
+    document.body
   );
 }
 
-export function Editor() {
-  const { saveNote, hasUnsavedChanges, goBack, goForward, canGoBack, canGoForward, currentNote, editorContent, setEditorContent } = useNoteStore();
-  const { editorViewMode, setEditorViewMode, editorSplitRatio, setEditorSplitRatio, spellcheckEnabled, toggleSpellcheck, readingFontSize, setReadingFontSize, readingWidth, setReadingWidth } = useUIStore();
+interface EditorProps {
+  paneId?: string;
+}
+
+export function Editor({ paneId }: EditorProps) {
+  // NoteStore (fallback for non-pane context)
+  const noteStoreState = useNoteStore();
+
+  // PaneStore (for pane context)
+  const paneStoreState = usePaneStore();
+  const pane = paneId ? paneStoreState.findPane(paneId) : null;
+
+  // Derive state based on context
+  const hasUnsavedChanges = pane ? pane.hasUnsavedChanges : noteStoreState.hasUnsavedChanges;
+  const editorContent = pane ? pane.editorContent : noteStoreState.editorContent;
+  const currentNote = pane ? pane.note : noteStoreState.currentNote;
+  const viewMode = pane ? pane.viewMode : undefined;
+
+  // Save function based on context
+  const handleSave = useCallback(() => {
+    if (paneId) {
+      paneStoreState.savePaneNote(paneId);
+    } else {
+      noteStoreState.saveNote();
+    }
+  }, [paneId, paneStoreState, noteStoreState]);
+
+  // Set content function based on context
+  const handleSetContent = useCallback((content: string) => {
+    if (paneId) {
+      paneStoreState.setPaneContent(paneId, content);
+    } else {
+      noteStoreState.setEditorContent(content);
+    }
+  }, [paneId, paneStoreState, noteStoreState]);
+
+  // Navigation functions based on context
+  const goBack = useCallback(() => {
+    if (paneId) {
+      paneStoreState.goBackInPane(paneId);
+    } else {
+      noteStoreState.goBack();
+    }
+  }, [paneId, paneStoreState, noteStoreState]);
+
+  const goForward = useCallback(() => {
+    if (paneId) {
+      paneStoreState.goForwardInPane(paneId);
+    } else {
+      noteStoreState.goForward();
+    }
+  }, [paneId, paneStoreState, noteStoreState]);
+
+  const canGoBack = paneId
+    ? paneStoreState.canGoBackInPane(paneId)
+    : noteStoreState.canGoBack();
+
+  const canGoForward = paneId
+    ? paneStoreState.canGoForwardInPane(paneId)
+    : noteStoreState.canGoForward();
+
+  // Pane actions
+  const handleSplitRight = useCallback(() => {
+    if (paneId) {
+      paneStoreState.splitPane(paneId, 'horizontal');
+    }
+  }, [paneId, paneStoreState]);
+
+  const handleSplitDown = useCallback(() => {
+    if (paneId) {
+      paneStoreState.splitPane(paneId, 'vertical');
+    }
+  }, [paneId, paneStoreState]);
+
+  const handleClosePane = useCallback(() => {
+    if (paneId) {
+      paneStoreState.closePane(paneId);
+    }
+  }, [paneId, paneStoreState]);
+
+  const canClosePane = paneId ? paneStoreState.getLeafCount() > 1 : false;
+
+  const { editorViewMode: globalEditorViewMode, setEditorViewMode: setGlobalEditorViewMode, editorSplitRatio, setEditorSplitRatio, spellcheckEnabled, toggleSpellcheck, readingFontSize, setReadingFontSize, readingWidth, setReadingWidth } = useUIStore();
+
+  // Use pane-specific view mode if available, otherwise global
+  const editorViewMode = viewMode ?? globalEditorViewMode;
+  const setEditorViewMode = useCallback((mode: EditorViewMode) => {
+    if (paneId) {
+      paneStoreState.setPaneViewMode(paneId, mode);
+    } else {
+      setGlobalEditorViewMode(mode);
+    }
+  }, [paneId, paneStoreState, setGlobalEditorViewMode]);
+
   const { openEditor } = useTableEditorStore();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; misspelledWord?: string } | null>(null);
   const [showImageUpload, setShowImageUpload] = useState(false);
@@ -305,14 +458,14 @@ export function Editor() {
         const newContent = editorContent.trim()
           ? `${editorContent}\n\n${markdown}\n`
           : `${markdown}\n`;
-        setEditorContent(newContent);
+        handleSetContent(newContent);
       }
     );
-  }, [editorContent, setEditorContent, openEditor]);
+  }, [editorContent, handleSetContent, openEditor]);
 
   // Check navigation state
-  const canNavigateBack = canGoBack();
-  const canNavigateForward = canGoForward();
+  const canNavigateBack = canGoBack;
+  const canNavigateForward = canGoForward;
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback(
@@ -321,7 +474,7 @@ export function Editor() {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         if (hasUnsavedChanges) {
-          saveNote();
+          handleSave();
         }
       }
       // Navigate back: Alt + Left Arrow
@@ -342,7 +495,7 @@ export function Editor() {
         }
       }
     },
-    [saveNote, hasUnsavedChanges, goBack, goForward, currentNote]
+    [handleSave, hasUnsavedChanges, goBack, goForward, currentNote]
   );
 
   useEffect(() => {
@@ -373,8 +526,7 @@ export function Editor() {
       misspelledWord = spellErrorEl.textContent?.trim();
     }
 
-    // Offset y to align menu with cursor (accounts for Tauri window chrome + menu padding)
-    setContextMenu({ x: e.clientX, y: e.clientY - 16, misspelledWord });
+    setContextMenu({ x: e.clientX, y: e.clientY, misspelledWord });
   };
 
   // Handle ignoring a word from spell check
@@ -388,9 +540,9 @@ export function Editor() {
   const renderContent = () => {
     switch (editorViewMode) {
       case "editor":
-        return <MarkdownPane />;
+        return <MarkdownPane paneId={paneId} content={editorContent} onContentChange={handleSetContent} />;
       case "preview":
-        return <PreviewPane />;
+        return <PreviewPane paneId={paneId} content={editorContent} />;
       case "split":
       default:
         return (
@@ -403,11 +555,11 @@ export function Editor() {
             }}
           >
             <Panel defaultSize={editorSplitRatio} minSize={20}>
-              <MarkdownPane />
+              <MarkdownPane paneId={paneId} content={editorContent} onContentChange={handleSetContent} />
             </Panel>
             <PanelResizeHandle className="w-1 bg-dark-800 hover:bg-accent-primary transition-colors cursor-col-resize" />
             <Panel minSize={20}>
-              <PreviewPane />
+              <PreviewPane paneId={paneId} content={editorContent} />
             </Panel>
           </PanelGroup>
         );
@@ -417,10 +569,10 @@ export function Editor() {
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
-      <div className="px-4 py-2 border-b border-dark-800 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="px-4 py-2 border-b border-dark-800 flex items-center justify-between gap-2 min-w-0">
+        <div className="flex items-center gap-2 overflow-x-auto flex-1 min-w-0 scrollbar-thin scrollbar-thumb-dark-700 scrollbar-track-transparent">
           {/* Navigation buttons */}
-          <div className="flex items-center gap-0.5 mr-2">
+          <div className="flex items-center gap-0.5 mr-2 flex-shrink-0">
             <button
               className={`btn-icon p-1.5 rounded ${
                 canNavigateBack
@@ -448,10 +600,10 @@ export function Editor() {
           </div>
 
           {/* Divider */}
-          <div className="w-px h-4 bg-dark-700 mr-2" />
+          <div className="w-px h-4 bg-dark-700 mr-2 flex-shrink-0" />
 
           {/* Undo/Redo buttons */}
-          <div className="flex items-center gap-0.5 mr-2">
+          <div className="flex items-center gap-0.5 mr-2 flex-shrink-0">
             <button
               className="btn-icon p-1.5 rounded text-dark-400 hover:text-dark-200 hover:bg-dark-800"
               onClick={() => window.dispatchEvent(new CustomEvent("editor:undo"))}
@@ -469,9 +621,9 @@ export function Editor() {
           </div>
 
           {/* Divider */}
-          <div className="w-px h-4 bg-dark-700 mr-2" />
+          <div className="w-px h-4 bg-dark-700 mr-2 flex-shrink-0" />
 
-          <div className="text-xs text-dark-500">
+          <div className="text-xs text-dark-500 flex-shrink-0 whitespace-nowrap">
             {editorViewMode === "editor" && "Editor"}
             {editorViewMode === "preview" && "Preview"}
             {editorViewMode === "split" && "Split View"}
@@ -479,7 +631,7 @@ export function Editor() {
 
           {/* Upload image button */}
           <button
-            className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs ${
+            className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs flex-shrink-0 whitespace-nowrap ${
               showImageUpload
                 ? "bg-accent-primary/20 text-accent-primary"
                 : "text-dark-400 hover:text-dark-200 hover:bg-dark-800"
@@ -494,7 +646,7 @@ export function Editor() {
           {/* Git History button */}
           {currentNote && (
             <button
-              className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs ${
+              className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs flex-shrink-0 whitespace-nowrap ${
                 showHistory
                   ? "bg-accent-primary/20 text-accent-primary"
                   : "text-dark-400 hover:text-dark-200 hover:bg-dark-800"
@@ -510,7 +662,7 @@ export function Editor() {
           {/* Version History button */}
           {currentNote && (
             <button
-              className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs ${
+              className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs flex-shrink-0 whitespace-nowrap ${
                 showVersionHistory
                   ? "bg-accent-primary/20 text-accent-primary"
                   : "text-dark-400 hover:text-dark-200 hover:bg-dark-800"
@@ -525,7 +677,7 @@ export function Editor() {
 
           {/* Insert table button */}
           <button
-            className="btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs text-dark-400 hover:text-dark-200 hover:bg-dark-800"
+            className="btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs flex-shrink-0 whitespace-nowrap text-dark-400 hover:text-dark-200 hover:bg-dark-800"
             onClick={handleInsertTable}
             title="Insert table (or type /table)"
           >
@@ -535,7 +687,7 @@ export function Editor() {
 
           {/* Spellcheck toggle */}
           <button
-            className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs ${
+            className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs flex-shrink-0 whitespace-nowrap ${
               spellcheckEnabled
                 ? "bg-green-500/20 text-green-400"
                 : "text-dark-400 hover:text-dark-200 hover:bg-dark-800"
@@ -548,9 +700,9 @@ export function Editor() {
           </button>
 
           {/* Reading mode settings */}
-          <div ref={readingSettingsRef} className="relative">
+          <div ref={readingSettingsRef} className="relative flex-shrink-0">
             <button
-              className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs ${
+              className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs whitespace-nowrap ${
                 showReadingSettings
                   ? "bg-accent-primary/20 text-accent-primary"
                   : "text-dark-400 hover:text-dark-200 hover:bg-dark-800"
@@ -596,7 +748,7 @@ export function Editor() {
         </div>
 
         {/* View mode buttons */}
-        <div className="flex items-center gap-1 bg-dark-850 rounded-lg p-0.5">
+        <div className="flex items-center gap-1 bg-dark-850 rounded-lg p-0.5 flex-shrink-0">
           <button
             className={`btn-icon p-1.5 rounded ${
               editorViewMode === "editor"
@@ -661,6 +813,11 @@ export function Editor() {
           onSetMode={setEditorViewMode}
           misspelledWord={contextMenu.misspelledWord}
           onIgnoreWord={handleIgnoreWord}
+          paneId={paneId}
+          onSplitRight={handleSplitRight}
+          onSplitDown={handleSplitDown}
+          onClosePane={handleClosePane}
+          canClosePane={canClosePane}
         />
       )}
 

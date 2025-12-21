@@ -193,11 +193,22 @@ interface WikiLinkContextMenu {
   linkTarget: string;
 }
 
-export function MarkdownPane() {
+interface MarkdownPaneProps {
+  paneId?: string;
+  content?: string;
+  onContentChange?: (content: string) => void;
+}
+
+export function MarkdownPane({ paneId: _paneId, content: propContent, onContentChange }: MarkdownPaneProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const { currentNote, editorContent, setEditorContent, openNoteByReference, resolveNoteReference } = useNoteStore();
+  const noteStoreState = useNoteStore();
   const { spellcheckEnabled, openSidePane, openTab } = useUIStore();
+
+  // Use props if provided, otherwise fall back to noteStore
+  const editorContent = propContent ?? noteStoreState.editorContent;
+  const setEditorContent = onContentChange ?? noteStoreState.setEditorContent;
+  const { currentNote, openNoteByReference, resolveNoteReference } = noteStoreState;
   const [wikiLinkContextMenu, setWikiLinkContextMenu] = useState<WikiLinkContextMenu | null>(null);
 
   // Handle Ctrl+Click to follow wiki-links
@@ -231,8 +242,7 @@ export function MarkdownPane() {
     if (linkTarget) {
       event.preventDefault();
       event.stopPropagation();
-      // Offset y to align menu with cursor (accounts for Tauri window chrome + menu padding)
-      setWikiLinkContextMenu({ x: event.clientX, y: event.clientY - 16, linkTarget });
+      setWikiLinkContextMenu({ x: event.clientX, y: event.clientY, linkTarget });
       return true;
     }
 
@@ -272,7 +282,9 @@ export function MarkdownPane() {
 
   // Create editor on mount
   useEffect(() => {
-    if (!editorRef.current || !currentNote) return;
+    // Need a ref to mount to, and either propContent (pane mode) or currentNote (legacy mode)
+    if (!editorRef.current) return;
+    if (propContent === undefined && !currentNote) return;
 
     // Clean up previous editor
     if (viewRef.current) {
@@ -364,11 +376,13 @@ export function MarkdownPane() {
     return () => {
       view.destroy();
     };
-  }, [currentNote?.id, handleLinkClick, handleContextMenu, spellcheckEnabled]); // Recreate when note or spellcheck changes
+  // Recreate when note changes (currentNote?.id for legacy, propContent presence for panes) or spellcheck changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentNote?.id, propContent !== undefined, handleLinkClick, handleContextMenu, spellcheckEnabled]);
 
-  // Update content when it changes externally
+  // Update content when it changes externally (e.g., from another pane editing the same file)
   useEffect(() => {
-    if (viewRef.current && currentNote) {
+    if (viewRef.current) {
       const currentContent = viewRef.current.state.doc.toString();
       if (currentContent !== editorContent) {
         viewRef.current.dispatch({
@@ -380,7 +394,7 @@ export function MarkdownPane() {
         });
       }
     }
-  }, [currentNote?.content]);
+  }, [editorContent]);
 
   // Listen for undo/redo events from toolbar
   useEffect(() => {

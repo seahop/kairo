@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 
 interface MenuItem {
   label: string;
@@ -63,7 +64,7 @@ export function LinkContextMenu({ x, y, items, onClose }: LinkContextMenuProps) 
     }
   }, [x, y]);
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
       className="fixed z-[100] bg-dark-800 border border-dark-600 rounded-lg shadow-xl py-1 min-w-[180px]"
@@ -84,7 +85,8 @@ export function LinkContextMenu({ x, y, items, onClose }: LinkContextMenuProps) 
           </button>
         </div>
       ))}
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -100,8 +102,7 @@ export function useContextMenu() {
     (e: React.MouseEvent, items: MenuItem[]) => {
       e.preventDefault();
       e.stopPropagation();
-      // Offset y to align menu with cursor (accounts for Tauri window chrome + menu padding)
-      setContextMenu({ x: e.clientX, y: e.clientY - 16, items });
+      setContextMenu({ x: e.clientX, y: e.clientY, items });
     },
     []
   );

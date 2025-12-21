@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 import { useUIStore, TabInfo } from "@/stores/uiStore";
 import { useNoteStore } from "@/stores/noteStore";
+import { usePaneStore } from "@/stores/paneStore";
 import clsx from "clsx";
 
 // Icons
@@ -217,7 +218,8 @@ function TabItem({
 
 export function TabBar() {
   const { openTabs, activeTabId, setActiveTab, closeTab } = useUIStore();
-  const { notes, openNote, createNote, hasDraft } = useNoteStore();
+  const { notes, createNote, hasDraft } = useNoteStore();
+  const { openNoteInActivePane } = usePaneStore();
   const [contextMenu, setContextMenu] = useState<TabContextMenuState>({ x: 0, y: 0, tabId: null });
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -234,7 +236,7 @@ export function TabBar() {
 
   const handleTabActivate = (tab: TabInfo) => {
     setActiveTab(tab.id);
-    openNote(tab.notePath);
+    openNoteInActivePane(tab.notePath);
   };
 
   const handleTabClose = (tabId: string) => {

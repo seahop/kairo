@@ -59,8 +59,16 @@ const BacklinkItem = memo(({ link, onOpen, isArchived }: BacklinkItemProps) => {
 });
 BacklinkItem.displayName = "BacklinkItem";
 
-export const BacklinksPanel = memo(function BacklinksPanel() {
+interface BacklinksPanelProps {
+  notePath?: string;
+  onOpenNote?: (path: string) => void;
+}
+
+export const BacklinksPanel = memo(function BacklinksPanel({ notePath: propNotePath, onOpenNote }: BacklinksPanelProps) {
   const { currentNote, openNote } = useNoteStore();
+
+  // Use prop if provided, otherwise fall back to noteStore
+  const effectiveNotePath = propNotePath ?? currentNote?.path;
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -76,8 +84,17 @@ export const BacklinksPanel = memo(function BacklinksPanel() {
     setIsExpanded(prev => !prev);
   }, []);
 
+  // Handle opening a note - use callback if provided, otherwise use noteStore
+  const handleOpenNote = useCallback((path: string) => {
+    if (onOpenNote) {
+      onOpenNote(path);
+    } else {
+      openNote(path);
+    }
+  }, [onOpenNote, openNote]);
+
   useEffect(() => {
-    if (!currentNote) {
+    if (!effectiveNotePath) {
       setBacklinks([]);
       return;
     }
@@ -86,7 +103,7 @@ export const BacklinksPanel = memo(function BacklinksPanel() {
       setIsLoading(true);
       try {
         const links = await invoke<Backlink[]>("get_backlinks", {
-          notePath: currentNote.path,
+          notePath: effectiveNotePath,
         });
         setBacklinks(links);
       } catch (error) {
@@ -98,9 +115,9 @@ export const BacklinksPanel = memo(function BacklinksPanel() {
     };
 
     loadBacklinks();
-  }, [currentNote?.path]);
+  }, [effectiveNotePath]);
 
-  if (!currentNote) return null;
+  if (!effectiveNotePath) return null;
 
   return (
     <div className="border-t border-dark-800 bg-dark-900">
@@ -133,7 +150,7 @@ export const BacklinksPanel = memo(function BacklinksPanel() {
                 <BacklinkItem
                   key={link.source_id}
                   link={link}
-                  onOpen={openNote}
+                  onOpen={handleOpenNote}
                 />
               ))}
 
@@ -147,7 +164,7 @@ export const BacklinksPanel = memo(function BacklinksPanel() {
                     <BacklinkItem
                       key={link.source_id}
                       link={link}
-                      onOpen={openNote}
+                      onOpen={handleOpenNote}
                       isArchived
                     />
                   ))}

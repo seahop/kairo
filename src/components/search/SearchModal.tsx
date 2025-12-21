@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useSearchStore, SearchResult } from "@/stores/searchStore";
-import { useNoteStore } from "@/stores/noteStore";
+import { usePaneStore } from "@/stores/paneStore";
 import DOMPurify from "dompurify";
 import clsx from "clsx";
 import { CloseIcon } from "@/components/common/Icons";
@@ -26,7 +26,7 @@ export function SearchModal({ onClose }: SearchModalProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [includeArchived, setIncludeArchived] = useState(false);
   const { query, setQuery, results, isSearching, search, clearResults, setFilters } = useSearchStore();
-  const { openNote } = useNoteStore();
+  const { openNoteInActivePane } = usePaneStore();
 
   // Focus input on mount
   useEffect(() => {
@@ -75,7 +75,7 @@ export function SearchModal({ onClose }: SearchModalProps) {
         case "Enter":
           e.preventDefault();
           if (results[selectedIndex]) {
-            openNote(results[selectedIndex].path);
+            openNoteInActivePane(results[selectedIndex].path);
             onClose();
           }
           break;
@@ -85,11 +85,11 @@ export function SearchModal({ onClose }: SearchModalProps) {
           break;
       }
     },
-    [results, selectedIndex, openNote, onClose]
+    [results, selectedIndex, openNoteInActivePane, onClose]
   );
 
   const handleResultClick = (result: SearchResult) => {
-    openNote(result.path);
+    openNoteInActivePane(result.path);
     onClose();
   };
 
