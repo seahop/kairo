@@ -594,6 +594,17 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
     [resolveNoteReference, openSidePane]
   );
 
+  // Open note in new tab
+  const openNoteInNewTab = useCallback(
+    (reference: string) => {
+      const resolved = resolveNoteReference(reference);
+      if (resolved) {
+        useUIStore.getState().openTab(resolved.path, { background: true });
+      }
+    },
+    [resolveNoteReference]
+  );
+
   // Context menu for wiki links
   const handleWikiContextMenu = useCallback(
     (e: React.MouseEvent, reference: string) => {
@@ -602,6 +613,11 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
           label: "Open Note",
           icon: "📝",
           onClick: () => handleWikiLinkClick(e, reference),
+        },
+        {
+          label: "Open in New Tab",
+          icon: "➕",
+          onClick: () => openNoteInNewTab(reference),
         },
         {
           label: "Open in Side Pane",
@@ -616,7 +632,7 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
         },
       ]);
     },
-    [showContextMenu, handleWikiLinkClick, openNoteInPane, copyLink]
+    [showContextMenu, handleWikiLinkClick, openNoteInNewTab, openNoteInPane, copyLink]
   );
 
   // Context menu for external links

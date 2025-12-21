@@ -70,6 +70,18 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
       ],
     },
     {
+      title: "Tabs",
+      shortcuts: [
+        { key: "Ctrl+T", action: "New Tab" },
+        { key: "Ctrl+W", action: "Close Tab" },
+        { key: "Ctrl+Tab", action: "Next Tab" },
+        { key: "Ctrl+Shift+Tab", action: "Previous Tab" },
+        { key: "Ctrl+1-9", action: "Switch to Tab #" },
+        { key: "Ctrl+Click", action: "Open in Background Tab" },
+        { key: "Middle-Click", action: "Open in Background Tab" },
+      ],
+    },
+    {
       title: "Views",
       shortcuts: [
         { key: "Ctrl+Shift+G", action: "Graph View" },
@@ -156,8 +168,8 @@ function matchShortcut(e: KeyboardEvent, shortcut: string): boolean {
 
 function App() {
   const { vault, isLoading, openVault, tryOpenLastVault, loadRecentVaults } = useVaultStore();
-  const { isSearchOpen, setSearchOpen, toggleSidebar, mainViewMode, setMainViewMode, openModal, isSidebarCollapsed, setSidebarWidth } = useUIStore();
-  const { createNote, createFolder, openDailyNote } = useNoteStore();
+  const { isSearchOpen, setSearchOpen, toggleSidebar, mainViewMode, setMainViewMode, openModal, isSidebarCollapsed, setSidebarWidth, openTabs, activeTabId, initializeTabsFromStorage } = useUIStore();
+  const { createNote, createFolder, openDailyNote, notes, openNote } = useNoteStore();
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [isShortcutsOpen, setShortcutsOpen] = useState(false);
   const [isAboutOpen, setAboutOpen] = useState(false);
@@ -230,6 +242,31 @@ function App() {
     loadExtensions();
   }, [vault?.path, loadSettings, loadExtensionsFromFolder]);
 
+  // Initialize tabs from localStorage when notes are loaded
+  useEffect(() => {
+    if (notes.length > 0) {
+      // Validate that a note exists by checking against loaded notes
+      const validateNote = (notePath: string) => {
+        return notes.some(n => n.path === notePath);
+      };
+      initializeTabsFromStorage(validateNote);
+    }
+  }, [notes, initializeTabsFromStorage]);
+
+  // Open the active tab's note when active tab changes (e.g., clicking a tab)
+  useEffect(() => {
+    if (activeTabId) {
+      const activeTab = openTabs.find(t => t.id === activeTabId);
+      if (activeTab) {
+        // Only open if it's different from current note to avoid loops
+        const { currentNote } = useNoteStore.getState();
+        if (currentNote?.path !== activeTab.notePath) {
+          openNote(activeTab.notePath);
+        }
+      }
+    }
+  }, [activeTabId, openTabs, openNote]);
+
   // Use refs to store current values of handlers to avoid recreating event listeners
   const handlersRef = useRef<Record<string, () => void>>({});
 
@@ -237,6 +274,7 @@ function App() {
   handlersRef.current = {
     "kairo:new-note": () => {
       const timestamp = new Date().toISOString().split("T")[0];
+      // createNote opens the note, which automatically updates the current tab
       createNote(`notes/new-note-${timestamp}.md`);
     },
     "kairo:new-folder": () => {
@@ -331,10 +369,11 @@ function App() {
         openModal("create-note");
       }
 
-      // Ctrl/Cmd + N: Quick new note (no template)
+      // Ctrl/Cmd + N: Quick new note (no template) - opens in current tab
       if ((e.ctrlKey || e.metaKey) && e.key === "n" && !e.shiftKey) {
         e.preventDefault();
         const timestamp = Date.now();
+        // createNote opens the note, which automatically updates the current tab
         createNote(`notes/new-note-${timestamp}.md`);
       }
 
@@ -364,6 +403,58 @@ function App() {
           setCommandPaletteOpen(false);
         } else if (mainViewMode === "graph") {
           setMainViewMode("notes");
+        }
+      }
+
+      // Tab shortcuts
+      // Ctrl+W: Close current tab
+      if ((e.ctrlKey || e.metaKey) && e.key === "w" && !e.shiftKey) {
+        e.preventDefault();
+        const { activeTabId, closeTab } = useUIStore.getState();
+        if (activeTabId) {
+          closeTab(activeTabId);
+        }
+      }
+
+      // Ctrl+Tab: Next tab
+      if ((e.ctrlKey || e.metaKey) && e.key === "Tab" && !e.shiftKey) {
+        e.preventDefault();
+        const { openTabs, activeTabId, setActiveTab } = useUIStore.getState();
+        if (openTabs.length > 1 && activeTabId) {
+          const currentIndex = openTabs.findIndex(t => t.id === activeTabId);
+          const nextIndex = (currentIndex + 1) % openTabs.length;
+          setActiveTab(openTabs[nextIndex].id);
+        }
+      }
+
+      // Ctrl+Shift+Tab: Previous tab
+      if ((e.ctrlKey || e.metaKey) && e.key === "Tab" && e.shiftKey) {
+        e.preventDefault();
+        const { openTabs, activeTabId, setActiveTab } = useUIStore.getState();
+        if (openTabs.length > 1 && activeTabId) {
+          const currentIndex = openTabs.findIndex(t => t.id === activeTabId);
+          const prevIndex = (currentIndex - 1 + openTabs.length) % openTabs.length;
+          setActiveTab(openTabs[prevIndex].id);
+        }
+      }
+
+      // Ctrl+T: New tab (create new note and open in NEW tab)
+      if ((e.ctrlKey || e.metaKey) && e.key === "t" && !e.shiftKey) {
+        e.preventDefault();
+        const timestamp = Date.now();
+        const notePath = `notes/new-note-${timestamp}.md`;
+        // Create tab FIRST, then create note (so openNote finds the tab already exists)
+        useUIStore.getState().openTab(notePath);
+        createNote(notePath);
+      }
+
+      // Ctrl+1-9: Switch to tab by position
+      if ((e.ctrlKey || e.metaKey) && /^[1-9]$/.test(e.key) && !e.shiftKey) {
+        e.preventDefault();
+        const { openTabs, setActiveTab } = useUIStore.getState();
+        const index = parseInt(e.key, 10) - 1;
+        if (index < openTabs.length) {
+          setActiveTab(openTabs[index].id);
         }
       }
 

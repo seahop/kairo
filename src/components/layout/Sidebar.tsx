@@ -22,7 +22,7 @@ function NoteContextMenu({
   onRename,
   onArchive,
   onStar,
-  onOpenInNewPane,
+  onOpenInNewTab,
 }: {
   state: ContextMenuState;
   onClose: () => void;
@@ -30,7 +30,7 @@ function NoteContextMenu({
   onRename: (note: NoteMetadata) => void;
   onArchive: (note: NoteMetadata) => void;
   onStar: (note: NoteMetadata) => void;
-  onOpenInNewPane: (note: NoteMetadata) => void;
+  onOpenInNewTab: (note: NoteMetadata) => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -75,14 +75,15 @@ function NoteContextMenu({
       <button
         className="w-full px-4 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 hover:text-dark-50 flex items-center gap-2"
         onClick={() => {
-          onOpenInNewPane(state.note!);
+          onOpenInNewTab(state.note!);
           onClose();
         }}
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
-        Open
+        Open in New Tab
+        <span className="ml-auto text-xs text-dark-500">Ctrl+Click</span>
       </button>
       <div className="border-t border-dark-700 my-1" />
       <button
@@ -317,6 +318,7 @@ function naturalSort(a: string, b: string): number {
 function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }: FolderItemProps) {
   const [expanded, setExpanded] = useState(level < 2);
   const { currentNote, openNote } = useNoteStore();
+  const { openTab } = useUIStore();
 
   const hasChildren = folder.children.size > 0 || folder.notes.length > 0;
 
@@ -375,11 +377,20 @@ function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }
               style={{ paddingLeft: `${(level + 1) * 12 + 8}px` }}
               onClick={(e) => {
                 if (e.ctrlKey || e.metaKey) {
-                  // Ctrl+click to select without opening
-                  onSelectNote(selectedNote?.id === note.id ? null : note);
+                  // Ctrl+click to open in background tab (forceNew allows duplicates)
+                  openTab(note.path, { background: true, forceNew: true });
+                  onSelectNote(null);
                 } else {
+                  // Regular click: open in current tab (openNote updates tab automatically)
                   openNote(note.path);
                   onSelectNote(null);
+                }
+              }}
+              onMouseDown={(e) => {
+                // Middle-click to open in background tab (forceNew allows duplicates)
+                if (e.button === 1) {
+                  e.preventDefault();
+                  openTab(note.path, { background: true, forceNew: true });
                 }
               }}
               onContextMenu={(e) => onContextMenu(e, note)}
@@ -414,7 +425,6 @@ export function Sidebar() {
   const getStarredNotes = useNoteStore((state) => state.getStarredNotes);
   const showArchived = useNoteStore((state) => state.showArchived);
   const setShowArchived = useNoteStore((state) => state.setShowArchived);
-  const openNoteInSecondary = useNoteStore((state) => state.openNoteInSecondary);
   const setSearchOpen = useUIStore((state) => state.setSearchOpen);
   const isSidebarCollapsed = useUIStore((state) => state.isSidebarCollapsed);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
@@ -562,9 +572,9 @@ export function Sidebar() {
     setRenameValue("");
   };
 
-  const handleOpenInNewPane = (note: NoteMetadata) => {
-    // Open in secondary/split pane
-    openNoteInSecondary(note.path);
+  const handleOpenInNewTab = (note: NoteMetadata) => {
+    // Open in new background tab (forceNew allows duplicate tabs of same note)
+    useUIStore.getState().openTab(note.path, { background: true, forceNew: true });
   };
 
   if (isSidebarCollapsed) {
@@ -756,10 +766,20 @@ export function Sidebar() {
                 )}
                 onClick={(e) => {
                   if (e.ctrlKey || e.metaKey) {
-                    setSelectedNote(selectedNote?.id === note.id ? null : note);
+                    // Ctrl+click to open in background tab (forceNew allows duplicates)
+                    useUIStore.getState().openTab(note.path, { background: true, forceNew: true });
+                    setSelectedNote(null);
                   } else {
+                    // Regular click: open in current tab (openNote updates tab automatically)
                     useNoteStore.getState().openNote(note.path);
                     setSelectedNote(null);
+                  }
+                }}
+                onMouseDown={(e) => {
+                  // Middle-click to open in background tab (forceNew allows duplicates)
+                  if (e.button === 1) {
+                    e.preventDefault();
+                    useUIStore.getState().openTab(note.path, { background: true, forceNew: true });
                   }
                 }}
                 onContextMenu={(e) => handleContextMenu(e, note)}
@@ -830,7 +850,7 @@ export function Sidebar() {
         onRename={handleRenameNote}
         onArchive={handleArchiveNote}
         onStar={handleStarNote}
-        onOpenInNewPane={handleOpenInNewPane}
+        onOpenInNewTab={handleOpenInNewTab}
       />
 
       {/* Inline Rename Input (modal overlay) */}

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { triggerHook } from "@/plugins/api/hooks";
+import { useUIStore } from "@/stores/uiStore";
 
 export interface NoteMetadata {
   id: string;
@@ -59,7 +60,7 @@ interface NoteState {
 
   // Actions
   loadNotes: () => Promise<void>;
-  openNote: (path: string) => Promise<void>;
+  openNote: (path: string, options?: { skipHistory?: boolean }) => Promise<void>;
   openNoteByReference: (reference: string) => Promise<boolean>;
   openNoteByReferenceInSecondary: (reference: string) => Promise<boolean>;
   resolveNoteReference: (reference: string) => NoteMetadata | null;
@@ -149,8 +150,12 @@ export const useNoteStore = create<NoteState>((set, get) => ({
     }
   },
 
-  openNote: async (path: string) => {
-    const { isNavigating, navigationHistory, navigationIndex, currentNote: prevNote, hasUnsavedChanges, editorContent, draftCache } = get();
+  openNote: async (path: string, options?: { skipHistory?: boolean }) => {
+    const { currentNote: prevNote, hasUnsavedChanges, editorContent, draftCache } = get();
+
+    // Update the current tab to show this note (or create first tab if none)
+    // Skip adding to history if this is a back/forward navigation
+    useUIStore.getState().openNoteInCurrentTab(path, !options?.skipHistory);
 
     // Save current content to draft cache before switching (soft-save)
     if (hasUnsavedChanges && prevNote && prevNote.path !== path) {
@@ -167,41 +172,16 @@ export const useNoteStore = create<NoteState>((set, get) => ({
       const contentToUse = draft !== undefined ? draft : note.content;
       const hasDraftChanges = draft !== undefined && draft !== note.content;
 
-      // Update navigation history (only if not navigating via back/forward)
-      let newHistory = navigationHistory;
-      let newIndex = navigationIndex;
-
-      if (!isNavigating && prevNote && prevNote.path !== path) {
-        // Trim any forward history when navigating to a new note
-        newHistory = navigationHistory.slice(0, navigationIndex + 1);
-        // Add the new path to history
-        newHistory.push(path);
-        newIndex = newHistory.length - 1;
-
-        // Limit history size to prevent memory issues
-        if (newHistory.length > 50) {
-          newHistory = newHistory.slice(-50);
-          newIndex = newHistory.length - 1;
-        }
-      } else if (!isNavigating && !prevNote) {
-        // First note opened - start history
-        newHistory = [path];
-        newIndex = 0;
-      }
-
       set({
         currentNote: note,
         editorContent: contentToUse,
         hasUnsavedChanges: hasDraftChanges,
         isLoading: false,
-        isNavigating: false,
-        navigationHistory: newHistory,
-        navigationIndex: newIndex,
       });
       // Trigger hook for extensions
       triggerHook("onNoteOpen", { note, path });
     } catch (error) {
-      set({ error: String(error), isLoading: false, isNavigating: false });
+      set({ error: String(error), isLoading: false });
     }
   },
 
@@ -320,17 +300,27 @@ export const useNoteStore = create<NoteState>((set, get) => ({
     }
   },
 
-  createNote: async (path: string, content: string = "# New Note\n<br>\n") => {
+  createNote: async (path: string, content?: string) => {
+    // Default content with frontmatter template
+    const defaultContent = `---
+title: New Note
+tags: []
+---
+
+# New Note
+
+`;
+    const noteContent = content ?? defaultContent;
     set({ isLoading: true, error: null });
     try {
       await invoke<NoteMetadata>("write_note", {
         path,
-        content,
+        content: noteContent,
         createIfMissing: true,
       });
 
       // Trigger hook for extensions
-      triggerHook("onNoteCreate", { path, content });
+      triggerHook("onNoteCreate", { path, content: noteContent });
 
       // Refresh notes list and open the new note
       await get().loadNotes();
@@ -571,39 +561,29 @@ export const useNoteStore = create<NoteState>((set, get) => ({
     });
   },
 
-  // Navigation actions
+  // Navigation actions (uses per-tab history from uiStore)
   canGoBack: () => {
-    const { navigationIndex } = get();
-    return navigationIndex > 0;
+    return useUIStore.getState().canGoBack();
   },
 
   canGoForward: () => {
-    const { navigationHistory, navigationIndex } = get();
-    return navigationIndex < navigationHistory.length - 1;
+    return useUIStore.getState().canGoForward();
   },
 
   goBack: async () => {
-    const { navigationHistory, navigationIndex } = get();
-
-    if (navigationIndex <= 0) return;
-
-    const previousPath = navigationHistory[navigationIndex - 1];
-
-    // Drafts are auto-saved by openNote, so just navigate
-    set({ isNavigating: true, navigationIndex: navigationIndex - 1 });
-    await get().openNote(previousPath);
+    const previousPath = useUIStore.getState().goBack();
+    if (previousPath) {
+      // Open note but skip adding to history (already navigated in tab)
+      await get().openNote(previousPath, { skipHistory: true });
+    }
   },
 
   goForward: async () => {
-    const { navigationHistory, navigationIndex } = get();
-
-    if (navigationIndex >= navigationHistory.length - 1) return;
-
-    const nextPath = navigationHistory[navigationIndex + 1];
-
-    // Drafts are auto-saved by openNote, so just navigate
-    set({ isNavigating: true, navigationIndex: navigationIndex + 1 });
-    await get().openNote(nextPath);
+    const nextPath = useUIStore.getState().goForward();
+    if (nextPath) {
+      // Open note but skip adding to history (already navigated in tab)
+      await get().openNote(nextPath, { skipHistory: true });
+    }
   },
 
   // Trash actions

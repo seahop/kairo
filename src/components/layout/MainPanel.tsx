@@ -7,6 +7,7 @@ import { PreviewPane } from "@/components/editor/PreviewPane";
 import { GraphViewPanel } from "@/plugins/builtin";
 import { VaultHealthPanel } from "@/components/vault/VaultHealthPanel";
 import { SidePane } from "./SidePane";
+import { TabBar } from "./TabBar";
 
 const EmptyState = () => (
   <div className="h-full flex items-center justify-center">
@@ -156,24 +157,36 @@ function NotesView() {
   // If side pane is open, show with resizable panel
   if (sidePaneContent) {
     return (
-      <div className="h-full bg-dark-950 overflow-hidden">
-        <PanelGroup direction="horizontal" className="h-full">
-          <Panel defaultSize={70} minSize={40}>
-            <NotesContentArea />
-          </Panel>
-          <PanelResizeHandle className="w-1 bg-dark-700 hover:bg-accent-primary transition-colors cursor-col-resize" />
-          <Panel defaultSize={30} minSize={15} maxSize={50}>
-            <SidePane />
-          </Panel>
-        </PanelGroup>
+      <div className="h-full bg-dark-950 overflow-hidden flex flex-col">
+        {/* Tab bar at the top */}
+        <TabBar />
+
+        {/* Content area with side pane */}
+        <div className="flex-1 overflow-hidden">
+          <PanelGroup direction="horizontal" className="h-full">
+            <Panel defaultSize={70} minSize={40}>
+              <NotesContentArea />
+            </Panel>
+            <PanelResizeHandle className="w-1 bg-dark-700 hover:bg-accent-primary transition-colors cursor-col-resize" />
+            <Panel defaultSize={30} minSize={15} maxSize={50}>
+              <SidePane />
+            </Panel>
+          </PanelGroup>
+        </div>
       </div>
     );
   }
 
   // No side pane
   return (
-    <div className="h-full bg-dark-950 overflow-hidden">
-      <NotesContentArea />
+    <div className="h-full bg-dark-950 overflow-hidden flex flex-col">
+      {/* Tab bar at the top */}
+      <TabBar />
+
+      {/* Content area */}
+      <div className="flex-1 overflow-hidden">
+        <NotesContentArea />
+      </div>
     </div>
   );
 }

@@ -3,6 +3,28 @@ import { create } from "zustand";
 export type EditorViewMode = 'editor' | 'preview' | 'split';
 export type MainViewMode = 'notes' | 'graph' | 'vault-health';
 
+// Tab management
+export interface TabInfo {
+  id: string;
+  notePath: string;
+  isPinned: boolean;
+  // Per-tab navigation history
+  history: string[];
+  historyIndex: number;
+}
+
+interface PersistedTabState {
+  tabs: Array<{ notePath: string; isPinned: boolean }>;
+  activeTabPath: string | null;
+}
+
+const TABS_STORAGE_KEY = 'kairo-open-tabs';
+
+// Generate unique tab ID
+function generateTabId(): string {
+  return `tab-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
 export interface ConfirmDialogOptions {
   title: string;
   message: string;
@@ -55,6 +77,11 @@ interface UIState {
   readingFontSize: 'sm' | 'base' | 'lg' | 'xl';
   readingWidth: 'narrow' | 'medium' | 'wide' | 'full';
 
+  // Tabs
+  openTabs: TabInfo[];
+  activeTabId: string | null;
+  tabsInitialized: boolean;
+
   // Actions
   setSidebarWidth: (width: number) => void;
   toggleSidebar: () => void;
@@ -75,9 +102,43 @@ interface UIState {
   toggleSpellcheck: () => void;
   setReadingFontSize: (size: 'sm' | 'base' | 'lg' | 'xl') => void;
   setReadingWidth: (width: 'narrow' | 'medium' | 'wide' | 'full') => void;
+
+  // Tab actions
+  openTab: (notePath: string, options?: { isPinned?: boolean; background?: boolean; forceNew?: boolean }) => string;
+  openNoteInCurrentTab: (notePath: string, addToHistory?: boolean) => void;
+  closeTab: (tabId: string) => void;
+  closeOtherTabs: (tabId: string) => void;
+  closeAllTabs: () => void;
+  setActiveTab: (tabId: string) => void;
+  setActiveTabByPath: (notePath: string) => void;
+  pinTab: (tabId: string) => void;
+  unpinTab: (tabId: string) => void;
+  reorderTabs: (fromIndex: number, toIndex: number) => void;
+  getTabByPath: (notePath: string) => TabInfo | undefined;
+  getActiveTab: () => TabInfo | undefined;
+  initializeTabsFromStorage: (validateNote: (path: string) => boolean) => void;
+  // Tab navigation (per-tab history)
+  canGoBack: () => boolean;
+  canGoForward: () => boolean;
+  goBack: () => string | null;
+  goForward: () => string | null;
 }
 
-export const useUIStore = create<UIState>((set) => ({
+// Helper to save tabs to localStorage
+function saveTabsToStorage(tabs: TabInfo[], activeTabId: string | null) {
+  try {
+    const activeTab = tabs.find(t => t.id === activeTabId);
+    const state: PersistedTabState = {
+      tabs: tabs.map(t => ({ notePath: t.notePath, isPinned: t.isPinned })),
+      activeTabPath: activeTab?.notePath ?? null,
+    };
+    localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.warn('Failed to save tabs to localStorage:', e);
+  }
+}
+
+export const useUIStore = create<UIState>((set, get) => ({
   // Initial state
   sidebarWidth: 280,
   isSidebarCollapsed: false,
@@ -94,6 +155,11 @@ export const useUIStore = create<UIState>((set) => ({
   spellcheckEnabled: true,
   readingFontSize: 'base',
   readingWidth: 'medium',
+
+  // Tabs initial state
+  openTabs: [],
+  activeTabId: null,
+  tabsInitialized: false,
 
   // Actions
   setSidebarWidth: (width: number) => set({ sidebarWidth: width }),
@@ -143,4 +209,407 @@ export const useUIStore = create<UIState>((set) => ({
   setReadingFontSize: (size) => set({ readingFontSize: size }),
 
   setReadingWidth: (width) => set({ readingWidth: width }),
+
+  // Tab actions
+  openTab: (notePath: string, options?: { isPinned?: boolean; background?: boolean; forceNew?: boolean }) => {
+    const { openTabs, activeTabId } = get();
+
+    // Check if tab already exists for this note (unless forceNew is true)
+    if (!options?.forceNew) {
+      const existingTab = openTabs.find(t => t.notePath === notePath);
+      if (existingTab) {
+        // Just activate the existing tab (unless background mode)
+        if (!options?.background) {
+          set({ activeTabId: existingTab.id });
+          saveTabsToStorage(openTabs, existingTab.id);
+        }
+        return existingTab.id;
+      }
+    }
+
+    // Create new tab with initial history
+    const newTab: TabInfo = {
+      id: generateTabId(),
+      notePath,
+      isPinned: options?.isPinned ?? false,
+      history: [notePath],
+      historyIndex: 0,
+    };
+
+    // Insert after pinned tabs if not pinned, or at end of pinned tabs if pinned
+    const pinnedCount = openTabs.filter(t => t.isPinned).length;
+    const insertIndex = newTab.isPinned ? pinnedCount : openTabs.length;
+
+    const newTabs = [
+      ...openTabs.slice(0, insertIndex),
+      newTab,
+      ...openTabs.slice(insertIndex),
+    ];
+
+    const newActiveId = options?.background ? activeTabId : newTab.id;
+    set({ openTabs: newTabs, activeTabId: newActiveId });
+    saveTabsToStorage(newTabs, newActiveId);
+
+    return newTab.id;
+  },
+
+  openNoteInCurrentTab: (notePath: string, addToHistory: boolean = true) => {
+    const { openTabs, activeTabId } = get();
+
+    // If the active tab already shows this note, nothing to do
+    const activeTab = openTabs.find(t => t.id === activeTabId);
+    if (activeTab?.notePath === notePath) {
+      return; // Already showing this note in the active tab
+    }
+
+    // If no tabs exist, create the first tab
+    if (openTabs.length === 0) {
+      const newTab: TabInfo = {
+        id: generateTabId(),
+        notePath,
+        isPinned: false,
+        history: [notePath],
+        historyIndex: 0,
+      };
+      set({ openTabs: [newTab], activeTabId: newTab.id });
+      saveTabsToStorage([newTab], newTab.id);
+      return;
+    }
+
+    // Update the active tab's notePath
+    if (activeTabId) {
+      const activeTabIndex = openTabs.findIndex(t => t.id === activeTabId);
+      if (activeTabIndex !== -1) {
+        const activeTab = openTabs[activeTabIndex];
+        // Don't update pinned tabs - create a new tab instead
+        if (activeTab.isPinned) {
+          // Insert a new tab after pinned tabs
+          const newTab: TabInfo = {
+            id: generateTabId(),
+            notePath,
+            isPinned: false,
+            history: [notePath],
+            historyIndex: 0,
+          };
+          const pinnedCount = openTabs.filter(t => t.isPinned).length;
+          const newTabs = [
+            ...openTabs.slice(0, pinnedCount),
+            newTab,
+            ...openTabs.slice(pinnedCount),
+          ];
+          set({ openTabs: newTabs, activeTabId: newTab.id });
+          saveTabsToStorage(newTabs, newTab.id);
+          return;
+        }
+
+        // Update the active tab's notePath and history
+        let newHistory = activeTab.history || [];
+        let newHistoryIndex = activeTab.historyIndex ?? -1;
+
+        if (addToHistory && notePath !== activeTab.notePath) {
+          // Trim forward history when navigating to a new note
+          newHistory = newHistory.slice(0, newHistoryIndex + 1);
+          newHistory.push(notePath);
+          newHistoryIndex = newHistory.length - 1;
+
+          // Limit history size
+          if (newHistory.length > 50) {
+            newHistory = newHistory.slice(-50);
+            newHistoryIndex = newHistory.length - 1;
+          }
+        }
+
+        const updatedTab: TabInfo = {
+          ...activeTab,
+          notePath,
+          history: newHistory,
+          historyIndex: newHistoryIndex,
+        };
+        const newTabs = [
+          ...openTabs.slice(0, activeTabIndex),
+          updatedTab,
+          ...openTabs.slice(activeTabIndex + 1),
+        ];
+        set({ openTabs: newTabs });
+        saveTabsToStorage(newTabs, activeTabId);
+        return;
+      }
+    }
+
+    // Fallback: create a new tab if no active tab
+    const newTab: TabInfo = {
+      id: generateTabId(),
+      notePath,
+      isPinned: false,
+      history: [notePath],
+      historyIndex: 0,
+    };
+    const pinnedCount = openTabs.filter(t => t.isPinned).length;
+    const newTabs = [
+      ...openTabs.slice(0, pinnedCount),
+      newTab,
+      ...openTabs.slice(pinnedCount),
+    ];
+    set({ openTabs: newTabs, activeTabId: newTab.id });
+    saveTabsToStorage(newTabs, newTab.id);
+  },
+
+  closeTab: (tabId: string) => {
+    const { openTabs, activeTabId } = get();
+    const tabIndex = openTabs.findIndex(t => t.id === tabId);
+
+    if (tabIndex === -1) return;
+
+    const newTabs = openTabs.filter(t => t.id !== tabId);
+
+    // If we're closing the active tab, activate an adjacent tab
+    let newActiveId = activeTabId;
+    if (activeTabId === tabId) {
+      if (newTabs.length === 0) {
+        newActiveId = null;
+      } else if (tabIndex >= newTabs.length) {
+        // Was last tab, activate new last
+        newActiveId = newTabs[newTabs.length - 1].id;
+      } else {
+        // Activate tab at same position (which is now the next tab)
+        newActiveId = newTabs[tabIndex].id;
+      }
+    }
+
+    set({ openTabs: newTabs, activeTabId: newActiveId });
+    saveTabsToStorage(newTabs, newActiveId);
+  },
+
+  closeOtherTabs: (tabId: string) => {
+    const { openTabs } = get();
+    const tabToKeep = openTabs.find(t => t.id === tabId);
+    if (!tabToKeep) return;
+
+    // Keep the specified tab and all pinned tabs
+    const newTabs = openTabs.filter(t => t.id === tabId || t.isPinned);
+
+    set({ openTabs: newTabs, activeTabId: tabId });
+    saveTabsToStorage(newTabs, tabId);
+  },
+
+  closeAllTabs: () => {
+    const { openTabs } = get();
+    // Keep only pinned tabs
+    const pinnedTabs = openTabs.filter(t => t.isPinned);
+    const newActiveId = pinnedTabs.length > 0 ? pinnedTabs[0].id : null;
+
+    set({ openTabs: pinnedTabs, activeTabId: newActiveId });
+    saveTabsToStorage(pinnedTabs, newActiveId);
+  },
+
+  setActiveTab: (tabId: string) => {
+    const { openTabs } = get();
+    const tab = openTabs.find(t => t.id === tabId);
+    if (tab) {
+      set({ activeTabId: tabId });
+      saveTabsToStorage(openTabs, tabId);
+    }
+  },
+
+  setActiveTabByPath: (notePath: string) => {
+    const { openTabs } = get();
+    const tab = openTabs.find(t => t.notePath === notePath);
+    if (tab) {
+      set({ activeTabId: tab.id });
+      saveTabsToStorage(openTabs, tab.id);
+    }
+  },
+
+  pinTab: (tabId: string) => {
+    const { openTabs, activeTabId } = get();
+    const tabIndex = openTabs.findIndex(t => t.id === tabId);
+    if (tabIndex === -1 || openTabs[tabIndex].isPinned) return;
+
+    // Pin the tab and move it to the end of pinned tabs
+    const tab = { ...openTabs[tabIndex], isPinned: true };
+    const otherTabs = openTabs.filter(t => t.id !== tabId);
+    const pinnedCount = otherTabs.filter(t => t.isPinned).length;
+
+    const newTabs = [
+      ...otherTabs.slice(0, pinnedCount),
+      tab,
+      ...otherTabs.slice(pinnedCount),
+    ];
+
+    set({ openTabs: newTabs });
+    saveTabsToStorage(newTabs, activeTabId);
+  },
+
+  unpinTab: (tabId: string) => {
+    const { openTabs, activeTabId } = get();
+    const tabIndex = openTabs.findIndex(t => t.id === tabId);
+    if (tabIndex === -1 || !openTabs[tabIndex].isPinned) return;
+
+    // Unpin the tab and move it after all pinned tabs
+    const tab = { ...openTabs[tabIndex], isPinned: false };
+    const otherTabs = openTabs.filter(t => t.id !== tabId);
+    const pinnedCount = otherTabs.filter(t => t.isPinned).length;
+
+    const newTabs = [
+      ...otherTabs.slice(0, pinnedCount),
+      tab,
+      ...otherTabs.slice(pinnedCount),
+    ];
+
+    set({ openTabs: newTabs });
+    saveTabsToStorage(newTabs, activeTabId);
+  },
+
+  reorderTabs: (fromIndex: number, toIndex: number) => {
+    const { openTabs, activeTabId } = get();
+    if (fromIndex === toIndex) return;
+    if (fromIndex < 0 || fromIndex >= openTabs.length) return;
+    if (toIndex < 0 || toIndex >= openTabs.length) return;
+
+    const tab = openTabs[fromIndex];
+
+    // Don't allow moving unpinned tabs before pinned tabs
+    const pinnedCount = openTabs.filter(t => t.isPinned).length;
+    if (!tab.isPinned && toIndex < pinnedCount) return;
+    if (tab.isPinned && toIndex >= pinnedCount) return;
+
+    const newTabs = [...openTabs];
+    newTabs.splice(fromIndex, 1);
+    newTabs.splice(toIndex, 0, tab);
+
+    set({ openTabs: newTabs });
+    saveTabsToStorage(newTabs, activeTabId);
+  },
+
+  getTabByPath: (notePath: string) => {
+    return get().openTabs.find(t => t.notePath === notePath);
+  },
+
+  getActiveTab: () => {
+    const { openTabs, activeTabId } = get();
+    return openTabs.find(t => t.id === activeTabId);
+  },
+
+  // Tab navigation (per-tab history)
+  canGoBack: () => {
+    const { openTabs, activeTabId } = get();
+    const activeTab = openTabs.find(t => t.id === activeTabId);
+    if (!activeTab) return false;
+    return (activeTab.historyIndex ?? 0) > 0;
+  },
+
+  canGoForward: () => {
+    const { openTabs, activeTabId } = get();
+    const activeTab = openTabs.find(t => t.id === activeTabId);
+    if (!activeTab) return false;
+    const history = activeTab.history || [];
+    return (activeTab.historyIndex ?? 0) < history.length - 1;
+  },
+
+  goBack: () => {
+    const { openTabs, activeTabId } = get();
+    const activeTabIndex = openTabs.findIndex(t => t.id === activeTabId);
+    if (activeTabIndex === -1) return null;
+
+    const activeTab = openTabs[activeTabIndex];
+    const history = activeTab.history || [];
+    const currentIndex = activeTab.historyIndex ?? 0;
+
+    if (currentIndex <= 0) return null;
+
+    const newIndex = currentIndex - 1;
+    const previousPath = history[newIndex];
+
+    // Update tab with new history index and notePath
+    const updatedTab: TabInfo = {
+      ...activeTab,
+      notePath: previousPath,
+      historyIndex: newIndex,
+    };
+    const newTabs = [
+      ...openTabs.slice(0, activeTabIndex),
+      updatedTab,
+      ...openTabs.slice(activeTabIndex + 1),
+    ];
+    set({ openTabs: newTabs });
+    saveTabsToStorage(newTabs, activeTabId);
+
+    return previousPath;
+  },
+
+  goForward: () => {
+    const { openTabs, activeTabId } = get();
+    const activeTabIndex = openTabs.findIndex(t => t.id === activeTabId);
+    if (activeTabIndex === -1) return null;
+
+    const activeTab = openTabs[activeTabIndex];
+    const history = activeTab.history || [];
+    const currentIndex = activeTab.historyIndex ?? 0;
+
+    if (currentIndex >= history.length - 1) return null;
+
+    const newIndex = currentIndex + 1;
+    const nextPath = history[newIndex];
+
+    // Update tab with new history index and notePath
+    const updatedTab: TabInfo = {
+      ...activeTab,
+      notePath: nextPath,
+      historyIndex: newIndex,
+    };
+    const newTabs = [
+      ...openTabs.slice(0, activeTabIndex),
+      updatedTab,
+      ...openTabs.slice(activeTabIndex + 1),
+    ];
+    set({ openTabs: newTabs });
+    saveTabsToStorage(newTabs, activeTabId);
+
+    return nextPath;
+  },
+
+  initializeTabsFromStorage: (validateNote: (path: string) => boolean) => {
+    const { tabsInitialized } = get();
+    if (tabsInitialized) return;
+
+    try {
+      const stored = localStorage.getItem(TABS_STORAGE_KEY);
+      if (!stored) {
+        set({ tabsInitialized: true });
+        return;
+      }
+
+      const { tabs, activeTabPath } = JSON.parse(stored) as PersistedTabState;
+
+      // Validate and restore tabs
+      const restoredTabs: TabInfo[] = [];
+      for (const tab of tabs) {
+        if (validateNote(tab.notePath)) {
+          restoredTabs.push({
+            id: generateTabId(),
+            notePath: tab.notePath,
+            isPinned: tab.isPinned,
+            history: [tab.notePath],
+            historyIndex: 0,
+          });
+        } else {
+          console.warn(`Tab for deleted note skipped: ${tab.notePath}`);
+        }
+      }
+
+      // Find active tab
+      let activeTabId: string | null = null;
+      if (activeTabPath) {
+        const activeTab = restoredTabs.find(t => t.notePath === activeTabPath);
+        activeTabId = activeTab?.id ?? (restoredTabs.length > 0 ? restoredTabs[0].id : null);
+      } else if (restoredTabs.length > 0) {
+        activeTabId = restoredTabs[0].id;
+      }
+
+      set({ openTabs: restoredTabs, activeTabId, tabsInitialized: true });
+    } catch (e) {
+      console.warn('Failed to restore tabs from localStorage:', e);
+      set({ tabsInitialized: true });
+    }
+  },
 }));
