@@ -336,11 +336,23 @@ export function Editor() {
   }, [handleKeyDown]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+
+    // Don't show Editor's context menu if clicking on a link in the preview pane
+    // (they have their own context menus)
+    // Check for data attributes and external links
+    const isPreviewLink = target.closest(
+      'a[data-wiki-link], a[data-card-link], a[data-diagram-link], a[data-block-ref], a[href^="http"]'
+    );
+    if (isPreviewLink) {
+      // Let the link's own context menu handler deal with it
+      return;
+    }
+
     e.preventDefault();
 
     // Check if clicking on a misspelled word
     let misspelledWord: string | undefined;
-    const target = e.target as HTMLElement;
     const spellErrorEl = target.closest('.cm-spell-error') as HTMLElement | null;
     if (spellErrorEl) {
       misspelledWord = spellErrorEl.textContent?.trim();

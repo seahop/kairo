@@ -1,4 +1,5 @@
-import React, { useMemo, useCallback, useEffect, useState, memo } from "react";
+import React, { useMemo, useCallback, useEffect, useState, memo, useRef } from "react";
+import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -371,6 +372,7 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
   const [vaultPath, setVaultPath] = useState<string | null>(null);
   const [collapsedCallouts, setCollapsedCallouts] = useState<Set<number>>(new Set());
   const [collapsedHeadings, setCollapsedHeadings] = useState<Set<string>>(new Set());
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Use provided content or fall back to store's editorContent
   const displayContent = content ?? editorContent;
@@ -405,6 +407,7 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
       loadDiagramBoards();
     }
   }, [displayContent, loadDiagramBoards]);
+
 
   // Resolve relative paths to absolute file URLs
   const resolveImagePath = useCallback(
@@ -594,12 +597,12 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
     [resolveNoteReference, openSidePane]
   );
 
-  // Open note in new tab
+  // Open note in new tab (forceNew allows duplicate tabs)
   const openNoteInNewTab = useCallback(
     (reference: string) => {
       const resolved = resolveNoteReference(reference);
       if (resolved) {
-        useUIStore.getState().openTab(resolved.path, { background: true });
+        useUIStore.getState().openTab(resolved.path, { background: true, forceNew: true });
       }
     },
     [resolveNoteReference]
@@ -653,6 +656,26 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
       ]);
     },
     [showContextMenu]
+  );
+
+  // Context menu for diagram links
+  const handleDiagramContextMenu = useCallback(
+    (e: React.MouseEvent, reference: string) => {
+      showContextMenu(e, [
+        {
+          label: "Open Diagram",
+          icon: "📊",
+          onClick: () => handleDiagramLinkClick(e, reference),
+        },
+        {
+          label: "Copy Link",
+          icon: "📋",
+          onClick: () => navigator.clipboard.writeText(`[[diagram:${reference}]]`),
+          divider: true,
+        },
+      ]);
+    },
+    [showContextMenu, handleDiagramLinkClick]
   );
 
   // Handle table click to open visual editor
@@ -733,7 +756,7 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
   const debugMode = false;
 
   return (
-    <div className="h-full overflow-auto bg-dark-950 p-6">
+    <div ref={containerRef} className="h-full overflow-auto bg-dark-950 p-6">
       {debugMode && (
         <>
           <div className="fixed top-16 right-4 bg-green-600 text-white px-2 py-1 text-xs rounded z-50">
@@ -892,6 +915,7 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
                 const reference = decodeURIComponent(href.slice(10));
                 return (
                   <a
+                    {...props}
                     href="#"
                     data-card-link={reference}
                     onClick={(e) => handleCardLinkClick(e, reference)}
@@ -899,7 +923,6 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
                     className="cursor-pointer transition-colors text-orange-400 hover:text-orange-300 underline decoration-dotted"
                     style={{ backgroundColor: 'rgba(251, 146, 60, 0.1)', padding: '0 4px', borderRadius: '4px' }}
                     title={`Go to card: ${reference} (right-click for options)`}
-                    {...props}
                   >
                     <span className="mr-1">🎯</span>
                     {children}
@@ -917,9 +940,11 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
 
                 return (
                   <a
+                    {...props}
                     href="#"
                     data-diagram-link={reference}
                     onClick={(e) => handleDiagramLinkClick(e, reference)}
+                    onContextMenu={(e) => handleDiagramContextMenu(e, reference)}
                     className={`
                       cursor-pointer transition-colors
                       ${exists
@@ -928,8 +953,7 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
                       }
                     `}
                     style={exists ? { backgroundColor: 'rgba(168, 85, 247, 0.1)', padding: '0 4px', borderRadius: '4px' } : undefined}
-                    title={exists ? `Open diagram: ${diagram.name}` : `Diagram not found: ${reference}`}
-                    {...props}
+                    title={exists ? `Open diagram: ${diagram.name} (right-click for options)` : `Diagram not found: ${reference}`}
                   >
                     <span className="mr-1">📊</span>
                     {children}
@@ -945,7 +969,9 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
 
                 return (
                   <a
+                    {...props}
                     href="#"
+                    data-wiki-link={reference}
                     onClick={(e) => handleWikiLinkClick(e, reference)}
                     onContextMenu={(e) => handleWikiContextMenu(e, reference)}
                     className={`
@@ -956,7 +982,6 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
                       }
                     `}
                     title={exists ? `Go to: ${resolved.path} (right-click for options)` : `Note not found: ${reference}`}
-                    {...props}
                   >
                     {children}
                   </a>
@@ -973,12 +998,15 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
 
                 return (
                   <a
+                    {...props}
                     href="#"
+                    data-block-ref={`${noteRef}#^${blockId}`}
                     onClick={(e) => {
                       e.preventDefault();
                       handleWikiLinkClick(e, noteRef);
                       // TODO: scroll to block after navigation
                     }}
+                    onContextMenu={(e) => handleWikiContextMenu(e, noteRef)}
                     className={`
                       cursor-pointer transition-colors
                       ${exists
@@ -987,7 +1015,6 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
                       }
                     `}
                     title={exists ? `Go to: ${resolved.path}#^${blockId}` : `Note not found: ${noteRef}`}
-                    {...props}
                   >
                     {children}
                     <span className="text-xs text-dark-500 ml-1">^{blockId}</span>
@@ -998,12 +1025,12 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
               // External link
               return (
                 <a
+                  {...props}
                   href={href}
                   target="_blank"
                   rel="noopener noreferrer"
                   onContextMenu={(e) => href && handleExternalContextMenu(e, href)}
                   className="text-blue-400 hover:text-blue-300 underline"
-                  {...props}
                 >
                   {children}
                   <ExternalLinkIcon />
@@ -1236,14 +1263,15 @@ export const PreviewPane = memo(function PreviewPane({ content }: PreviewPanePro
         </ReactMarkdown>
       </div>
 
-      {/* Context menu */}
-      {contextMenu && (
+      {/* Context menu from useContextMenu hook - rendered via portal to avoid Panel transform issues */}
+      {contextMenu && createPortal(
         <LinkContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
           items={contextMenu.items}
           onClose={hideContextMenu}
-        />
+        />,
+        document.body
       )}
     </div>
   );

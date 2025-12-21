@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, undo, redo } from "@codemirror/commands";
@@ -13,6 +13,7 @@ import { useUIStore } from "@/stores/uiStore";
 import { kairoAutocompletion, autocompleteTheme } from "./autocomplete";
 import { tableDetectionPlugin, tableTheme, tableKeymap } from "./table";
 import { spellCheckExtension } from "./spellcheck";
+import { LinkContextMenu } from "@/components/common/LinkContextMenu";
 
 // Custom plugin that triggers autocomplete on specific patterns
 // Simplified approach: check document state directly, not what was inserted
@@ -185,11 +186,19 @@ const darkHighlightStyle = HighlightStyle.define([
   { tag: tags.processingInstruction, color: "#94a3b8" },
 ]);
 
+// Context menu state type
+interface WikiLinkContextMenu {
+  x: number;
+  y: number;
+  linkTarget: string;
+}
+
 export function MarkdownPane() {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const { currentNote, editorContent, setEditorContent, openNoteByReference } = useNoteStore();
-  const spellcheckEnabled = useUIStore((state) => state.spellcheckEnabled);
+  const { currentNote, editorContent, setEditorContent, openNoteByReference, resolveNoteReference } = useNoteStore();
+  const { spellcheckEnabled, openSidePane, openTab } = useUIStore();
+  const [wikiLinkContextMenu, setWikiLinkContextMenu] = useState<WikiLinkContextMenu | null>(null);
 
   // Handle Ctrl+Click to follow wiki-links
   const handleLinkClick = useCallback((view: EditorView, event: MouseEvent) => {
@@ -210,6 +219,56 @@ export function MarkdownPane() {
 
     return false;
   }, [openNoteByReference]);
+
+  // Handle right-click on wiki-links
+  const handleContextMenu = useCallback((view: EditorView, event: MouseEvent) => {
+    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+    if (pos === null) return false;
+
+    const doc = view.state.doc.toString();
+    const linkTarget = getWikiLinkAtPos(doc, pos);
+
+    if (linkTarget) {
+      event.preventDefault();
+      event.stopPropagation();
+      // Offset y to align menu with cursor (accounts for Tauri window chrome + menu padding)
+      setWikiLinkContextMenu({ x: event.clientX, y: event.clientY - 16, linkTarget });
+      return true;
+    }
+
+    return false;
+  }, []);
+
+  // Context menu actions
+  const handleOpenNote = useCallback(() => {
+    if (wikiLinkContextMenu) {
+      openNoteByReference(wikiLinkContextMenu.linkTarget);
+    }
+  }, [wikiLinkContextMenu, openNoteByReference]);
+
+  const handleOpenInNewTab = useCallback(() => {
+    if (wikiLinkContextMenu) {
+      const resolved = resolveNoteReference(wikiLinkContextMenu.linkTarget);
+      if (resolved) {
+        openTab(resolved.path, { background: true, forceNew: true });
+      }
+    }
+  }, [wikiLinkContextMenu, resolveNoteReference, openTab]);
+
+  const handleOpenInSidePane = useCallback(() => {
+    if (wikiLinkContextMenu) {
+      const resolved = resolveNoteReference(wikiLinkContextMenu.linkTarget);
+      if (resolved) {
+        openSidePane({ type: 'note', notePath: resolved.path });
+      }
+    }
+  }, [wikiLinkContextMenu, resolveNoteReference, openSidePane]);
+
+  const handleCopyLink = useCallback(() => {
+    if (wikiLinkContextMenu) {
+      navigator.clipboard.writeText(`[[${wikiLinkContextMenu.linkTarget}]]`);
+    }
+  }, [wikiLinkContextMenu]);
 
   // Create editor on mount
   useEffect(() => {
@@ -284,6 +343,7 @@ export function MarkdownPane() {
         // DOM event handlers for links
         EditorView.domEventHandlers({
           click: (event, view) => handleLinkClick(view, event),
+          contextmenu: (event, view) => handleContextMenu(view, event),
         }),
 
         // JavaScript-based spell checking (works on all platforms)
@@ -304,7 +364,7 @@ export function MarkdownPane() {
     return () => {
       view.destroy();
     };
-  }, [currentNote?.id, handleLinkClick, spellcheckEnabled]); // Recreate when note or spellcheck changes
+  }, [currentNote?.id, handleLinkClick, handleContextMenu, spellcheckEnabled]); // Recreate when note or spellcheck changes
 
   // Update content when it changes externally
   useEffect(() => {
@@ -364,6 +424,38 @@ export function MarkdownPane() {
   return (
     <div className="h-full overflow-hidden">
       <div ref={editorRef} className="h-full" />
+
+      {/* Wiki link context menu */}
+      {wikiLinkContextMenu && (
+        <LinkContextMenu
+          x={wikiLinkContextMenu.x}
+          y={wikiLinkContextMenu.y}
+          items={[
+            {
+              label: "Open Note",
+              icon: "📝",
+              onClick: handleOpenNote,
+            },
+            {
+              label: "Open in New Tab",
+              icon: "➕",
+              onClick: handleOpenInNewTab,
+            },
+            {
+              label: "Open in Side Pane",
+              icon: "📄",
+              onClick: handleOpenInSidePane,
+            },
+            {
+              label: "Copy Link",
+              icon: "📋",
+              onClick: handleCopyLink,
+              divider: true,
+            },
+          ]}
+          onClose={() => setWikiLinkContextMenu(null)}
+        />
+      )}
     </div>
   );
 }
