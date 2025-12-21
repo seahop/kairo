@@ -278,6 +278,21 @@ export function Editor() {
   const [showHistory, setShowHistory] = useState(false);
   const [showReadingSettings, setShowReadingSettings] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const readingSettingsRef = useRef<HTMLDivElement>(null);
+
+  // Close reading settings dropdown when clicking outside
+  useEffect(() => {
+    if (!showReadingSettings) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (readingSettingsRef.current && !readingSettingsRef.current.contains(e.target as Node)) {
+        setShowReadingSettings(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showReadingSettings]);
 
   // Open table editor with a new table (insert at cursor or end)
   const handleInsertTable = useCallback(() => {
@@ -533,7 +548,7 @@ export function Editor() {
           </button>
 
           {/* Reading mode settings */}
-          <div className="relative">
+          <div ref={readingSettingsRef} className="relative">
             <button
               className={`btn-icon p-1.5 rounded flex items-center gap-1.5 text-xs ${
                 showReadingSettings
