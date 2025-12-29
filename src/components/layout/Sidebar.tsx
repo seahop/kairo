@@ -13,6 +13,7 @@ interface ContextMenuState {
   x: number;
   y: number;
   note: NoteMetadata | null;
+  isMultiSelect?: boolean; // True when multiple notes are selected
 }
 
 // Context Menu Component
@@ -24,6 +25,8 @@ function NoteContextMenu({
   onArchive,
   onStar,
   onOpenInNewTab,
+  selectedCount,
+  onDeleteMultiple,
 }: {
   state: ContextMenuState;
   onClose: () => void;
@@ -32,6 +35,8 @@ function NoteContextMenu({
   onArchive: (note: NoteMetadata) => void;
   onStar: (note: NoteMetadata) => void;
   onOpenInNewTab: (note: NoteMetadata) => void;
+  selectedCount: number;
+  onDeleteMultiple: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -67,6 +72,35 @@ function NoteContextMenu({
 
   if (!state.note) return null;
 
+  // Multi-select mode: show simplified menu for bulk operations
+  if (state.isMultiSelect && selectedCount > 1) {
+    return (
+      <div
+        ref={menuRef}
+        className="fixed z-50 min-w-48 bg-dark-850 border border-dark-700 rounded-lg shadow-xl py-1"
+        style={{ left: state.x, top: state.y }}
+      >
+        <div className="px-4 py-2 text-xs text-dark-400 border-b border-dark-700">
+          {selectedCount} notes selected
+        </div>
+        <button
+          className="w-full px-4 py-2 text-left text-sm text-orange-400 hover:bg-orange-500/10 hover:text-orange-300 flex items-center gap-2"
+          onClick={() => {
+            onDeleteMultiple();
+            onClose();
+          }}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          Move {selectedCount} to Trash
+          <span className="ml-auto text-xs text-dark-500">Del</span>
+        </button>
+      </div>
+    );
+  }
+
+  // Single note menu
   return (
     <div
       ref={menuRef}
@@ -306,9 +340,15 @@ function buildFolderTree(notes: NoteMetadata[]): FolderNode {
 interface FolderItemProps {
   folder: FolderNode;
   level: number;
-  selectedNote: NoteMetadata | null;
-  onSelectNote: (note: NoteMetadata | null) => void;
+  selectedNotes: Set<string>;
+  onNoteClick: (e: React.MouseEvent, note: NoteMetadata) => void;
   onContextMenu: (e: React.MouseEvent, note: NoteMetadata) => void;
+  draggedNotes: Set<string>;
+  onDragStart: (e: React.DragEvent, note: NoteMetadata) => void;
+  onDragEnd: () => void;
+  onDrop: (targetFolder: string) => void;
+  dropTargetFolder: string | null;
+  setDropTargetFolder: (folder: string | null) => void;
 }
 
 // Natural sort comparator - handles numbers in strings correctly (e.g., "note2" before "note10")
@@ -316,13 +356,24 @@ function naturalSort(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 }
 
-function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }: FolderItemProps) {
+function FolderItem({
+  folder,
+  level,
+  selectedNotes,
+  onNoteClick,
+  onContextMenu,
+  draggedNotes,
+  onDragStart,
+  onDragEnd,
+  onDrop,
+  dropTargetFolder,
+  setDropTargetFolder,
+}: FolderItemProps) {
   const [expanded, setExpanded] = useState(level < 2);
   const { currentNote } = useNoteStore();
-  const { openTab } = useUIStore();
-  const { openNoteInActivePane } = usePaneStore();
 
   const hasChildren = folder.children.size > 0 || folder.notes.length > 0;
+  const isDropTarget = dropTargetFolder === folder.path;
 
   // Sort subfolders alphabetically (natural sort for numbers)
   const sortedChildren = Array.from(folder.children.values()).sort((a, b) =>
@@ -334,16 +385,51 @@ function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }
     naturalSort(a.title.toLowerCase(), b.title.toLowerCase())
   );
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (draggedNotes.size > 0) {
+      setDropTargetFolder(folder.path);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only clear if we're leaving the folder element itself
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      if (dropTargetFolder === folder.path) {
+        setDropTargetFolder(null);
+      }
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (draggedNotes.size > 0) {
+      onDrop(folder.path);
+    }
+    setDropTargetFolder(null);
+  };
+
   return (
     <div>
       {/* Folder header */}
       <div
         className={clsx(
           "flex items-center gap-1 px-2 py-1 cursor-pointer rounded hover:bg-dark-800",
-          "text-dark-400 hover:text-dark-200"
+          "text-dark-400 hover:text-dark-200",
+          isDropTarget && "bg-accent-primary/20 ring-1 ring-accent-primary"
         )}
         style={{ paddingLeft: `${level * 12 + 8}px` }}
         onClick={() => setExpanded(!expanded)}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
         {hasChildren && <ChevronIcon expanded={expanded} />}
         <FolderIcon />
@@ -359,9 +445,15 @@ function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }
               key={child.path}
               folder={child}
               level={level + 1}
-              selectedNote={selectedNote}
-              onSelectNote={onSelectNote}
+              selectedNotes={selectedNotes}
+              onNoteClick={onNoteClick}
               onContextMenu={onContextMenu}
+              draggedNotes={draggedNotes}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              onDrop={onDrop}
+              dropTargetFolder={dropTargetFolder}
+              setDropTargetFolder={setDropTargetFolder}
             />
           ))}
 
@@ -370,29 +462,23 @@ function FolderItem({ folder, level, selectedNote, onSelectNote, onContextMenu }
             <div
               key={note.id}
               className={clsx(
-                "flex items-center gap-2 px-2 py-1 cursor-pointer rounded",
+                "flex items-center gap-2 px-2 py-1 cursor-pointer rounded select-none",
                 "text-dark-300 hover:bg-dark-800 hover:text-dark-100",
                 currentNote?.path === note.path && "bg-dark-800 text-accent-primary",
-                selectedNote?.id === note.id && currentNote?.path !== note.path && "ring-1 ring-accent-primary/50",
+                selectedNotes.has(note.path) && currentNote?.path !== note.path && "ring-1 ring-accent-primary/50 bg-dark-800/50",
+                draggedNotes.has(note.path) && "opacity-50",
                 note.archived && "opacity-50"
               )}
               style={{ paddingLeft: `${(level + 1) * 12 + 8}px` }}
-              onClick={(e) => {
-                if (e.ctrlKey || e.metaKey) {
-                  // Ctrl+click to open in background tab (forceNew allows duplicates)
-                  openTab(note.path, { background: true, forceNew: true });
-                  onSelectNote(null);
-                } else {
-                  // Regular click: open in active pane of current tab
-                  openNoteInActivePane(note.path);
-                  onSelectNote(null);
-                }
-              }}
+              draggable
+              onDragStart={(e) => onDragStart(e, note)}
+              onDragEnd={onDragEnd}
+              onClick={(e) => onNoteClick(e, note)}
               onMouseDown={(e) => {
                 // Middle-click to open in background tab (forceNew allows duplicates)
                 if (e.button === 1) {
                   e.preventDefault();
-                  openTab(note.path, { background: true, forceNew: true });
+                  useUIStore.getState().openTab(note.path, { background: true, forceNew: true });
                 }
               }}
               onContextMenu={(e) => onContextMenu(e, note)}
@@ -422,6 +508,7 @@ export function Sidebar() {
   const loadNotes = useNoteStore((state) => state.loadNotes);
   const createNote = useNoteStore((state) => state.createNote);
   const deleteNote = useNoteStore((state) => state.deleteNote);
+  const renameNote = useNoteStore((state) => state.renameNote);
   const setNoteArchived = useNoteStore((state) => state.setNoteArchived);
   const setNoteStarred = useNoteStore((state) => state.setNoteStarred);
   const getStarredNotes = useNoteStore((state) => state.getStarredNotes);
@@ -436,11 +523,15 @@ export function Sidebar() {
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ x: 0, y: 0, note: null });
-  const [selectedNote, setSelectedNote] = useState<NoteMetadata | null>(null);
+  const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set());
+  const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
   const [renamingNote, setRenamingNote] = useState<NoteMetadata | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [showTrashModal, setShowTrashModal] = useState(false);
   const [sidebarView, setSidebarView] = useState<"files" | "tags">("files");
+  // Drag and drop state
+  const [draggedNotes, setDraggedNotes] = useState<Set<string>>(new Set());
+  const [dropTargetFolder, setDropTargetFolder] = useState<string | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
@@ -455,21 +546,22 @@ export function Sidebar() {
   // Keyboard handler for Delete key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle if sidebar is focused or selected note exists
-      if (e.key === "Delete" && selectedNote && !renamingNote) {
+      // Only handle if sidebar is focused or selected notes exist
+      if (e.key === "Delete" && selectedNotes.size > 0 && !renamingNote) {
         e.preventDefault();
-        handleDeleteNote(selectedNote);
+        handleDeleteMultiple();
       }
       // Escape to deselect
       if (e.key === "Escape") {
-        setSelectedNote(null);
+        setSelectedNotes(new Set());
+        setLastSelectedPath(null);
         setContextMenu({ x: 0, y: 0, note: null });
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedNote, renamingNote]);
+  }, [selectedNotes, renamingNote]);
 
   // Focus rename input when renaming starts
   useEffect(() => {
@@ -499,11 +591,71 @@ export function Sidebar() {
     createNote(fileName);
   };
 
+  // Create a flat list of notes for range selection (sorted alphabetically)
+  const flatNoteList = useMemo(() => {
+    const allNotes: NoteMetadata[] = [];
+    // Add starred notes first
+    allNotes.push(...sortedStarredNotes);
+    // Then add all visible notes (they may overlap with starred, but we use paths for selection)
+    allNotes.push(...visibleNotes.sort((a, b) => naturalSort(a.title.toLowerCase(), b.title.toLowerCase())));
+    // Deduplicate by path
+    const seen = new Set<string>();
+    return allNotes.filter(note => {
+      if (seen.has(note.path)) return false;
+      seen.add(note.path);
+      return true;
+    });
+  }, [sortedStarredNotes, visibleNotes]);
+
+  // Handle note click with multi-select support
+  const handleNoteClick = (e: React.MouseEvent, note: NoteMetadata) => {
+    if (e.shiftKey && lastSelectedPath) {
+      // Shift+click: select range
+      e.preventDefault();
+      const lastIndex = flatNoteList.findIndex(n => n.path === lastSelectedPath);
+      const currentIndex = flatNoteList.findIndex(n => n.path === note.path);
+      if (lastIndex !== -1 && currentIndex !== -1) {
+        const start = Math.min(lastIndex, currentIndex);
+        const end = Math.max(lastIndex, currentIndex);
+        const newSelection = new Set(selectedNotes);
+        for (let i = start; i <= end; i++) {
+          newSelection.add(flatNoteList[i].path);
+        }
+        setSelectedNotes(newSelection);
+      }
+    } else if (e.ctrlKey || e.metaKey) {
+      // Ctrl+click: toggle selection
+      e.preventDefault();
+      const newSelection = new Set(selectedNotes);
+      if (newSelection.has(note.path)) {
+        newSelection.delete(note.path);
+      } else {
+        newSelection.add(note.path);
+      }
+      setSelectedNotes(newSelection);
+      setLastSelectedPath(note.path);
+    } else {
+      // Regular click: open note and clear selection, but keep as anchor for shift-select
+      usePaneStore.getState().openNoteInActivePane(note.path);
+      setSelectedNotes(new Set());
+      setLastSelectedPath(note.path); // Keep as anchor for shift-click range selection
+    }
+  };
+
   const handleContextMenu = (e: React.MouseEvent, note: NoteMetadata) => {
     e.preventDefault();
+    // If right-clicking on a note that's not in the selection, select just that note
+    if (!selectedNotes.has(note.path)) {
+      setSelectedNotes(new Set([note.path]));
+      setLastSelectedPath(note.path);
+    }
     // Offset y to align menu with cursor (accounts for Tauri window chrome + menu padding)
-    setContextMenu({ x: e.clientX, y: e.clientY - 16, note });
-    setSelectedNote(note);
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY - 16,
+      note,
+      isMultiSelect: selectedNotes.size > 1 || (selectedNotes.size === 1 && !selectedNotes.has(note.path))
+    });
   };
 
   const handleDeleteNote = (note: NoteMetadata) => {
@@ -515,7 +667,34 @@ export function Sidebar() {
       variant: "warning",
       onConfirm: () => {
         deleteNote(note.path);
-        setSelectedNote(null);
+        setSelectedNotes(new Set());
+        setLastSelectedPath(null);
+      },
+    });
+  };
+
+  const handleDeleteMultiple = () => {
+    const count = selectedNotes.size;
+    if (count === 0) return;
+
+    const notePaths = Array.from(selectedNotes);
+    const noteNames = notePaths.map(path => {
+      const note = notes.find(n => n.path === path);
+      return note?.title || path.split("/").pop()?.replace(/\.md$/, "") || "Unknown";
+    });
+
+    showConfirmDialog({
+      title: "Move to Trash",
+      message: count === 1
+        ? `Move "${noteNames[0]}" to trash?`
+        : `Move ${count} notes to trash?\n\n${noteNames.slice(0, 5).join(", ")}${count > 5 ? `, and ${count - 5} more...` : ""}`,
+      confirmText: "Move to Trash",
+      cancelText: "Cancel",
+      variant: "warning",
+      onConfirm: () => {
+        notePaths.forEach(path => deleteNote(path));
+        setSelectedNotes(new Set());
+        setLastSelectedPath(null);
       },
     });
   };
@@ -535,7 +714,8 @@ export function Sidebar() {
       variant: "warning",
       onConfirm: () => {
         setNoteArchived(note.path, !isArchived);
-        setSelectedNote(null);
+        setSelectedNotes(new Set());
+        setLastSelectedPath(null);
       },
     });
   };
@@ -577,6 +757,55 @@ export function Sidebar() {
   const handleOpenInNewTab = (note: NoteMetadata) => {
     // Open in new background tab (forceNew allows duplicate tabs of same note)
     useUIStore.getState().openTab(note.path, { background: true, forceNew: true });
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, note: NoteMetadata) => {
+    // If dragging a note that's already selected, drag all selected notes
+    // Otherwise, just drag this one note
+    if (selectedNotes.has(note.path)) {
+      setDraggedNotes(new Set(selectedNotes));
+      e.dataTransfer.setData("text/plain", `Moving ${selectedNotes.size} notes`);
+    } else {
+      setDraggedNotes(new Set([note.path]));
+      e.dataTransfer.setData("text/plain", note.title);
+    }
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragEnd = () => {
+    setDraggedNotes(new Set());
+    setDropTargetFolder(null);
+  };
+
+  const handleDrop = async (targetFolder: string) => {
+    if (draggedNotes.size === 0) return;
+
+    const notesToMove = Array.from(draggedNotes);
+    const movePromises: Promise<void>[] = [];
+
+    for (const notePath of notesToMove) {
+      const fileName = notePath.split("/").pop();
+      if (!fileName) continue;
+
+      // Check if the note is already in this folder
+      const currentFolder = notePath.substring(0, notePath.lastIndexOf("/"));
+      if (currentFolder === targetFolder) continue;
+
+      const newPath = `${targetFolder}/${fileName}`;
+      movePromises.push(renameNote(notePath, newPath));
+    }
+
+    try {
+      await Promise.all(movePromises);
+      setSelectedNotes(new Set());
+      setLastSelectedPath(null);
+    } catch (error) {
+      console.error("Failed to move notes:", error);
+    }
+
+    setDraggedNotes(new Set());
+    setDropTargetFolder(null);
   };
 
   if (isSidebarCollapsed) {
@@ -761,22 +990,16 @@ export function Sidebar() {
               <div
                 key={`starred-${note.id}`}
                 className={clsx(
-                  "flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded mx-2",
+                  "flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded mx-2 select-none",
                   "text-dark-300 hover:bg-dark-800 hover:text-dark-100",
                   useNoteStore.getState().currentNote?.path === note.path && "bg-dark-800 text-accent-primary",
-                  selectedNote?.id === note.id && "ring-1 ring-accent-primary/50"
+                  selectedNotes.has(note.path) && "ring-1 ring-accent-primary/50 bg-dark-800/50",
+                  draggedNotes.has(note.path) && "opacity-50"
                 )}
-                onClick={(e) => {
-                  if (e.ctrlKey || e.metaKey) {
-                    // Ctrl+click to open in background tab (forceNew allows duplicates)
-                    useUIStore.getState().openTab(note.path, { background: true, forceNew: true });
-                    setSelectedNote(null);
-                  } else {
-                    // Regular click: open in active pane of current tab
-                    usePaneStore.getState().openNoteInActivePane(note.path);
-                    setSelectedNote(null);
-                  }
-                }}
+                draggable
+                onDragStart={(e) => handleDragStart(e, note)}
+                onDragEnd={handleDragEnd}
+                onClick={(e) => handleNoteClick(e, note)}
                 onMouseDown={(e) => {
                   // Middle-click to open in background tab (forceNew allows duplicates)
                   if (e.button === 1) {
@@ -799,9 +1022,15 @@ export function Sidebar() {
           <FolderItem
             folder={folderTree}
             level={0}
-            selectedNote={selectedNote}
-            onSelectNote={setSelectedNote}
+            selectedNotes={selectedNotes}
+            onNoteClick={handleNoteClick}
             onContextMenu={handleContextMenu}
+            draggedNotes={draggedNotes}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDrop={handleDrop}
+            dropTargetFolder={dropTargetFolder}
+            setDropTargetFolder={setDropTargetFolder}
           />
         ) : (
           <div className="px-4 py-8 text-center text-dark-500 text-sm">
@@ -837,8 +1066,8 @@ export function Sidebar() {
         </div>
         <div className="text-xs text-dark-500">
           {visibleNotes.length} notes{showArchived ? "" : ` (${notes.filter(n => n.archived).length} archived)`}
-          {selectedNote && (
-            <span className="ml-2 text-accent-primary">• {selectedNote.title} selected</span>
+          {selectedNotes.size > 0 && (
+            <span className="ml-2 text-accent-primary">• {selectedNotes.size} selected</span>
           )}
         </div>
       </div>
@@ -853,6 +1082,8 @@ export function Sidebar() {
         onArchive={handleArchiveNote}
         onStar={handleStarNote}
         onOpenInNewTab={handleOpenInNewTab}
+        selectedCount={selectedNotes.size}
+        onDeleteMultiple={handleDeleteMultiple}
       />
 
       {/* Inline Rename Input (modal overlay) */}
