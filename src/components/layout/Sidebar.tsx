@@ -417,7 +417,11 @@ function FolderItem({
   };
 
   return (
-    <div>
+    <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {/* Folder header */}
       <div
         className={clsx(
@@ -427,9 +431,6 @@ function FolderItem({
         )}
         style={{ paddingLeft: `${level * 12 + 8}px` }}
         onClick={() => setExpanded(!expanded)}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
       >
         {hasChildren && <ChevronIcon expanded={expanded} />}
         <FolderIcon />
