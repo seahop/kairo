@@ -1,4 +1,5 @@
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import { FixedSizeList as List } from "react-window";
 import { useNoteStore, NoteMetadata } from "@/stores/noteStore";
 import { useVaultStore } from "@/stores/vaultStore";
 import { useUIStore } from "@/stores/uiStore";
@@ -90,9 +91,7 @@ function NoteContextMenu({
             onClose();
           }}
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
+          <span className="w-4 h-4 flex items-center justify-center text-sm leading-none">🗑</span>
           Move {selectedCount} to Trash
           <span className="ml-auto text-xs text-dark-500">Del</span>
         </button>
@@ -114,9 +113,7 @@ function NoteContextMenu({
           onClose();
         }}
       >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-        </svg>
+        <span className="w-4 h-4 flex items-center justify-center text-base leading-none font-bold">+</span>
         Open in New Tab
         <span className="ml-auto text-xs text-dark-500">Ctrl+Click</span>
       </button>
@@ -128,9 +125,7 @@ function NoteContextMenu({
           onClose();
         }}
       >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-        </svg>
+        <span className="w-4 h-4 flex items-center justify-center text-sm leading-none">✏</span>
         Rename
       </button>
       <button
@@ -140,9 +135,7 @@ function NoteContextMenu({
           onClose();
         }}
       >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-        </svg>
+        <span className="w-4 h-4 flex items-center justify-center text-sm leading-none">🔗</span>
         Copy Link
       </button>
       <button
@@ -152,9 +145,7 @@ function NoteContextMenu({
           onClose();
         }}
       >
-        <svg className="w-4 h-4" fill={state.note?.starred ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-        </svg>
+        <span className="w-4 h-4 flex items-center justify-center text-sm leading-none">{state.note?.starred ? "★" : "☆"}</span>
         {state.note?.starred ? "Unstar" : "Star"}
       </button>
       <button
@@ -164,9 +155,7 @@ function NoteContextMenu({
           onClose();
         }}
       >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-        </svg>
+        <span className="w-4 h-4 flex items-center justify-center text-sm leading-none">📦</span>
         {state.note?.archived ? "Unarchive" : "Archive"}
       </button>
       {/* Extension menu items */}
@@ -197,9 +186,7 @@ function NoteContextMenu({
           onClose();
         }}
       >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-        </svg>
+        <span className="w-4 h-4 flex items-center justify-center text-sm leading-none">🗑</span>
         Move to Trash
         <span className="ml-auto text-xs text-dark-500">Del</span>
       </button>
@@ -207,92 +194,58 @@ function NoteContextMenu({
   );
 }
 
-// Icons (simple SVG components)
+// Icons using text characters to avoid WebKitGTK SVG rendering bugs
+// (same approach used for window controls - see Icons.tsx)
 const FolderIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-  </svg>
+  <span className="w-4 h-4 flex items-center justify-center text-sm leading-none">📁</span>
 );
 
 const FileIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-  </svg>
+  <span className="w-4 h-4 flex items-center justify-center text-sm leading-none">📄</span>
 );
 
 const PlusIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-  </svg>
+  <span className="w-4 h-4 flex items-center justify-center text-base leading-none font-bold">+</span>
 );
 
 const SearchIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-  </svg>
+  <span className="w-4 h-4 flex items-center justify-center text-sm leading-none">🔍</span>
 );
 
 const GraphIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <circle cx="12" cy="12" r="2.5" strokeWidth={2} />
-    <circle cx="5" cy="5" r="1.5" strokeWidth={2} />
-    <circle cx="19" cy="5" r="1.5" strokeWidth={2} />
-    <circle cx="5" cy="19" r="1.5" strokeWidth={2} />
-    <circle cx="19" cy="19" r="1.5" strokeWidth={2} />
-    <path strokeLinecap="round" strokeWidth={2} d="M9.5 10L6.5 6.5M14.5 10L17.5 6.5M9.5 14L6.5 17.5M14.5 14L17.5 17.5" />
-  </svg>
+  <span className="w-4 h-4 flex items-center justify-center text-sm leading-none">🔗</span>
 );
 
 const HealthIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
+  <span className="w-4 h-4 flex items-center justify-center text-sm leading-none">✓</span>
 );
 
 const TrashIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-  </svg>
+  <span className="w-4 h-4 flex items-center justify-center text-sm leading-none">🗑</span>
 );
 
 const TagsIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-  </svg>
+  <span className="w-4 h-4 flex items-center justify-center text-sm leading-none">🏷</span>
 );
 
 const CollapseIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-  </svg>
+  <span className="w-4 h-4 flex items-center justify-center text-base leading-none">«</span>
 );
 
 const ExpandIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-  </svg>
+  <span className="w-4 h-4 flex items-center justify-center text-base leading-none">»</span>
 );
 
 const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
-  <svg
-    className={clsx("w-3 h-3 transition-transform", expanded && "rotate-90")}
-    fill="none"
-    stroke="currentColor"
-    viewBox="0 0 24 24"
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-  </svg>
+  <span className={clsx("w-3 h-3 flex items-center justify-center text-xs leading-none transition-transform", expanded && "rotate-90")}>
+    ›
+  </span>
 );
 
 const StarIcon = ({ filled, className = "w-3 h-3" }: { filled?: boolean; className?: string }) => (
-  <svg
-    className={className}
-    fill={filled ? "currentColor" : "none"}
-    stroke="currentColor"
-    viewBox="0 0 24 24"
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-  </svg>
+  <span className={clsx(className, "flex items-center justify-center leading-none", filled ? "text-yellow-500" : "text-current")}>
+    {filled ? "★" : "☆"}
+  </span>
 );
 
 interface FolderNode {
@@ -337,169 +290,57 @@ function buildFolderTree(notes: NoteMetadata[]): FolderNode {
   return root;
 }
 
-interface FolderItemProps {
-  folder: FolderNode;
-  level: number;
-  selectedNotes: Set<string>;
-  onNoteClick: (e: React.MouseEvent, note: NoteMetadata) => void;
-  onContextMenu: (e: React.MouseEvent, note: NoteMetadata) => void;
-  draggedNotes: Set<string>;
-  onDragStart: (e: React.DragEvent, note: NoteMetadata) => void;
-  onDragEnd: () => void;
-  onDrop: (targetFolder: string) => void;
-  dropTargetFolder: string | null;
-  setDropTargetFolder: (folder: string | null) => void;
+// Flattened item types for virtual scrolling
+type FlatItem =
+  | { type: 'folder'; folder: FolderNode; level: number; hasChildren: boolean }
+  | { type: 'note'; note: NoteMetadata; level: number };
+
+// Flatten tree to list based on expanded folders
+function flattenTree(
+  folder: FolderNode,
+  level: number,
+  expandedFolders: Set<string>
+): FlatItem[] {
+  const items: FlatItem[] = [];
+
+  const hasChildren = folder.children.size > 0 || folder.notes.length > 0;
+
+  // Add folder header (skip root folder display)
+  if (level > 0) {
+    items.push({ type: 'folder', folder, level, hasChildren });
+  }
+
+  // If folder is expanded (or is root), add children
+  const isExpanded = level === 0 || expandedFolders.has(folder.path);
+  if (isExpanded) {
+    // Sort and add subfolders
+    const sortedChildren = Array.from(folder.children.values()).sort((a, b) =>
+      naturalSort(a.name.toLowerCase(), b.name.toLowerCase())
+    );
+    for (const child of sortedChildren) {
+      items.push(...flattenTree(child, level + 1, expandedFolders));
+    }
+
+    // Sort and add notes
+    const sortedNotes = [...folder.notes].sort((a, b) =>
+      naturalSort(a.title.toLowerCase(), b.title.toLowerCase())
+    );
+    for (const note of sortedNotes) {
+      items.push({ type: 'note', note, level: level + 1 });
+    }
+  }
+
+  return items;
 }
+
+// Constants for virtual scrolling
+const ROW_HEIGHT = 28;
+const OVERSCAN_COUNT = 10;
+
 
 // Natural sort comparator - handles numbers in strings correctly (e.g., "note2" before "note10")
 function naturalSort(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
-}
-
-function FolderItem({
-  folder,
-  level,
-  selectedNotes,
-  onNoteClick,
-  onContextMenu,
-  draggedNotes,
-  onDragStart,
-  onDragEnd,
-  onDrop,
-  dropTargetFolder,
-  setDropTargetFolder,
-}: FolderItemProps) {
-  const [expanded, setExpanded] = useState(level < 2);
-  const { currentNote } = useNoteStore();
-
-  const hasChildren = folder.children.size > 0 || folder.notes.length > 0;
-  const isDropTarget = dropTargetFolder === folder.path;
-
-  // Sort subfolders alphabetically (natural sort for numbers)
-  const sortedChildren = Array.from(folder.children.values()).sort((a, b) =>
-    naturalSort(a.name.toLowerCase(), b.name.toLowerCase())
-  );
-
-  // Sort notes alphabetically by title (natural sort for numbers)
-  const sortedNotes = [...folder.notes].sort((a, b) =>
-    naturalSort(a.title.toLowerCase(), b.title.toLowerCase())
-  );
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (draggedNotes.size > 0) {
-      setDropTargetFolder(folder.path);
-    }
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // Only clear if we're leaving the folder element itself
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const x = e.clientX;
-    const y = e.clientY;
-    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-      if (dropTargetFolder === folder.path) {
-        setDropTargetFolder(null);
-      }
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (draggedNotes.size > 0) {
-      onDrop(folder.path);
-    }
-    setDropTargetFolder(null);
-  };
-
-  return (
-    <div
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      {/* Folder header */}
-      <div
-        className={clsx(
-          "flex items-center gap-1 px-2 py-1 cursor-pointer rounded hover:bg-dark-800",
-          "text-dark-400 hover:text-dark-200",
-          isDropTarget && "bg-accent-primary/20 ring-1 ring-accent-primary"
-        )}
-        style={{ paddingLeft: `${level * 12 + 8}px` }}
-        onClick={() => setExpanded(!expanded)}
-      >
-        {hasChildren && <ChevronIcon expanded={expanded} />}
-        <FolderIcon />
-        <span className="text-sm truncate">{folder.name}</span>
-      </div>
-
-      {/* Children */}
-      {expanded && (
-        <div>
-          {/* Subfolders - sorted alphabetically */}
-          {sortedChildren.map((child) => (
-            <FolderItem
-              key={child.path}
-              folder={child}
-              level={level + 1}
-              selectedNotes={selectedNotes}
-              onNoteClick={onNoteClick}
-              onContextMenu={onContextMenu}
-              draggedNotes={draggedNotes}
-              onDragStart={onDragStart}
-              onDragEnd={onDragEnd}
-              onDrop={onDrop}
-              dropTargetFolder={dropTargetFolder}
-              setDropTargetFolder={setDropTargetFolder}
-            />
-          ))}
-
-          {/* Notes in this folder - sorted alphabetically */}
-          {sortedNotes.map((note) => (
-            <div
-              key={note.id}
-              className={clsx(
-                "flex items-center gap-2 px-2 py-1 cursor-pointer rounded select-none",
-                "text-dark-300 hover:bg-dark-800 hover:text-dark-100",
-                currentNote?.path === note.path && "bg-dark-800 text-accent-primary",
-                selectedNotes.has(note.path) && currentNote?.path !== note.path && "ring-1 ring-accent-primary/50 bg-dark-800/50",
-                draggedNotes.has(note.path) && "opacity-50",
-                note.archived && "opacity-50"
-              )}
-              style={{ paddingLeft: `${(level + 1) * 12 + 8}px` }}
-              draggable
-              onDragStart={(e) => onDragStart(e, note)}
-              onDragEnd={onDragEnd}
-              onClick={(e) => onNoteClick(e, note)}
-              onMouseDown={(e) => {
-                // Middle-click to open in background tab (forceNew allows duplicates)
-                if (e.button === 1) {
-                  e.preventDefault();
-                  useUIStore.getState().openTab(note.path, { background: true, forceNew: true });
-                }
-              }}
-              onContextMenu={(e) => onContextMenu(e, note)}
-            >
-              <FileIcon />
-              <span className="text-sm truncate flex-1">{note.title}</span>
-              {note.starred && (
-                <StarIcon filled className="w-3 h-3 text-yellow-500 shrink-0" />
-              )}
-              {note.archived && (
-                <svg className="w-3 h-3 text-dark-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                </svg>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 export function Sidebar() {
@@ -533,8 +374,13 @@ export function Sidebar() {
   // Drag and drop state
   const [draggedNotes, setDraggedNotes] = useState<Set<string>>(new Set());
   const [dropTargetFolder, setDropTargetFolder] = useState<string | null>(null);
+  // Virtual scrolling - track expanded folders
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set(['notes']));
   const renameInputRef = useRef<HTMLInputElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<List>(null);
+  const listContainerRef = useRef<HTMLDivElement>(null);
+  const [listHeight, setListHeight] = useState(400);
 
   const trashItemCount = useNoteStore((state) => state.trashItems.length);
 
@@ -579,6 +425,37 @@ export function Sidebar() {
     [notes, showArchived]
   );
   const folderTree = useMemo(() => buildFolderTree(visibleNotes), [visibleNotes]);
+
+  // Flatten tree for virtual scrolling
+  const flattenedItems = useMemo(
+    () => flattenTree(folderTree, 0, expandedFolders),
+    [folderTree, expandedFolders]
+  );
+
+  // Measure list container height for virtual scrolling
+  useEffect(() => {
+    if (!listContainerRef.current) return;
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setListHeight(entry.contentRect.height);
+      }
+    });
+    resizeObserver.observe(listContainerRef.current);
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  // Toggle folder expanded state
+  const toggleFolder = useCallback((folderPath: string) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderPath)) {
+        next.delete(folderPath);
+      } else {
+        next.add(folderPath);
+      }
+      return next;
+    });
+  }, []);
 
   // Memoize sorted starred notes
   const sortedStarredNotes = useMemo(
@@ -977,10 +854,10 @@ export function Sidebar() {
 
       {/* File tree */}
       {sidebarView === "files" && (
-      <div className="flex-1 overflow-y-auto py-2" ref={sidebarRef} tabIndex={0}>
-        {/* Starred Notes Section - sorted alphabetically */}
+      <div className="flex-1 overflow-hidden flex flex-col" ref={sidebarRef} tabIndex={0}>
+        {/* Starred Notes Section - sorted alphabetically (not virtualized, usually small) */}
         {sortedStarredNotes.length > 0 && (
-          <div className="mb-2">
+          <div className="mb-2 py-2 shrink-0">
             <div
               className="flex items-center gap-2 px-3 py-1.5 text-dark-400 text-xs font-medium uppercase tracking-wider"
             >
@@ -1019,25 +896,101 @@ export function Sidebar() {
           </div>
         )}
 
-        {folderTree.children.size > 0 || folderTree.notes.length > 0 ? (
-          <FolderItem
-            folder={folderTree}
-            level={0}
-            selectedNotes={selectedNotes}
-            onNoteClick={handleNoteClick}
-            onContextMenu={handleContextMenu}
-            draggedNotes={draggedNotes}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-            onDrop={handleDrop}
-            dropTargetFolder={dropTargetFolder}
-            setDropTargetFolder={setDropTargetFolder}
-          />
-        ) : (
-          <div className="px-4 py-8 text-center text-dark-500 text-sm">
-            No notes yet. Create your first note!
-          </div>
-        )}
+        {/* Virtualized folder tree */}
+        <div className="flex-1 min-h-0" ref={listContainerRef}>
+          {flattenedItems.length > 0 ? (
+            <List
+              ref={listRef}
+              height={listHeight}
+              itemCount={flattenedItems.length}
+              itemSize={ROW_HEIGHT}
+              width="100%"
+              overscanCount={OVERSCAN_COUNT}
+            >
+              {({ index, style }: { index: number; style: React.CSSProperties }) => {
+                const item = flattenedItems[index];
+                const currentNote = useNoteStore.getState().currentNote;
+
+                if (item.type === 'folder') {
+                  const isExpanded = expandedFolders.has(item.folder.path);
+                  const isDropTarget = dropTargetFolder === item.folder.path;
+
+                  return (
+                    <div
+                      style={style}
+                      className={clsx(
+                        "flex items-center gap-1 px-2 cursor-pointer rounded hover:bg-dark-800",
+                        "text-dark-400 hover:text-dark-200",
+                        isDropTarget && "bg-accent-primary/20 ring-1 ring-accent-primary"
+                      )}
+                      onClick={() => toggleFolder(item.folder.path)}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        if (draggedNotes.size > 0) setDropTargetFolder(item.folder.path);
+                      }}
+                      onDragLeave={() => {
+                        if (dropTargetFolder === item.folder.path) setDropTargetFolder(null);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (draggedNotes.size > 0) handleDrop(item.folder.path);
+                        setDropTargetFolder(null);
+                      }}
+                    >
+                      <div style={{ paddingLeft: `${(item.level - 1) * 12 + 8}px` }} className="flex items-center gap-1">
+                        {item.hasChildren && <ChevronIcon expanded={isExpanded} />}
+                        <FolderIcon />
+                        <span className="text-sm truncate">{item.folder.name}</span>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Note item
+                const note = item.note;
+                return (
+                  <div
+                    style={style}
+                    className={clsx(
+                      "flex items-center gap-2 px-2 cursor-pointer rounded select-none",
+                      "text-dark-300 hover:bg-dark-800 hover:text-dark-100",
+                      currentNote?.path === note.path && "bg-dark-800 text-accent-primary",
+                      selectedNotes.has(note.path) && currentNote?.path !== note.path && "ring-1 ring-accent-primary/50 bg-dark-800/50",
+                      draggedNotes.has(note.path) && "opacity-50",
+                      note.archived && "opacity-50"
+                    )}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, note)}
+                    onDragEnd={handleDragEnd}
+                    onClick={(e) => handleNoteClick(e, note)}
+                    onMouseDown={(e) => {
+                      if (e.button === 1) {
+                        e.preventDefault();
+                        useUIStore.getState().openTab(note.path, { background: true, forceNew: true });
+                      }
+                    }}
+                    onContextMenu={(e) => handleContextMenu(e, note)}
+                  >
+                    <div style={{ paddingLeft: `${(item.level - 1) * 12 + 8}px` }} className="flex items-center gap-2 flex-1 min-w-0">
+                      <FileIcon />
+                      <span className="text-sm truncate flex-1">{note.title}</span>
+                      {note.starred && (
+                        <StarIcon filled className="w-3 h-3 text-yellow-500 shrink-0" />
+                      )}
+                      {note.archived && (
+                        <span className="w-3 h-3 flex items-center justify-center text-xs leading-none text-dark-500 shrink-0">📦</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              }}
+            </List>
+          ) : (
+            <div className="px-4 py-8 text-center text-dark-500 text-sm">
+              No notes yet. Create your first note!
+            </div>
+          )}
+        </div>
       </div>
       )}
 

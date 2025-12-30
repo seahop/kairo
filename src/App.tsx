@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { Sidebar } from "./components/layout/Sidebar";
@@ -588,8 +588,13 @@ function App() {
 
       {/* Plugin modals */}
       <GitModal />
-      <KanbanBoard />
-      <DiagramEditor />
+      {/* Lazy-loaded heavy plugin components */}
+      <Suspense fallback={null}>
+        <KanbanBoard />
+      </Suspense>
+      <Suspense fallback={null}>
+        <DiagramEditor />
+      </Suspense>
       <TemplateModal />
       <SnippetModal />
       <CreateNoteModal />

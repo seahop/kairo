@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, Suspense } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { usePaneStore } from "@/stores/paneStore";
 import { useUIStore } from "@/stores/uiStore";
@@ -7,6 +7,16 @@ import { VaultHealthPanel } from "@/components/vault/VaultHealthPanel";
 import { SidePane } from "./SidePane";
 import { TabBar } from "./TabBar";
 import { PaneContainer } from "./PaneContainer";
+
+// Loading fallback for lazy-loaded components
+const LazyLoadingFallback = ({ label }: { label: string }) => (
+  <div className="h-full flex items-center justify-center bg-dark-950">
+    <div className="text-center">
+      <div className="w-8 h-8 border-2 border-accent-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+      <p className="text-dark-400 text-sm">Loading {label}...</p>
+    </div>
+  </div>
+);
 
 // Fallback empty state when pane system is not initialized
 const EmptyState = () => (
@@ -92,7 +102,9 @@ export function MainPanel() {
   if (mainViewMode === "graph") {
     return (
       <div className="h-full">
-        <GraphViewPanel />
+        <Suspense fallback={<LazyLoadingFallback label="Graph View" />}>
+          <GraphViewPanel />
+        </Suspense>
       </div>
     );
   }

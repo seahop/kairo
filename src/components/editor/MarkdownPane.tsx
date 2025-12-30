@@ -308,7 +308,7 @@ export function MarkdownPane({ paneId: _paneId, content: propContent, onContentC
         // Selection highlight
         highlightSelectionMatches(),
 
-        // Markdown support
+        // Markdown support with code block highlighting
         markdown({
           base: markdownLanguage,
           codeLanguages: languages,
