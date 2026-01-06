@@ -33,6 +33,8 @@ gray_matter = "0.2"
 dirs = "5"
 git2 = { version = "0.20", features = ["ssh"] }
 rand = "0.9"
+# Use vendored OpenSSL to support cross-compilation (ARM -> Intel on macOS)
+openssl = { version = "0.10", features = ["vendored"] }
 
 [features]
 default = ["custom-protocol"]

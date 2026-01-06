@@ -142,6 +142,11 @@ jobs:
             libjavascriptcoregtk-4.1-dev \
             rpm
 
+      # Ensure x86_64 target is available for macOS Intel cross-compilation
+      - name: Add x86_64 target for macOS Intel
+        if: matrix.target == 'macos-intel'
+        run: rustup target add x86_64-apple-darwin
+
       - name: Install frontend dependencies
         run: pnpm install --no-frozen-lockfile
 
