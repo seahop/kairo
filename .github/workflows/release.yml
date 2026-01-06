@@ -26,12 +26,14 @@ jobs:
           - platform: windows-latest
             target: windows
             bundles: msi,nsis
-          - platform: macos-13
+          - platform: macos-15
             target: macos-intel
             bundles: dmg
+            rust_target: x86_64-apple-darwin
           - platform: macos-14
             target: macos-arm
             bundles: dmg
+            rust_target: aarch64-apple-darwin
 
     runs-on: ${{ matrix.platform }}
 
@@ -41,6 +43,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -125,8 +129,8 @@ jobs:
             - **macOS**: Open the `.dmg` and drag Kairo to Applications
             - **Standalone binaries**: Require system GTK/WebKit libraries to be installed
           releaseDraft: true
-          prerelease: false
-          args: --bundles ${{ matrix.bundles }}
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+          args: --bundles ${{ matrix.bundles }} ${{ matrix.rust_target && format('--target {0}', matrix.rust_target) || '' }}
 
       - name: Upload Linux artifacts
         if: matrix.target == 'linux'
@@ -173,14 +177,14 @@ jobs:
         with:
           name: kairo-${{ matrix.target }}
           path: |
-            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.rust_target }}/release/bundle/dmg/*.dmg
           if-no-files-found: warn
 
       - name: Upload macOS binary to release
         if: startsWith(matrix.target, 'macos')
         shell: bash
         run: |
-          cp src-tauri/target/release/kairo kairo-${{ matrix.target }}
+          cp src-tauri/target/${{ matrix.rust_target }}/release/kairo kairo-${{ matrix.target }}
           gh release upload ${{ github.ref_name }} kairo-${{ matrix.target }} --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
