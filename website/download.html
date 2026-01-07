@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Download Kairo for Linux, macOS, or Windows. Installers and standalone binaries available.">
+  <title>Download - Kairo</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-container">
+      <a href="/" class="nav-logo">
+        <span class="logo-icon">K</span>
+        <span class="logo-text">Kairo</span>
+      </a>
+      <div class="nav-links">
+        <a href="features.html">Features</a>
+        <a href="download.html" class="active">Download</a>
+        <a href="https://github.com/seahop/kairo" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="download-page">
+    <section class="page-header">
+      <div class="container">
+        <h1>Download Kairo</h1>
+        <p>Available for Linux, macOS, and Windows. Choose your platform below.</p>
+      </div>
+    </section>
+
+    <section class="downloads">
+      <div class="container">
+        <div class="download-grid">
+
+          <div class="download-card">
+            <div class="download-card-header">
+              <span class="platform-icon">&#128039;</span>
+              <h3>Linux</h3>
+            </div>
+            <div class="download-options">
+              <div class="download-option">
+                <h4>.deb</h4>
+                <p>Debian, Ubuntu, and derivatives</p>
+                <code>sudo dpkg -i kairo_*.deb && sudo apt-get install -f</code>
+              </div>
+              <div class="download-option">
+                <h4>.rpm</h4>
+                <p>Fedora, RHEL, CentOS, and derivatives</p>
+                <code>sudo dnf install kairo-*.rpm</code>
+              </div>
+              <div class="download-option">
+                <h4>.AppImage</h4>
+                <p>Portable, runs on most distributions</p>
+                <code>chmod +x Kairo*.AppImage && ./Kairo*.AppImage</code>
+              </div>
+              <div class="download-option">
+                <h4>Standalone Binary</h4>
+                <p>Requires GTK/WebKit libraries installed</p>
+              </div>
+            </div>
+            <a href="https://github.com/seahop/kairo/releases/latest" class="btn btn-primary download-btn" target="_blank" rel="noopener">
+              Download for Linux
+            </a>
+          </div>
+
+          <div class="download-card">
+            <div class="download-card-header">
+              <span class="platform-icon">&#63743;</span>
+              <h3>macOS</h3>
+            </div>
+            <div class="download-options">
+              <div class="download-option">
+                <h4>.dmg (Apple Silicon)</h4>
+                <p>For M1, M2, M3, and newer Macs</p>
+              </div>
+              <div class="download-option">
+                <h4>.dmg (Intel)</h4>
+                <p>For Intel-based Macs</p>
+              </div>
+              <div class="download-option">
+                <h4>Standalone Binaries</h4>
+                <p>ARM and Intel binaries available</p>
+              </div>
+            </div>
+            <p class="download-note">
+              Open the .dmg file and drag Kairo to your Applications folder.
+            </p>
+            <a href="https://github.com/seahop/kairo/releases/latest" class="btn btn-primary download-btn" target="_blank" rel="noopener">
+              Download for macOS
+            </a>
+          </div>
+
+          <div class="download-card">
+            <div class="download-card-header">
+              <span class="platform-icon">&#128187;</span>
+              <h3>Windows</h3>
+            </div>
+            <div class="download-options">
+              <div class="download-option">
+                <h4>.exe (NSIS Installer)</h4>
+                <p>Standard Windows installer</p>
+              </div>
+              <div class="download-option">
+                <h4>.msi</h4>
+                <p>Enterprise deployment, group policy support</p>
+              </div>
+              <div class="download-option">
+                <h4>Standalone Binary</h4>
+                <p>Portable executable</p>
+              </div>
+            </div>
+            <a href="https://github.com/seahop/kairo/releases/latest" class="btn btn-primary download-btn" target="_blank" rel="noopener">
+              Download for Windows
+            </a>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <section class="build-source">
+      <div class="container">
+        <h2>Build from Source</h2>
+        <p>Kairo is open source. Clone the repository and build it yourself.</p>
+        <div class="code-block">
+          <pre><code># Clone the repository
+git clone https://github.com/seahop/kairo.git
+cd kairo
+
+# Install dependencies
+pnpm install
+
+# Run in development mode
+pnpm tauri dev
+
+# Build for production
+pnpm tauri build</code></pre>
+        </div>
+        <h4>Requirements</h4>
+        <ul class="requirements-list">
+          <li>Node.js 20+</li>
+          <li>pnpm 9+</li>
+          <li>Rust (stable)</li>
+          <li>Linux: libwebkit2gtk-4.1-dev, libgtk-3-dev, libayatana-appindicator3-dev, librsvg2-dev</li>
+        </ul>
+        <a href="https://github.com/seahop/kairo" class="btn btn-secondary" target="_blank" rel="noopener">View on GitHub</a>
+      </div>
+    </section>
+
+    <section class="releases">
+      <div class="container">
+        <h2>All Releases</h2>
+        <p>
+          View all releases, including beta versions and changelogs, on the GitHub releases page.
+        </p>
+        <a href="https://github.com/seahop/kairo/releases" class="btn btn-secondary" target="_blank" rel="noopener">View All Releases</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <span class="logo-icon">K</span>
+          <span>Kairo</span>
+        </div>
+        <div class="footer-links">
+          <a href="https://github.com/seahop/kairo" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/seahop/kairo/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://github.com/seahop/kairo/releases" target="_blank" rel="noopener">Releases</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

@@ -11,6 +11,12 @@
   Combine notes, kanban boards, diagrams, and git—all in one place.
 </p>
 
+<p align="center">
+  <a href="https://kairo.tips">Website</a> •
+  <a href="https://github.com/seahop/kairo/releases">Downloads</a> •
+  <a href="https://github.com/seahop/kairo/issues">Issues</a>
+</p>
+
 ---
 
 ## Features
@@ -81,11 +87,23 @@
 
 ### Pre-built Binaries
 
-Download the latest release for your platform from the [Releases](https://github.com/your-username/kairo/releases) page:
+Download the latest release for your platform from the [Releases](https://github.com/seahop/kairo/releases) page:
 
-- **Linux**: `.deb` (Debian/Ubuntu) or `.AppImage` (portable)
-- **macOS**: `.dmg`
-- **Windows**: `.msi`
+**Linux**
+- `.deb` - Debian, Ubuntu, and derivatives
+- `.rpm` - Fedora, RHEL, CentOS, and derivatives
+- `.AppImage` - Portable, runs on most distributions
+- Standalone binary (requires GTK/WebKit libraries)
+
+**macOS**
+- `.dmg` (Apple Silicon) - For M1, M2, M3, and newer Macs
+- `.dmg` (Intel) - For Intel-based Macs
+- Standalone binaries for both architectures
+
+**Windows**
+- `.exe` (NSIS) - Standard Windows installer
+- `.msi` - Enterprise deployment, group policy support
+- Standalone binary
 
 ### Build from Source
 
@@ -100,7 +118,7 @@ All development is done via Docker—no local Rust, Node.js, or pnpm installatio
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/kairo.git
+git clone https://github.com/seahop/kairo.git
 cd kairo
 
 # Start development environment (hot-reload enabled)

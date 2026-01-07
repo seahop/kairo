@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Kairo - A knowledge management application for technical teams. Notes, kanban boards, diagrams, and git integration in one place.">
+  <meta name="keywords" content="note-taking, knowledge management, markdown, kanban, diagrams, git, team collaboration">
+  <meta property="og:title" content="Kairo - Knowledge Management for Technical Teams">
+  <meta property="og:description" content="Notes, kanban boards, diagrams, and git integration. All in one desktop application.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://kairo.tips">
+  <title>Kairo - Knowledge Management for Technical Teams</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-container">
+      <a href="/" class="nav-logo">
+        <span class="logo-icon">K</span>
+        <span class="logo-text">Kairo</span>
+      </a>
+      <div class="nav-links">
+        <a href="features.html">Features</a>
+        <a href="download.html">Download</a>
+        <a href="https://github.com/seahop/kairo" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <div class="hero-content">
+        <h1>Knowledge management<br>for technical teams</h1>
+        <p class="hero-subtitle">
+          Notes, kanban boards, diagrams, and git integration.
+          A desktop application built for developers, security professionals, and engineers.
+        </p>
+        <div class="hero-actions">
+          <a href="download.html" class="btn btn-primary">Download</a>
+          <a href="https://github.com/seahop/kairo" class="btn btn-secondary" target="_blank" rel="noopener">View Source</a>
+        </div>
+        <p class="hero-platforms">Available for Linux, macOS, and Windows</p>
+      </div>
+    </section>
+
+    <section class="features-overview">
+      <div class="container">
+        <h2>Everything in one place</h2>
+        <div class="feature-grid">
+          <div class="feature-card">
+            <div class="feature-icon">&#128221;</div>
+            <h3>Markdown Notes</h3>
+            <p>Write in Markdown with live preview, syntax highlighting, wiki-links, and backlinks. Full support for frontmatter, tags, and transclusion.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">&#128203;</div>
+            <h3>Kanban Boards</h3>
+            <p>Personal and shared boards with cards, due dates, priorities, and labels. Assign tasks to team members and track progress.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">&#128200;</div>
+            <h3>Diagram Editor</h3>
+            <p>Create flowcharts, network diagrams, and system designs. Drag-and-drop nodes, customizable shapes, and edge routing.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">&#128279;</div>
+            <h3>Git Integration</h3>
+            <p>Native git operations without shell dependencies. Pull, commit, and push with SSH key authentication. Full version history.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">&#128269;</div>
+            <h3>Full-Text Search</h3>
+            <p>SQLite FTS5-powered search across your entire vault. Find notes, code blocks, and content instantly.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">&#128300;</div>
+            <h3>Graph View</h3>
+            <p>Visualize connections between notes. Interactive force-directed graph shows how your knowledge is linked.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="technical">
+      <div class="container">
+        <h2>Built for performance</h2>
+        <div class="tech-grid">
+          <div class="tech-item">
+            <h4>Tauri 2.0</h4>
+            <p>Native desktop application with minimal resource usage. No Electron bloat.</p>
+          </div>
+          <div class="tech-item">
+            <h4>Rust Backend</h4>
+            <p>File operations, git integration, and search powered by Rust for speed and reliability.</p>
+          </div>
+          <div class="tech-item">
+            <h4>SQLite + FTS5</h4>
+            <p>Local-first database with full-text search indexing. Your data stays on your machine.</p>
+          </div>
+          <div class="tech-item">
+            <h4>React + TypeScript</h4>
+            <p>Modern frontend with CodeMirror 6 editor and React Flow for diagrams.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="security-focused">
+      <div class="container">
+        <div class="security-content">
+          <h2>Built with security teams in mind</h2>
+          <p>
+            Kairo includes templates and command snippets designed for red team operations,
+            penetration testing, and security research. Document your methodology,
+            track findings, and collaborate with your team.
+          </p>
+          <ul class="security-list">
+            <li>25+ built-in command snippets for enumeration, credential attacks, and lateral movement</li>
+            <li>Security-focused note templates: runbooks, incident reports, tool documentation</li>
+            <li>Local-first architecture keeps sensitive data on your systems</li>
+            <li>Native SSH key authentication for git operations</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="container">
+        <h2>Open source and free</h2>
+        <p>Kairo is released under an open source license. Contribute, customize, or self-host.</p>
+        <div class="cta-actions">
+          <a href="download.html" class="btn btn-primary">Download Kairo</a>
+          <a href="https://github.com/seahop/kairo" class="btn btn-secondary" target="_blank" rel="noopener">Star on GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <span class="logo-icon">K</span>
+          <span>Kairo</span>
+        </div>
+        <div class="footer-links">
+          <a href="https://github.com/seahop/kairo" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/seahop/kairo/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://github.com/seahop/kairo/releases" target="_blank" rel="noopener">Releases</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

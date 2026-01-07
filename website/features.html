@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Kairo features - Markdown editor, wiki-links, kanban boards, diagram editor, git integration, and more.">
+  <title>Features - Kairo</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-container">
+      <a href="/" class="nav-logo">
+        <span class="logo-icon">K</span>
+        <span class="logo-text">Kairo</span>
+      </a>
+      <div class="nav-links">
+        <a href="features.html" class="active">Features</a>
+        <a href="download.html">Download</a>
+        <a href="https://github.com/seahop/kairo" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="features-page">
+    <section class="page-header">
+      <div class="container">
+        <h1>Features</h1>
+        <p>A comprehensive set of tools for knowledge management and team collaboration.</p>
+      </div>
+    </section>
+
+    <section class="features-accordion">
+      <div class="container">
+
+        <details class="feature-accordion-item" open>
+          <summary class="feature-accordion-header">
+            <span class="feature-accordion-icon">&#128221;</span>
+            <div class="feature-accordion-title">
+              <h3>Markdown Editor</h3>
+              <p>CodeMirror 6 powered editor with live preview, wiki-links, and backlinks</p>
+            </div>
+            <span class="feature-accordion-chevron">&#8250;</span>
+          </summary>
+          <div class="feature-accordion-content">
+            <div class="feature-columns">
+              <div class="feature-column">
+                <h4>Editor</h4>
+                <ul>
+                  <li>Split-pane with synchronized scrolling</li>
+                  <li>100+ language syntax highlighting</li>
+                  <li>Find/replace with regex</li>
+                  <li>Visual table editor</li>
+                </ul>
+              </div>
+              <div class="feature-column">
+                <h4>Wiki-Links</h4>
+                <ul>
+                  <li><code>[[Note Name]]</code> syntax</li>
+                  <li><code>[[folder/note]]</code> nested links</li>
+                  <li>Autocomplete suggestions</li>
+                  <li>Note aliases via frontmatter</li>
+                </ul>
+              </div>
+              <div class="feature-column">
+                <h4>Backlinks</h4>
+                <ul>
+                  <li>Incoming links panel</li>
+                  <li>Context preview</li>
+                  <li>Unlinked mentions discovery</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="feature-accordion-item">
+          <summary class="feature-accordion-header">
+            <span class="feature-accordion-icon">&#128203;</span>
+            <div class="feature-accordion-title">
+              <h3>Kanban Boards</h3>
+              <p>Personal and shared boards with drag-and-drop cards, due dates, and priorities</p>
+            </div>
+            <span class="feature-accordion-chevron">&#8250;</span>
+          </summary>
+          <div class="feature-accordion-content">
+            <div class="feature-columns">
+              <div class="feature-column">
+                <h4>Boards</h4>
+                <ul>
+                  <li>Customizable columns</li>
+                  <li>Personal boards per member</li>
+                  <li>Pool board for unassigned tasks</li>
+                  <li>Card archiving</li>
+                </ul>
+              </div>
+              <div class="feature-column">
+                <h4>Cards</h4>
+                <ul>
+                  <li>Due dates and priorities</li>
+                  <li>Color-coded labels</li>
+                  <li>Assignee suggestions</li>
+                  <li>Reference: <code>[[card:Title]]</code></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="feature-accordion-item">
+          <summary class="feature-accordion-header">
+            <span class="feature-accordion-icon">&#128200;</span>
+            <div class="feature-accordion-title">
+              <h3>Diagram Editor</h3>
+              <p>Visual editor for flowcharts, network diagrams, and system designs</p>
+            </div>
+            <span class="feature-accordion-chevron">&#8250;</span>
+          </summary>
+          <div class="feature-accordion-content">
+            <div class="feature-columns">
+              <div class="feature-column">
+                <h4>Nodes</h4>
+                <ul>
+                  <li>Shapes: rectangle, circle, diamond, cylinder, hexagon</li>
+                  <li>Icon, text, and image nodes</li>
+                  <li>Groups and swimlanes</li>
+                </ul>
+              </div>
+              <div class="feature-column">
+                <h4>Edges</h4>
+                <ul>
+                  <li>Types: straight, step, smoothstep</li>
+                  <li>Arrow styles: arrow, diamond, circle</li>
+                  <li>Labels and animation</li>
+                </ul>
+              </div>
+              <div class="feature-column">
+                <h4>Features</h4>
+                <ul>
+                  <li>Undo/redo (50 actions)</li>
+                  <li>Copy/paste, PNG export</li>
+                  <li>Reference: <code>[[diagram:Name]]</code></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="feature-accordion-item">
+          <summary class="feature-accordion-header">
+            <span class="feature-accordion-icon">&#128279;</span>
+            <div class="feature-accordion-title">
+              <h3>Git Integration</h3>
+              <p>Native git via libgit2 with SSH key authentication - no shell required</p>
+            </div>
+            <span class="feature-accordion-chevron">&#8250;</span>
+          </summary>
+          <div class="feature-accordion-content">
+            <div class="feature-columns">
+              <div class="feature-column">
+                <h4>Operations</h4>
+                <ul>
+                  <li>Pull, commit, push</li>
+                  <li>Status view</li>
+                  <li>No external git needed</li>
+                </ul>
+              </div>
+              <div class="feature-column">
+                <h4>Authentication</h4>
+                <ul>
+                  <li>Native SSH key support</li>
+                  <li>Per-user key configuration</li>
+                  <li>Passphrase caching</li>
+                </ul>
+              </div>
+              <div class="feature-column">
+                <h4>Shortcuts</h4>
+                <ul>
+                  <li><code>Ctrl+Shift+P</code> Pull</li>
+                  <li><code>Ctrl+Shift+C</code> Commit</li>
+                  <li><code>Ctrl+Shift+U</code> Push</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="feature-accordion-item">
+          <summary class="feature-accordion-header">
+            <span class="feature-accordion-icon">&#128269;</span>
+            <div class="feature-accordion-title">
+              <h3>Full-Text Search</h3>
+              <p>SQLite FTS5 powered search with instant results and context preview</p>
+            </div>
+            <span class="feature-accordion-chevron">&#8250;</span>
+          </summary>
+          <div class="feature-accordion-content">
+            <div class="feature-columns">
+              <div class="feature-column">
+                <h4>Search</h4>
+                <ul>
+                  <li>Live results as you type</li>
+                  <li>Context preview</li>
+                  <li>Search highlighting</li>
+                  <li>Code block filtering</li>
+                </ul>
+              </div>
+              <div class="feature-column">
+                <h4>Discovery</h4>
+                <ul>
+                  <li>Incoming links panel</li>
+                  <li>Unlinked mentions</li>
+                  <li>Orphan note detection</li>
+                  <li><code>Ctrl+Shift+F</code></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="feature-accordion-item">
+          <summary class="feature-accordion-header">
+            <span class="feature-accordion-icon">&#128300;</span>
+            <div class="feature-accordion-title">
+              <h3>Graph View</h3>
+              <p>Interactive force-directed visualization of note connections</p>
+            </div>
+            <span class="feature-accordion-chevron">&#8250;</span>
+          </summary>
+          <div class="feature-accordion-content">
+            <div class="feature-columns">
+              <div class="feature-column">
+                <h4>Global Graph</h4>
+                <ul>
+                  <li>All notes as nodes</li>
+                  <li>Node size by connectivity</li>
+                  <li>Click to navigate</li>
+                  <li>Search filtering</li>
+                </ul>
+              </div>
+              <div class="feature-column">
+                <h4>Local Graph</h4>
+                <ul>
+                  <li>Centered on current note</li>
+                  <li>Configurable depth</li>
+                  <li><code>Ctrl+Shift+G</code> global</li>
+                  <li><code>Ctrl+G</code> local</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="feature-accordion-item">
+          <summary class="feature-accordion-header">
+            <span class="feature-accordion-icon">&#128196;</span>
+            <div class="feature-accordion-title">
+              <h3>Templates</h3>
+              <p>Pre-built templates for daily notes, zettelkasten, PARA, security runbooks</p>
+            </div>
+            <span class="feature-accordion-chevron">&#8250;</span>
+          </summary>
+          <div class="feature-accordion-content">
+            <div class="feature-columns">
+              <div class="feature-column">
+                <h4>Built-in</h4>
+                <ul>
+                  <li>Daily notes, meeting notes</li>
+                  <li>Zettel, literature notes</li>
+                  <li>Project, area, resource (PARA)</li>
+                  <li>Runbooks, incident reports</li>
+                </ul>
+              </div>
+              <div class="feature-column">
+                <h4>Variables</h4>
+                <ul>
+                  <li><code>{date}</code>, <code>{time}</code>, <code>{weekday}</code></li>
+                  <li><code>{title}</code>, <code>{zettel}</code></li>
+                  <li>Custom templates</li>
+                  <li><code>Ctrl+Shift+N</code></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="feature-accordion-item">
+          <summary class="feature-accordion-header">
+            <span class="feature-accordion-icon">&#128187;</span>
+            <div class="feature-accordion-title">
+              <h3>Command Snippets</h3>
+              <p>25+ security snippets for enumeration, credential attacks, lateral movement</p>
+            </div>
+            <span class="feature-accordion-chevron">&#8250;</span>
+          </summary>
+          <div class="feature-accordion-content">
+            <div class="feature-columns">
+              <div class="feature-column">
+                <h4>Categories</h4>
+                <ul>
+                  <li>Enumeration: Nmap, Gobuster, FFUF</li>
+                  <li>Credentials: Mimikatz, Hashcat</li>
+                  <li>Lateral: PsExec, WMIExec, Evil-WinRM</li>
+                  <li>AD: BloodHound, Kerbrute</li>
+                </ul>
+              </div>
+              <div class="feature-column">
+                <h4>Features</h4>
+                <ul>
+                  <li>Quick copy to clipboard</li>
+                  <li>Insert into editor</li>
+                  <li>Search and filter</li>
+                  <li>Custom snippets</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="feature-accordion-item">
+          <summary class="feature-accordion-header">
+            <span class="feature-accordion-icon">&#128202;</span>
+            <div class="feature-accordion-title">
+              <h3>Dataview Queries</h3>
+              <p>SQL-like queries for dynamic views based on metadata, tags, and content</p>
+            </div>
+            <span class="feature-accordion-chevron">&#8250;</span>
+          </summary>
+          <div class="feature-accordion-content">
+            <div class="feature-columns">
+              <div class="feature-column">
+                <h4>Query Types</h4>
+                <ul>
+                  <li><code>TABLE</code> - formatted tables</li>
+                  <li><code>LIST</code> - bulleted lists</li>
+                  <li><code>TASK</code> - task items</li>
+                </ul>
+              </div>
+              <div class="feature-column">
+                <h4>Capabilities</h4>
+                <ul>
+                  <li>Filter by folder, tags, fields</li>
+                  <li>Sort, group, limit</li>
+                  <li>Access <code>file.*</code> and frontmatter</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="feature-accordion-item">
+          <summary class="feature-accordion-header">
+            <span class="feature-accordion-icon">&#128295;</span>
+            <div class="feature-accordion-title">
+              <h3>More Features</h3>
+              <p>Version history, daily notes, split panes, extensions, callouts</p>
+            </div>
+            <span class="feature-accordion-chevron">&#8250;</span>
+          </summary>
+          <div class="feature-accordion-content">
+            <div class="feature-columns">
+              <div class="feature-column">
+                <h4>Version History</h4>
+                <ul>
+                  <li>Auto snapshots on save</li>
+                  <li>Preview and diff</li>
+                  <li>One-click restore</li>
+                </ul>
+              </div>
+              <div class="feature-column">
+                <h4>Layout</h4>
+                <ul>
+                  <li>Resizable split panes</li>
+                  <li>Tab system</li>
+                  <li>Multi-note editing</li>
+                </ul>
+              </div>
+              <div class="feature-column">
+                <h4>Extensions</h4>
+                <ul>
+                  <li>Plugin architecture</li>
+                  <li>JavaScript extensions</li>
+                  <li>Custom commands</li>
+                </ul>
+              </div>
+              <div class="feature-column">
+                <h4>Callouts</h4>
+                <ul>
+                  <li>15+ types: note, tip, warning</li>
+                  <li>Obsidian-compatible syntax</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </details>
+
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="container">
+        <h2>Ready to try Kairo?</h2>
+        <div class="cta-actions">
+          <a href="download.html" class="btn btn-primary">Download</a>
+          <a href="https://github.com/seahop/kairo" class="btn btn-secondary" target="_blank" rel="noopener">View on GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <span class="logo-icon">K</span>
+          <span>Kairo</span>
+        </div>
+        <div class="footer-links">
+          <a href="https://github.com/seahop/kairo" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/seahop/kairo/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://github.com/seahop/kairo/releases" target="_blank" rel="noopener">Releases</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
