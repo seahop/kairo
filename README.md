@@ -392,6 +392,9 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 # Lint frontend
 ./docker/build.sh lint
+
+# Local release
+./docker/build.sh release
 ```
 
 ---
